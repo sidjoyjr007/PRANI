@@ -1,5 +1,8 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useParams, useNavigate } from "react-router-dom"
+import { useDispatch, useSelector } from "react-redux"
+import { fetchToolById } from "@/store/slices/toolSlice"
+import { toolService } from "@/services/toolService"
 import { useTheme } from "@/context/ThemeContext"
 import Layout from "@/components/Layout"
 import Container from "@/components/Container"
@@ -12,82 +15,88 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { ChevronLeft, Play } from "lucide-react"
 
-const TOOL_CONFIGS = {
-  1: {
-    name: "Web Search",
-    description: "Search the internet for real-time information and web resources",
-    inputs: [
-      { id: "query", label: "Search Query", type: "text", placeholder: "Enter search query..." },
-      { id: "numResults", label: "Number of Results", type: "number", placeholder: "10", defaultValue: "10" },
-    ],
-  },
-  2: {
-    name: "Code Executor",
-    description: "Execute and run code snippets in multiple programming languages",
-    inputs: [
-      { id: "language", label: "Programming Language", type: "select", options: ["JavaScript", "Python", "Java", "C++"], defaultValue: "JavaScript" },
-      { id: "code", label: "Code", type: "textarea", placeholder: "Enter your code here..." },
-    ],
-  },
-  3: {
-    name: "File Manager",
-    description: "Manage and manipulate files with advanced operations",
-    inputs: [
-      { id: "filePath", label: "File Path", type: "text", placeholder: "/path/to/file" },
-      { id: "operation", label: "Operation", type: "select", options: ["Read", "Write", "Delete", "Copy"], defaultValue: "Read" },
-    ],
-  },
-  4: {
-    name: "API Caller",
-    description: "Make HTTP requests to APIs and handle responses",
-    inputs: [
-      { id: "url", label: "API URL", type: "text", placeholder: "https://api.example.com/endpoint" },
-      { id: "method", label: "HTTP Method", type: "select", options: ["GET", "POST", "PUT", "DELETE"], defaultValue: "GET" },
-      { id: "payload", label: "Request Body", type: "textarea", placeholder: "{}" },
-    ],
-  },
-}
-
 export default function ToolTestPage() {
   const theme = useTheme()
   const navigate = useNavigate()
   const { toolId } = useParams()
-  
-  const toolConfig = TOOL_CONFIGS[toolId] || TOOL_CONFIGS[1]
+  const dispatch = useDispatch()
+
+  const { currentTool: tool, isLoading: isToolLoading } = useSelector((state) => state.tools)
+
   const [inputs, setInputs] = useState({})
   const [result, setResult] = useState(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState(null)
+  const [isTestLoading, setIsTestLoading] = useState(false)
+  const [testError, setTestError] = useState(null)
 
-  const handleInputChange = (inputId, value) => {
-    setInputs(prev => ({ ...prev, [inputId]: value }))
+  useEffect(() => {
+    if (toolId) {
+      dispatch(fetchToolById(toolId))
+    }
+  }, [dispatch, toolId])
+
+  useEffect(() => {
+    if (tool && tool.input_fields) {
+      const defaults = {}
+      tool.input_fields.forEach(field => {
+        if (field.default) defaults[field.name] = field.default
+      })
+      setInputs(prev => ({ ...defaults, ...prev }))
+    }
+  }, [tool])
+
+  const handleInputChange = (inputName, value) => {
+    setInputs(prev => ({ ...prev, [inputName]: value }))
   }
 
   const handleTest = async () => {
-    setIsLoading(true)
-    setError(null)
+    setIsTestLoading(true)
+    setTestError(null)
     setResult(null)
 
     try {
-      // Simulate API call with delay
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      
-      // Mock successful result
-      const mockResult = {
-        status: "success",
-        message: "Tool executed successfully",
-        data: {
-          executedAt: new Date().toISOString(),
-          inputs: inputs,
-          output: `Sample output from ${toolConfig.name}\n\nInput parameters:\n${JSON.stringify(inputs, null, 2)}`,
-        },
+      const response = await toolService.testTool(toolId, inputs)
+
+      if (response.success) {
+        setResult({
+          status: "success",
+          message: response.message,
+          data: {
+            executedAt: new Date().toISOString(),
+            output: typeof response.result === 'object' ? JSON.stringify(response.result, null, 2) : String(response.result),
+            inputs: response.input,
+          },
+        })
+      } else {
+        // Backend returned success: false
+        setTestError(response.error || response.message || "Tool execution failed")
       }
-      setResult(mockResult)
     } catch (err) {
-      setError(err.message || "An error occurred while executing the tool")
+      console.error("Test error:", err)
+      const msg = err.response?.data?.detail || err.message || "An error occurred while executing the tool"
+      setTestError(msg)
     } finally {
-      setIsLoading(false)
+      setIsTestLoading(false)
     }
+  }
+
+  if (isToolLoading) {
+    return (
+      <Layout>
+        <Container>
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '50px' }}>Loading tool...</div>
+        </Container>
+      </Layout>
+    )
+  }
+
+  if (!tool) {
+    return (
+      <Layout>
+        <Container>
+          <div style={{ padding: '50px', textAlign: 'center' }}>Tool not found</div>
+        </Container>
+      </Layout>
+    )
   }
 
   return (
@@ -102,9 +111,9 @@ export default function ToolTestPage() {
           paddingBottom: theme.spacing[4],
           borderBottom: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
         }}>
-          <Button 
-            variant="outline" 
-            size="md" 
+          <Button
+            variant="outline"
+            size="md"
             leadingIcon={ChevronLeft}
             onClick={() => navigate("/tools")}
           >
@@ -118,7 +127,7 @@ export default function ToolTestPage() {
             flex: 1,
             textAlign: "center",
           }}>
-            Test {toolConfig.name}
+            Test {tool.name}
           </h1>
           <div style={{ width: "fit-content" }} />
         </div>
@@ -128,6 +137,7 @@ export default function ToolTestPage() {
           gridTemplateColumns: "1fr 1fr",
           gap: theme.spacing[6],
           marginBottom: theme.spacing[8],
+          alignItems: "start",
         }}>
           {/* Tool Inputs Card */}
           <Card style={{
@@ -150,8 +160,8 @@ export default function ToolTestPage() {
               flexDirection: "column",
               gap: theme.spacing[6],
             }}>
-              {toolConfig.inputs.map((inputConfig) => (
-                <div key={inputConfig.id} style={{ display: "flex", flexDirection: "column", gap: theme.spacing[2] }}>
+              {tool.input_fields && tool.input_fields.map((field) => (
+                <div key={field.name} style={{ display: "flex", flexDirection: "column", gap: theme.spacing[2] }}>
                   <label style={{
                     display: "block",
                     fontSize: theme.typography.fontSize.sm,
@@ -159,48 +169,43 @@ export default function ToolTestPage() {
                     color: theme.colors.foreground,
                     marginBottom: theme.spacing[1],
                   }}>
-                    {inputConfig.label}
+                    {field.name} {field.required && <span style={{ color: theme.colors.destructive[500] }}>*</span>}
                   </label>
-                  
-                  {inputConfig.type === "text" || inputConfig.type === "number" ? (
-                    <Input
-                      type={inputConfig.type}
-                      placeholder={inputConfig.placeholder}
-                      value={inputs[inputConfig.id] || inputConfig.defaultValue || ""}
-                      onChange={(e) => handleInputChange(inputConfig.id, e.target.value)}
-                    />
-                  ) : inputConfig.type === "textarea" ? (
-                    <Textarea
-                      placeholder={inputConfig.placeholder}
-                      value={inputs[inputConfig.id] || inputConfig.defaultValue || ""}
-                      onChange={(e) => handleInputChange(inputConfig.id, e.target.value)}
-                      rows={4}
-                    />
-                  ) : inputConfig.type === "select" ? (
+
+                  {field.type === "bool" ? (
                     <select
-                      value={inputs[inputConfig.id] || inputConfig.defaultValue || ""}
-                      onChange={(e) => handleInputChange(inputConfig.id, e.target.value)}
+                      value={inputs[field.name] !== undefined ? String(inputs[field.name]) : "false"}
+                      onChange={(e) => handleInputChange(field.name, e.target.value === "true")}
                       style={{
                         padding: `${theme.spacing[2]} ${theme.spacing[3]}`,
                         borderRadius: theme.borderRadius.md,
                         border: `${theme.borderWidth.sm} solid ${theme.colors.border}`,
                         backgroundColor: theme.colors.card,
                         color: theme.colors.foreground,
-                        fontSize: theme.typography.fontSize.sm,
-                        fontFamily: "inherit",
-                        cursor: "pointer",
-                        transition: theme.transitions.default,
+                        width: "100%"
                       }}
                     >
-                      {inputConfig.options.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
+                      <option value="true">True</option>
+                      <option value="false">False</option>
                     </select>
-                  ) : null}
+                  ) : (
+                    <Input
+                      type={field.type === "int" || field.type === "float" ? "number" : "text"}
+                      step={field.type === "float" ? "any" : undefined}
+                      placeholder={field.description || `Enter ${field.name}...`}
+                      value={inputs[field.name] || ""}
+                      onChange={(e) => handleInputChange(field.name, e.target.value)}
+                    />
+                  )}
+                  {field.description && (
+                    <p style={{ fontSize: "12px", color: theme.colors.muted_foreground, margin: 0 }}>{field.description}</p>
+                  )}
                 </div>
               ))}
+
+              {!tool.input_fields || tool.input_fields.length === 0 && (
+                <div style={{ color: theme.colors.muted_foreground, fontStyle: "italic" }}>No input fields required.</div>
+              )}
 
               <Separator />
 
@@ -209,12 +214,12 @@ export default function ToolTestPage() {
                 size="md"
                 leadingIcon={Play}
                 onClick={handleTest}
-                disabled={isLoading}
+                disabled={isTestLoading}
                 style={{
                   width: "100%",
                 }}
               >
-                {isLoading ? "Testing..." : "Test Tool"}
+                {isTestLoading ? "Testing..." : "Test Tool"}
               </Button>
             </div>
           </Card>
@@ -281,7 +286,7 @@ export default function ToolTestPage() {
               flexDirection: "column",
               gap: 0,
             }}>
-              {isLoading ? (
+              {isTestLoading ? (
                 <div style={{
                   display: "flex",
                   alignItems: "center",
@@ -292,14 +297,14 @@ export default function ToolTestPage() {
                 }}>
                   Executing tool...
                 </div>
-              ) : error ? (
+              ) : testError ? (
                 <div style={{
                   padding: theme.spacing[3],
                   color: "#f87171",
                   fontSize: theme.typography.fontSize.xs,
                   lineHeight: 1.6,
                 }}>
-                  <span style={{ fontWeight: "bold" }}>✕ ERROR:</span> {error}
+                  <span style={{ fontWeight: "bold" }}>✕ ERROR:</span> {testError}
                 </div>
               ) : result ? (
                 <>
@@ -330,7 +335,7 @@ export default function ToolTestPage() {
                     display: "flex",
                     flexDirection: "column",
                   }}>
-                    {result.data.output.split("\n").map((line, index) => (
+                    {String(result.data.output).split("\n").map((line, index) => (
                       <div
                         key={index}
                         style={{

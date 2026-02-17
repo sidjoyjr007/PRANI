@@ -9,15 +9,19 @@ import { cn } from "@/lib/utils"
 import { X } from "lucide-react"
 import { useTheme } from "@/context/ThemeContext"
 
-const DialogContext = React.createContext({ isOpen: false, handleOpenChange: () => {} })
+const DialogContext = React.createContext({ isOpen: false, handleOpenChange: () => { } })
 
-const Dialog = React.forwardRef(({ 
-  className, 
+const Dialog = React.forwardRef(({
+  className,
   open = false,
   onOpenChange,
-  ...props 
+  ...props
 }, ref) => {
   const [isOpen, setIsOpen] = React.useState(open)
+
+  React.useEffect(() => {
+    setIsOpen(open)
+  }, [open])
 
   const handleOpenChange = (newOpen) => {
     setIsOpen(newOpen)
@@ -95,16 +99,18 @@ const DialogOverlay = React.forwardRef(({ className, ...props }, ref) => {
 })
 DialogOverlay.displayName = "DialogOverlay"
 
-const DialogContent = React.forwardRef(({ 
+const DialogContent = React.forwardRef(({
   className,
   variant = "default",
   size = "md",
   onClose,
   showOverlay = true,
-  ...props 
+  ...props
 }, ref) => {
   const { handleOpenChange, isOpen } = React.useContext(DialogContext)
   const theme = useTheme()
+
+  if (!isOpen) return null
 
   const sizeConfig = {
     sm: { maxWidth: "24rem" },

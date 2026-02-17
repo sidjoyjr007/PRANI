@@ -11,10 +11,10 @@ export default function CardGrid({ items = [], renderCard, columns = 3, gap = 8 
     return null
   }
 
-  const gridTemplateColumns = columns === "auto" 
+  const gridTemplateColumns = columns === "auto"
     ? "repeat(auto-fill, minmax(300px, 1fr))"
     : columns === 3
-      ? "repeat(auto-fit, minmax(350px, 1fr))"
+      ? "repeat(auto-fill, minmax(300px, 1fr))"
       : `repeat(${columns}, 1fr)`
 
   return (

@@ -61,8 +61,8 @@ const getToastStyles = (variant, theme) => {
   return styles[variant] || styles.default
 }
 
-const Toast = React.forwardRef(({ 
-  className, 
+const Toast = React.forwardRef(({
+  className,
   variant = "default",
   title,
   description,
@@ -72,7 +72,7 @@ const Toast = React.forwardRef(({
   duration = 5000,
   size = "md",
   showIcon = true,
-  ...props 
+  ...props
 }, ref) => {
   const theme = useTheme()
   const [isOpen, setIsOpen] = React.useState(true)
@@ -111,13 +111,14 @@ const Toast = React.forwardRef(({
         boxShadow: `0 20px 25px -5px rgba(0, 0, 0, 0.1)`,
         animation: "slideIn 0.3s ease-out",
         color: styles.text,
+        pointerEvents: "auto",
       }}
       className={cn(className)}
       {...props}
     >
       <div style={{ display: "flex", gap: config.gap, alignItems: "flex-start" }}>
         {showIcon && IconComponent && (
-          <IconComponent 
+          <IconComponent
             style={{ color: styles.icon, flexShrink: 0, marginTop: size === 'sm' ? 0 : 2 }}
             className={size === 'sm' ? "h-4 w-4" : size === 'md' ? "h-5 w-5" : "h-6 w-6"}
             aria-hidden="true"
@@ -125,7 +126,7 @@ const Toast = React.forwardRef(({
         )}
         <div style={{ flex: 1 }}>
           {title && (
-            <h4 style={{ 
+            <h4 style={{
               fontSize: config.titleSize,
               fontWeight: theme.typography.fontWeight.semibold,
               lineHeight: theme.typography.lineHeight.tight,
@@ -137,7 +138,7 @@ const Toast = React.forwardRef(({
             </h4>
           )}
           {description && (
-            <p style={{ 
+            <p style={{
               fontSize: theme.typography.fontSize.sm,
               color: styles.text,
               opacity: 0.85,
@@ -184,13 +185,13 @@ const Toast = React.forwardRef(({
 })
 Toast.displayName = "Toast"
 
-const ToastContainer = React.forwardRef(({ 
-  className, 
+const ToastContainer = React.forwardRef(({
+  className,
   position = "bottom-right",
-  ...props 
+  ...props
 }, ref) => {
   const theme = useTheme()
-  
+
   const positionStyles = {
     "top-left": { top: theme.spacing[4], left: theme.spacing[4] },
     "top-center": { top: theme.spacing[4], left: "50%", transform: "translateX(-50%)" },

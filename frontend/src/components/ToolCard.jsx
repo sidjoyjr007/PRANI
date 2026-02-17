@@ -1,21 +1,39 @@
-import React from "react"
+import React, { useState } from "react"
 import { useTheme } from "@/context/ThemeContext"
 import { useNavigate } from "react-router-dom"
+import { useDispatch } from "react-redux"
 import { Card } from "@/components/ui/card"
 import { Text } from "@/components/ui/text"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Trash2, Play } from "lucide-react"
+import DeleteResourceDialog from "@/components/DeleteResourceDialog"
+import { deleteTool } from "@/store/slices/toolSlice"
 
-export default function ToolCard({ tool }) {
+export default function ToolCard({ tool, addToast }) {
   const theme = useTheme()
   const navigate = useNavigate()
-  const [showActions, setShowActions] = React.useState(false)
+  const dispatch = useDispatch()
+  const [showActions, setShowActions] = useState(false)
 
-  const handleDelete = (e) => {
-    e.stopPropagation()
-    // TODO: Implement delete functionality
-    console.log("Delete tool:", tool.id)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+
+  const handleDeleteClick = (e) => {
+    e.stopPropagation() // Prevent card click
+    setShowDeleteDialog(true)
+  }
+
+  const handleConfirmDelete = () => {
+    dispatch(deleteTool(tool.id))
+      .unwrap()
+      .then(() => {
+        if (addToast) addToast("Success", `Tool "${tool.name}" deleted successfully.`, "success")
+      })
+      .catch((error) => {
+        const errorMsg = typeof error === 'string' ? error : (error.detail || "Failed to delete tool")
+        if (addToast) addToast("Error", errorMsg, "error")
+      })
+    setShowDeleteDialog(false)
   }
 
   const handleTest = (e) => {
@@ -27,134 +45,141 @@ export default function ToolCard({ tool }) {
   if (!tool) return null
 
   return (
-    <Card
-      variant="default"
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        padding: theme.spacing[6],
-        gap: theme.spacing[4],
-        transition: `all ${theme.transitions.normal}`,
-        cursor: "pointer",
-        border: `${theme.borderWidth.sm} solid ${theme.colors.border}`,
-        borderRadius: theme.borderRadius.md,
-        backgroundColor: theme.colors.card,
-        boxShadow: `0 1px 3px 0 ${theme.colors.shadow}20`,
-        position: "relative",
-      }}
-      onClick={() => navigate(`/edit-tool/${tool.id}`)}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.boxShadow = theme.shadows.lg
-        e.currentTarget.style.transform = "translateY(-2px)"
-        setShowActions(true)
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.boxShadow = `0 1px 3px 0 ${theme.colors.shadow}20`
-        e.currentTarget.style.transform = "translateY(0)"
-        setShowActions(false)
-      }}
-    >
-      {/* Action Buttons - Visible on Hover */}
-      {showActions && (
-        <div
-          style={{
-            position: "absolute",
-            top: theme.spacing[4],
-            right: theme.spacing[4],
-            display: "flex",
-            gap: theme.spacing[2],
-            zIndex: 10,
-          }}
-        >
-          {/* Test Button */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleTest}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: theme.spacing[2],
-              color: theme.colors.primary[600],
-            }}
-            title="Test Tool"
-          >
-            <Play size={18} />
-          </Button>
-
-          {/* Delete Button */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleDelete}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: theme.spacing[2],
-              color: theme.colors.destructive[600],
-            }}
-            title="Delete Tool"
-          >
-            <Trash2 size={18} />
-          </Button>
-        </div>
-      )}
-
-      {/* Tool Name */}
-      <Text
-        as="h3"
-        variant="label"
-        size="md"
+    <>
+      <Card
+        variant="default"
         style={{
-          margin: 0,
-          color: theme.colors.foreground,
-          fontWeight: theme.typography.fontWeight.semibold,
+          display: "flex",
+          flexDirection: "column",
+          padding: theme.spacing[6],
+          transition: `all ${theme.transitions.normal}`,
+          cursor: "pointer",
+          border: `1px solid ${theme.colors.neutral[200]}`,
+          borderRadius: theme.borderRadius.lg,
+          backgroundColor: theme.colors.card,
+          boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
+          position: "relative",
+          justifyContent: "center",
+          minHeight: "120px"
+        }}
+        onClick={() => navigate(`/edit-tool/${tool.id}`)}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.boxShadow = "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)"
+          e.currentTarget.style.borderColor = theme.colors.neutral[300]
+          setShowActions(true)
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.boxShadow = "0 1px 2px 0 rgba(0, 0, 0, 0.05)"
+          e.currentTarget.style.borderColor = theme.colors.neutral[200]
+          setShowActions(false)
         }}
       >
-        {tool.name}
-      </Text>
-
-      {/* Tool Description */}
-      <Text
-        as="p"
-        variant="body"
-        size="sm"
-        style={{
-          margin: 0,
-          color: theme.colors.muted_foreground,
-          flex: 1,
-          lineHeight: theme.typography.lineHeight.relaxed,
-        }}
-      >
-        {tool.description}
-      </Text>
-
-      {/* Tool Categories */}
-      {tool.categories && tool.categories.length > 0 && (
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: theme.spacing[2],
-            marginTop: theme.spacing[2],
-          }}
-        >
-          {tool.categories.map((category, idx) => (
-            <Badge
-              key={idx}
-              variant="outline"
-              color="secondary"
+        {/* Action Buttons - Visible on Hover */}
+        {showActions && (
+          <div
+            style={{
+              position: "absolute",
+              top: theme.spacing[6],
+              right: theme.spacing[6],
+              display: "flex",
+              gap: theme.spacing[2],
+              zIndex: 10,
+            }}
+          >
+            {/* Test Button - Keeping it just in case */}
+            <Button
+              variant="ghost"
               size="sm"
-              pill
+              onClick={handleTest}
+              style={{
+                padding: theme.spacing[2],
+                color: theme.colors.primary[600],
+              }}
+              title="Test Tool"
             >
-              {category}
-            </Badge>
-          ))}
-        </div>
-      )}
-    </Card>
+              <Play size={18} />
+            </Button>
+
+            {/* Delete Button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleDeleteClick}
+              style={{
+                color: theme.colors.destructive[600],
+                padding: theme.spacing[2]
+              }}
+              title="Delete Tool"
+            >
+              <Trash2 size={18} />
+            </Button>
+          </div>
+        )}
+
+        {/* Tool Name */}
+        <h3 style={{
+          fontSize: theme.typography.fontSize.xl,
+          fontWeight: theme.typography.fontWeight.bold,
+          color: theme.colors.foreground,
+          margin: 0,
+          marginBottom: theme.spacing[2]
+        }}>
+          {tool.name}
+        </h3>
+
+        {/* Tool Description */}
+        <p style={{
+          fontSize: theme.typography.fontSize.base,
+          color: theme.colors.muted_foreground,
+          margin: 0,
+          marginBottom: theme.spacing[6],
+          lineHeight: 1.6,
+          maxWidth: "80%" // prevent text from hitting buttons on small screens
+        }}>
+          {tool.description}
+        </p>
+
+        {/* Tool Categories */}
+        {tool.categories && tool.categories.length > 0 && (
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: theme.spacing[2],
+            }}
+          >
+            {tool.categories.map((category, idx) => (
+              <span
+                key={idx}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "4px 12px",
+                  borderRadius: "9999px",
+                  fontSize: "11px",
+                  fontWeight: theme.typography.fontWeight.semibold,
+                  backgroundColor: "white",
+                  border: `1px solid ${theme.colors.neutral[300]}`,
+                  color: theme.colors.neutral[600],
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em"
+                }}
+              >
+                {category}
+              </span>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <DeleteResourceDialog
+        isOpen={showDeleteDialog}
+        onClose={() => setShowDeleteDialog(false)}
+        onConfirm={handleConfirmDelete}
+        title="Delete Tool"
+        resourceName={tool.name}
+        confirmationKeyword="DELETE"
+      />
+    </>
   )
 }

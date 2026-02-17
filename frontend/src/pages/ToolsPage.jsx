@@ -1,5 +1,8 @@
-import { useState, useMemo } from "react"
+
+import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
+import { useDispatch, useSelector } from "react-redux"
+import { fetchTools, setPage } from "@/store/slices/toolSlice"
 import { useTheme } from "@/context/ThemeContext"
 import Layout from "@/components/Layout"
 import Container from "@/components/Container"
@@ -8,122 +11,56 @@ import CardGrid from "@/components/CardGrid"
 import ToolCard from "@/components/ToolCard"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Chips } from "@/components/ui/chips"
-import { Combobox, ComboboxTrigger, ComboboxContent, ComboboxItem, ComboboxSearch } from "@/components/ui/combobox"
-import { 
-  Pagination, 
-  PaginationContent, 
-  PaginationItem, 
-  PaginationLink, 
-  PaginationEllipsis 
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationEllipsis
 } from "@/components/ui/pagination"
-import { Plus, Search, Check } from "lucide-react"
-
-/**
- * Fuzzy search helper
- * Checks if search query matches tool name or description
- */
-const fuzzySearch = (query, text) => {
-  if (!query) return true
-  const lowerQuery = query.toLowerCase()
-  const lowerText = text.toLowerCase()
-  return lowerText.includes(lowerQuery)
-}
+import { Plus, Search, Hammer } from "lucide-react"
+import useDebounce from "@/hooks/useDebounce"
+import { Empty } from "@/components/ui/empty"
+import { Toast, ToastContainer } from "@/components/ui/toast"
+import { Spinner } from "@/components/ui/spinner"
 
 export default function ToolsPage() {
   const theme = useTheme()
   const navigate = useNavigate()
-  
-  const [tools] = useState([
-    {
-      id: 1,
-      name: "Web Search",
-      description: "Search the internet for real-time information and web resources",
-      categories: ["READ"],
-    },
-    {
-      id: 2,
-      name: "Code Executor",
-      description: "Execute and run code snippets in multiple programming languages",
-      categories: ["WRITE", "DELETE"],
-    },
-    {
-      id: 3,
-      name: "File Manager",
-      description: "Manage and manipulate files with advanced operations",
-      categories: ["READ", "WRITE", "DELETE"],
-    },
-    {
-      id: 4,
-      name: "API Caller",
-      description: "Make HTTP requests to APIs and handle responses",
-      categories: ["READ", "WRITE"],
-    },
-    {
-      id: 5,
-      name: "Data Analyzer",
-      description: "Analyze, process, and visualize complex data sets",
-      categories: ["READ"],
-    },
-    {
-      id: 6,
-      name: "Image Processor",
-      description: "Process and manipulate images with various filters",
-      categories: ["UPDATE"],
-    },
-    {
-      id: 7,
-      name: "PDF Generator",
-      description: "Generate and convert documents to PDF format",
-      categories: ["WRITE"],
-    },
-    {
-      id: 8,
-      name: "Email Service",
-      description: "Send and manage emails programmatically",
-      categories: ["WRITE"],
-    },
-    {
-      id: 9,
-      name: "Database Manager",
-      description: "Query and manage database operations seamlessly",
-      categories: ["READ", "WRITE", "UPDATE", "DELETE"],
-    },
-    {
-      id: 10,
-      name: "Authentication",
-      description: "Handle user authentication and security operations",
-      categories: ["READ", "WRITE"],
-    },
-  ])
+  const dispatch = useDispatch()
+
+  const { items: tools, total: totalTools, page: currentPage, size: itemsPerPage, isLoading } = useSelector((state) => state.tools)
 
   const [searchQuery, setSearchQuery] = useState("")
-  const [selectedCategories, setSelectedCategories] = useState([])
-  const [currentPage, setCurrentPage] = useState(1)
-  const itemsPerPage = 6
+  const debouncedSearchQuery = useDebounce(searchQuery, 500)
 
-  // Filter tools based on search query and selected categories
-  const filteredTools = useMemo(() => {
-    return tools.filter(tool => {
-      const matchesSearch = fuzzySearch(searchQuery, `${tool.name} ${tool.description}`)
-      const matchesCategory = selectedCategories.length === 0 || 
-        selectedCategories.some(cat => tool.categories?.includes(cat))
-      return matchesSearch && matchesCategory
-    })
-  }, [searchQuery, selectedCategories, tools])
+  // Toast State
+  const [toasts, setToasts] = useState([])
+  const addToast = (title, description, variant = "info") => {
+    const id = Date.now().toString()
+    setToasts((prev) => [...prev, { id, title, description, variant }])
+    setTimeout(() => removeToast(id), 5000)
+  }
+  const removeToast = (id) => setToasts((prev) => prev.filter((t) => t.id !== id))
 
-  // Calculate pagination
-  const totalPages = Math.ceil(filteredTools.length / itemsPerPage)
-  const paginatedTools = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage
-    const endIndex = startIndex + itemsPerPage
-    return filteredTools.slice(startIndex, endIndex)
-  }, [filteredTools, currentPage])
+  useEffect(() => {
+    dispatch(fetchTools({
+      page: currentPage,
+      size: itemsPerPage,
+      search: debouncedSearchQuery
+    }))
+  }, [dispatch, currentPage, itemsPerPage, debouncedSearchQuery])
 
-  // Reset to page 1 when search query changes
+  useEffect(() => {
+    if (currentPage !== 1) {
+      dispatch(setPage(1))
+    }
+  }, [debouncedSearchQuery])
+
+  const totalPages = Math.ceil(totalTools / itemsPerPage)
+
   const handleSearchChange = (e) => {
     setSearchQuery(e.target.value)
-    setCurrentPage(1)
   }
 
   // Generate pagination buttons
@@ -140,7 +77,7 @@ export default function ToolsPage() {
     if (startPage > 1) {
       buttons.push(
         <PaginationItem key="first">
-          <PaginationLink onClick={() => setCurrentPage(1)}>1</PaginationLink>
+          <PaginationLink onClick={() => dispatch(setPage(1))}>1</PaginationLink>
         </PaginationItem>
       )
       if (startPage > 2) {
@@ -156,7 +93,7 @@ export default function ToolsPage() {
       buttons.push(
         <PaginationItem key={i}>
           <PaginationLink
-            onClick={() => setCurrentPage(i)}
+            onClick={() => dispatch(setPage(i))}
             isActive={currentPage === i}
           >
             {i}
@@ -175,7 +112,7 @@ export default function ToolsPage() {
       }
       buttons.push(
         <PaginationItem key="last">
-          <PaginationLink onClick={() => setCurrentPage(totalPages)}>
+          <PaginationLink onClick={() => dispatch(setPage(totalPages))}>
             {totalPages}
           </PaginationLink>
         </PaginationItem>
@@ -187,6 +124,19 @@ export default function ToolsPage() {
 
   return (
     <Layout>
+      {/* Toast Notifications */}
+      <ToastContainer position="top-center">
+        {toasts.map((toast) => (
+          <Toast
+            key={toast.id}
+            title={toast.title}
+            description={toast.description}
+            variant={toast.variant}
+            onDismiss={() => removeToast(toast.id)}
+          />
+        ))}
+      </ToastContainer>
+
       <Container>
         {/* Header with Title and Search */}
         <div style={{ marginBottom: theme.spacing[8] }}>
@@ -215,26 +165,39 @@ export default function ToolsPage() {
           </div>
 
           {/* Search Box */}
-          <div style={{ 
+          <div style={{
             maxWidth: "500px",
+            position: "relative"
           }}>
             <Input
               placeholder="Search tools..."
               value={searchQuery}
               onChange={handleSearchChange}
               leadingIcon={Search}
+              trailingIcon={isLoading && tools.length > 0 ? Spinner : undefined}
             />
           </div>
         </div>
 
-        {/* Tools Grid */}
-        {paginatedTools.length > 0 ? (
-          <>
+        {isLoading && tools.length === 0 ? (
+          <div style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            minHeight: "400px"
+          }}>
+            <Spinner size="lg" variant="primary" />
+          </div>
+        ) : tools.length > 0 ? (
+          <div style={{
+            opacity: isLoading ? 0.6 : 1,
+            transition: "opacity 0.2s ease-in-out"
+          }}>
             <CardGrid
-              items={paginatedTools}
+              items={tools}
               columns={3}
               gap={6}
-              renderCard={(tool) => <ToolCard tool={tool} />}
+              renderCard={(tool) => <ToolCard tool={tool} addToast={addToast} />}
             />
 
             {/* Pagination */}
@@ -245,7 +208,7 @@ export default function ToolsPage() {
                     {/* Previous Button */}
                     <PaginationItem>
                       <PaginationLink
-                        onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                        onClick={() => dispatch(setPage(Math.max(1, currentPage - 1)))}
                         disabled={currentPage === 1}
                       >
                         ← Previous
@@ -258,7 +221,7 @@ export default function ToolsPage() {
                     {/* Next Button */}
                     <PaginationItem>
                       <PaginationLink
-                        onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                        onClick={() => dispatch(setPage(Math.min(totalPages, currentPage + 1)))}
                         disabled={currentPage === totalPages}
                       >
                         Next →
@@ -268,17 +231,27 @@ export default function ToolsPage() {
                 </Pagination>
               </div>
             )}
-          </>
-        ) : (
-          <div style={{
-            textAlign: "center",
-            padding: theme.spacing[12],
-            color: theme.colors.muted_foreground,
-          }}>
-            <p style={{ fontSize: theme.typography.fontSize.lg }}>
-              No tools found matching your search.
-            </p>
           </div>
+        ) : (
+          <Empty
+            icon={Hammer}
+            title="No tools found"
+            description={
+              searchQuery
+                ? `No tools match your search "${searchQuery}".`
+                : "You haven't created any tools yet. Get started by creating your first tool."
+            }
+            action={
+              <Button
+                variant="primary"
+                size="md"
+                leadingIcon={Plus}
+                onClick={() => navigate("/create-tool")}
+              >
+                Create Tool
+              </Button>
+            }
+          />
         )}
       </Container>
     </Layout>

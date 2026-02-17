@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
-from typing import List
+from pydantic import field_validator
+from typing import List, Optional
 
 
 class Settings(BaseSettings):
@@ -29,15 +30,29 @@ class Settings(BaseSettings):
     
     # Server Configuration
     debug: bool = True
-    allowed_origins: List[str] = ["http://localhost:5173", "http://localhost:3000"]
+    # Server Configuration
+    debug: bool = True
+    # Change type to str | List[str] to allow pydantic-settings to read the raw string from env
+    # The validator will then convert it to a list
+    allowed_origins: str | List[str] = ["http://localhost:5173", "http://localhost:3000"]
     
     # Frontend
     frontend_url: str = "http://localhost:5173"
+    
+    # Encryption
+    encryption_key: Optional[str] = None
     
     @field_validator("allowed_origins", mode="before")
     @classmethod
     def parse_allowed_origins(cls, v):
         if isinstance(v, str):
+            # Check if it looks like a JSON list (starts with [)
+            if v.strip().startswith("["):
+                import json
+                try:
+                    return json.loads(v)
+                except json.JSONDecodeError:
+                    pass # Fallback to comma split
             return [origin.strip() for origin in v.split(",") if origin.strip()]
         return v
 

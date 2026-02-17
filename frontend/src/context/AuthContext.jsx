@@ -1,14 +1,27 @@
-import { createContext, useContext, useState, useEffect, useRef } from "react"
+import { createContext, useContext, useEffect, useRef } from "react"
+import { useDispatch, useSelector } from "react-redux"
+import {
+  login as loginAction,
+  signup as signupAction,
+  logout as logoutAction,
+  fetchCurrentUser,
+  verifyEmail as verifyEmailAction,
+  forgotPassword as forgotPasswordAction,
+  resetPassword as resetPasswordAction,
+  sendVerificationEmail as sendVerificationEmailAction
+} from "@/store/slices/authSlice"
+
+// Need to access authAPI for verifyEmailDev if it's not in slice? 
+// Actually verifyEmailDev is dev only, can keep it here or add to slice. 
+// For consistency, let's assume we might need to add it to slice or just call API directly here if it's simple.
 import { authAPI } from "@/services/api"
 
 const AuthContext = createContext({})
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null)
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState("")
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true)
+  const dispatch = useDispatch()
+  const { user, isAuthenticated, isLoading, isCheckingAuth, error, successMessage } = useSelector((state) => state.auth)
+
   const hasCheckedAuth = useRef(false)
 
   // Check if user is already logged in on mount
@@ -16,149 +29,85 @@ export function AuthProvider({ children }) {
     if (hasCheckedAuth.current) return
     hasCheckedAuth.current = true
 
-    const checkAuth = async () => {
-      try {
-        const response = await authAPI.getCurrentUser()
-        setUser(response.data.user)
-        setIsAuthenticated(true)
-        setError("")
-      } catch (err) {
-        // User is not authenticated, which is fine
-        setUser(null)
-        setIsAuthenticated(false)
-        setError("")
-      } finally {
-        setIsCheckingAuth(false)
-      }
-    }
+    dispatch(fetchCurrentUser())
+  }, [dispatch])
 
-    checkAuth()
-  }, [])
-
-  const signup = async (name, email, password) => {
-    setIsLoading(true)
-    setError("")
+  const login = async (email, password) => {
     try {
-      const response = await authAPI.signup(name, email, password)
-      return { success: true, message: response.data.message }
+      const resultAction = await dispatch(loginAction({ email, password }))
+      if (loginAction.fulfilled.match(resultAction)) {
+        return { success: true, message: "Logged in successfully" }
+      } else {
+        return { success: false, message: resultAction.payload || "Login failed" }
+      }
     } catch (err) {
-      const errorMessage = err.response?.data?.detail || "Signup failed"
-      setError(errorMessage)
-      return { success: false, message: errorMessage }
-    } finally {
-      setIsLoading(false)
+      return { success: false, message: "Login failed" }
     }
   }
 
-  const login = async (email, password) => {
-    setIsLoading(true)
-    setError("")
-    try {
-      const response = await authAPI.login(email, password)
-      setUser(response.data.user)
-      setIsAuthenticated(true)
-      return { success: true, message: "Logged in successfully" }
-    } catch (err) {
-      const errorMessage = err.response?.data?.detail || "Login failed"
-      setError(errorMessage)
-      setIsAuthenticated(false)
-      return { success: false, message: errorMessage }
-    } finally {
-      setIsLoading(false)
+  const signup = async (name, email, password) => {
+    const resultAction = await dispatch(signupAction({ name, email, password }))
+    if (signupAction.fulfilled.match(resultAction)) {
+      return { success: true, message: resultAction.payload }
+    } else {
+      return { success: false, message: resultAction.payload || "Signup failed" }
     }
   }
 
   const logout = async () => {
-    setIsLoading(true)
-    try {
-      await authAPI.logout()
-      setUser(null)
-      setIsAuthenticated(false)
-      setError("")
-      return { success: true }
-    } catch (err) {
-      return { success: false }
-    } finally {
-      setIsLoading(false)
-    }
+    await dispatch(logoutAction())
+    return { success: true }
   }
 
   const verifyEmail = async (token) => {
-    setIsLoading(true)
-    setError("")
-    try {
-      const response = await authAPI.verifyEmail(token)
-      setUser(response.data.user)
-      setIsAuthenticated(true)
-      return { success: true, message: response.data.message }
-    } catch (err) {
-      const errorMessage = err.response?.data?.detail || "Verification failed"
-      setError(errorMessage)
-      return { success: false, message: errorMessage }
-    } finally {
-      setIsLoading(false)
+    const resultAction = await dispatch(verifyEmailAction(token))
+    if (verifyEmailAction.fulfilled.match(resultAction)) {
+      return { success: true, message: resultAction.payload.message }
+    } else {
+      return { success: false, message: resultAction.payload || "Verification failed" }
     }
   }
 
+  // Keep dev helper here or add to slice. Slice is cleaner but this is dev only.
   const verifyEmailDev = async (email) => {
-    setIsLoading(true)
-    setError("")
     try {
+      // Direct API call since it's dev tool, or could dispatch verifyEmail action if it supported email
+      // But verifyEmail action expects token. 
+      // Let's just call API and manually update state if needed, or better, 
+      // since verifyEmailDev returns user, we can manually check auth again.
       const response = await authAPI.verifyEmailDev(email)
-      setUser(response.data.user)
-      setIsAuthenticated(true)
+      // We can create a manual action to set user, OR just refetch.
+      dispatch(fetchCurrentUser())
       return { success: true, message: response.data.message }
     } catch (err) {
-      const errorMessage = err.response?.data?.detail || "Verification failed"
-      setError(errorMessage)
-      return { success: false, message: errorMessage }
-    } finally {
-      setIsLoading(false)
+      return { success: false, message: err.response?.data?.detail || "Verification failed" }
     }
   }
 
   const sendVerificationEmail = async (email) => {
-    setIsLoading(true)
-    setError("")
-    try {
-      const response = await authAPI.sendVerificationEmail(email)
-      return { success: true, message: response.data.message }
-    } catch (err) {
-      const errorMessage = err.response?.data?.detail || "Failed to send verification email"
-      setError(errorMessage)
-      return { success: false, message: errorMessage }
-    } finally {
-      setIsLoading(false)
+    const resultAction = await dispatch(sendVerificationEmailAction(email))
+    if (sendVerificationEmailAction.fulfilled.match(resultAction)) {
+      return { success: true, message: resultAction.payload }
+    } else {
+      return { success: false, message: resultAction.payload || "Failed to send email" }
     }
   }
 
   const forgotPassword = async (email) => {
-    setIsLoading(true)
-    setError("")
-    try {
-      const response = await authAPI.forgotPassword(email)
-      return { success: true, message: response.data.message }
-    } catch (err) {
-      const errorMessage = err.response?.data?.detail || "Request failed"
-      setError(errorMessage)
-      return { success: false, message: errorMessage }
-    } finally {
-      setIsLoading(false)
+    const resultAction = await dispatch(forgotPasswordAction(email))
+    if (forgotPasswordAction.fulfilled.match(resultAction)) {
+      return { success: true, message: resultAction.payload }
+    } else {
+      return { success: false, message: resultAction.payload || "Request failed" }
     }
   }
 
   const resetPassword = async (token, newPassword) => {
-    setIsLoading(true)
-    setError("")
-    try {
-      const response = await authAPI.resetPassword(token, newPassword)
-      return { success: true, message: response.data.message }
-    } catch (err) {
-      const errorMessage = err.response?.data?.detail || "Reset failed"
-      setError(errorMessage)
-      return { success: false, message: errorMessage }
-    } finally {
-      setIsLoading(false)
+    const resultAction = await dispatch(resetPasswordAction({ token, newPassword }))
+    if (resetPasswordAction.fulfilled.match(resultAction)) {
+      return { success: true, message: resultAction.payload }
+    } else {
+      return { success: false, message: resultAction.payload || "Reset failed" }
     }
   }
 

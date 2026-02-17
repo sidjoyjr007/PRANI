@@ -9,12 +9,17 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Text } from "@/components/ui/text"
 import { Card } from "@/components/ui/card"
+import { Alert } from "@/components/ui/alert"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Chips } from "@/components/ui/chips"
 import { Combobox, ComboboxTrigger, ComboboxContent, ComboboxItem, ComboboxSearch } from "@/components/ui/combobox"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { Dialog, DialogTrigger, DialogPortal, DialogOverlay, DialogContent, DialogClose } from "@/components/ui/dialog"
-import { ChevronLeft, Check, Plus, Trash2, Eye, EyeOff, Settings, X } from "lucide-react"
+import { ChevronLeft, Check, Plus, Trash2, Eye, EyeOff, Settings, X, Globe, Lock } from "lucide-react"
+import { toolService } from "@/services/toolService"
+import { useDispatch, useSelector } from "react-redux"
+import { fetchToolById, createTool, updateTool, clearCurrentTool } from "@/store/slices/toolSlice"
+import { Toast, ToastContainer } from "@/components/ui/toast"
 
 const MOCK_TOOLS = [
   {
@@ -36,6 +41,11 @@ export default function CreateToolPage() {
   const navigate = useNavigate()
   const { toolId } = useParams()
 
+  /* Redux Hooks */
+  const dispatch = useDispatch()
+  const { currentTool, isSaving } = useSelector((state) => state.tools)
+
+  /* Local State */
   const [toolData, setToolData] = useState({
     id: null,
     name: "",
@@ -45,71 +55,251 @@ export default function CreateToolPage() {
     environmentVariables: [],
     categories: [],
   })
+  const [originalData, setOriginalData] = useState(null)
 
   const [isLoading, setIsLoading] = useState(!!toolId)
-  const [isSaving, setIsSaving] = useState(false)
-  const [errors, setErrors] = useState({})
   const [showEnvModal, setShowEnvModal] = useState(false)
   const [envVisibility, setEnvVisibility] = useState({})
 
+  // Toast State
+  const [toasts, setToasts] = useState([])
+
+  const addToast = (title, description, variant = "info") => {
+    const id = Date.now().toString()
+    setToasts((prev) => [...prev, { id, title, description, variant }])
+
+    // Auto remove after 5 seconds matching Toast component default
+    setTimeout(() => {
+      removeToast(id)
+    }, 5000)
+  }
+
+  const removeToast = (id) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id))
+  }
+
+  // Load tool data when editing
   useEffect(() => {
     if (toolId) {
-      const tool = MOCK_TOOLS.find(t => t.id === parseInt(toolId))
-      if (tool) {
-        setToolData(tool)
-        const visibility = {}
-        tool.environmentVariables?.forEach(env => {
-          visibility[env.id] = false
+      dispatch(fetchToolById(toolId))
+        .unwrap()
+        .then((tool) => {
+          // Map backend schema to frontend state
+          const mappedTool = {
+            id: tool.id,
+            name: tool.name,
+            description: tool.description,
+            code: tool.code,
+            categories: tool.categories || [],
+            // Map input fields (type -> dataType)
+            inputFields: (tool.input_fields || []).map((f, idx) => ({
+              id: idx,
+              name: f.name,
+              description: f.description,
+              dataType: f.type,
+              defaultValue: f.default,
+              required: f.required
+            })),
+            // Map env variables (env_var_defs -> list of keys)
+            environmentVariables: (tool.env_var_defs || []).map((e, idx) => ({
+              id: idx,
+              key: e.name,
+              value: "****************", // Dummy mask for visual
+              description: e.description,
+              isPassword: true,
+              isExisting: true
+            }))
+          }
+          setToolData(mappedTool)
+          setOriginalData(JSON.parse(JSON.stringify(mappedTool))) // Deep copy
+          // Initialize visibility
+          const visibility = {}
+          mappedTool.environmentVariables.forEach(env => {
+            visibility[env.id] = false
+          })
+          setEnvVisibility(visibility)
+          setIsLoading(false)
         })
-        setEnvVisibility(visibility)
-      } else {
-        alert("Tool not found")
-        navigate("/tools")
-      }
+        .catch((err) => {
+          console.error("Failed to fetch tool:", err)
+          addToast("Error", "Failed to load tool data", "error")
+          navigate("/tools")
+        })
+    } else {
+      // Clear current tool in redux when creating new
+      dispatch(clearCurrentTool())
       setIsLoading(false)
     }
-  }, [toolId, navigate])
+  }, [toolId, dispatch, navigate])
 
   const validateToolData = () => {
-    const newErrors = {}
+    // 1. Name Required
     if (!toolData.name || toolData.name.trim().length < 3) {
-      newErrors.name = "Tool name must be at least 3 characters"
+      addToast("Validation Error", "Tool name is required.", "error")
+      return false
     }
+
+    // 2. Description Required
     if (!toolData.description || toolData.description.trim().length < 10) {
-      newErrors.description = "Description must be at least 10 characters"
+      addToast("Validation Error", "Description is required.", "error")
+      return false
     }
-    if (!toolData.code || toolData.code.trim().length < 50) {
-      newErrors.code = "Code must be at least 50 characters"
+
+    // 3. Category Required
+    if (!toolData.categories || toolData.categories.length === 0) {
+      addToast("Validation Error", "Please select at least one tool category.", "error")
+      return false
     }
-    if (!toolData.code.includes("def execute_tool(inputs)")) {
-      newErrors.code = "Code must contain 'def execute_tool(inputs):' function"
+
+    // 4. Code Required
+    if (!toolData.code || !toolData.code.trim()) {
+      addToast("Validation Error", "Python code is required.", "error")
+      return false
     }
+    if (toolData.code && !toolData.code.includes("def execute_tool")) {
+      addToast("Validation Error", "Code must contain 'def execute_tool' function definition.", "error")
+      return false
+    }
+
+    // 5. Input Fields Validation
     if (toolData.inputFields.length > 0) {
-      toolData.inputFields.forEach((field, idx) => {
+      for (let idx = 0; idx < toolData.inputFields.length; idx++) {
+        const field = toolData.inputFields[idx]
         if (!field.name || !field.name.trim()) {
-          newErrors[`inputField_${idx}_name`] = "Field name is required"
+          addToast("Validation Error", `Input Field #${idx + 1}: Name is required.`, "error")
+          return false
         }
-      })
+        if (!field.description || !field.description.trim()) {
+          addToast("Validation Error", `Input Field #${idx + 1} (${field.name || 'Unnamed'}): Description is required.`, "error")
+          return false
+        }
+        if (!field.dataType) {
+          addToast("Validation Error", `Input Field #${idx + 1} (${field.name || 'Unnamed'}): Data type is required.`, "error")
+          return false
+        }
+      }
     }
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
+
+    // 6. Env Variables Validation
+    if (toolData.environmentVariables.length > 0) {
+      for (let idx = 0; idx < toolData.environmentVariables.length; idx++) {
+        const env = toolData.environmentVariables[idx]
+        if (!env.key || !env.key.trim()) {
+          addToast("Validation Error", `Env Variable #${idx + 1}: Key is required.`, "error")
+          return false
+        }
+
+        // Value required for NEW variables. Optional for EXISTING variables (empty = unchanged).
+        const isValueMissing = !env.value || !env.value.trim()
+        if (isValueMissing && !env.isExisting) {
+          addToast("Validation Error", `Env Variable #${idx + 1} (${env.key || 'Unnamed'}): Value is required for new variables.`, "error")
+          return false
+        }
+      }
+    }
+
+    return true
   }
 
   const handleSave = async () => {
     if (!validateToolData()) {
-      alert("Please fix the validation errors")
       return
     }
-    setIsSaving(true)
+
+    let payload = {}
+
+    // Prepare common structures
+    const inputFieldsMapped = toolData.inputFields.map(f => ({
+      name: f.name,
+      type: f.dataType,
+      description: f.description,
+      default: f.defaultValue,
+      required: f.required
+    }))
+
+    const envVarDefsMapped = toolData.environmentVariables.map(e => ({
+      name: e.key,
+      description: e.description || "Required environment variable",
+      required: true
+    }))
+
+    const secretsMapped = toolData.environmentVariables.reduce((acc, curr) => {
+      if (curr.value && curr.value.trim() !== "") {
+        // If it's the mask and it's an existing variable, SKIP it (don't update secret)
+        if (curr.value === "****************" && curr.isExisting) {
+          return acc
+        }
+        acc[curr.key] = curr.value
+      }
+      return acc
+    }, {})
+
+    if (toolData.id && originalData) {
+      // UPDATE: Check for changes
+      if (toolData.name !== originalData.name) payload.name = toolData.name
+      if (toolData.description !== originalData.description) payload.description = toolData.description
+      if (toolData.code !== originalData.code) payload.code = toolData.code
+
+      // Compare Lists (using JSON stringify for simple comparison)
+      if (JSON.stringify(toolData.categories.sort()) !== JSON.stringify(originalData.categories.sort())) {
+        payload.categories = toolData.categories
+      }
+
+      // Compare Input Fields (ignore internal UI IDs)
+      const originalInputs = originalData.inputFields.map(f => ({
+        name: f.name, type: f.dataType, description: f.description, default: f.defaultValue, required: f.required
+      }))
+      if (JSON.stringify(inputFieldsMapped) !== JSON.stringify(originalInputs)) {
+        payload.input_fields = inputFieldsMapped
+      }
+
+      // Compare Env Var Defs (ignore values/secrets, just keys/descriptions)
+      const originalEnvDefs = originalData.environmentVariables.map(e => ({
+        name: e.key, description: e.description || "Required environment variable", required: true
+      }))
+      if (JSON.stringify(envVarDefsMapped) !== JSON.stringify(originalEnvDefs)) {
+        payload.env_var_defs = envVarDefsMapped
+      }
+
+      // Secrets: Always include if we have new values
+      if (Object.keys(secretsMapped).length > 0) {
+        payload.secrets = secretsMapped
+      }
+
+      // If no changes, warn user? Or just return?
+      if (Object.keys(payload).length === 0) {
+        addToast("Info", "No changes detected.", "info")
+        return
+      }
+
+    } else {
+      // CREATE: Send full payload
+      payload = {
+        name: toolData.name,
+        description: toolData.description,
+        code: toolData.code,
+        categories: toolData.categories,
+        is_public: false,
+        input_fields: inputFieldsMapped,
+        env_var_defs: envVarDefsMapped,
+        secrets: secretsMapped
+      }
+    }
+
     try {
-      console.log(toolData.id ? "Tool updated:" : "Tool created:", toolData)
-      alert(toolData.id ? "Tool updated successfully!" : "Tool created successfully!")
-      navigate("/tools")
+      if (toolData.id) {
+        await dispatch(updateTool({ id: toolData.id, toolData: payload })).unwrap()
+        addToast("Success", "Tool updated successfully!", "success")
+      } else {
+        await dispatch(createTool(payload)).unwrap()
+        addToast("Success", "Tool created successfully!", "success")
+      }
+      // Delay navigation slightly to show success toast
+      setTimeout(() => navigate("/tools"), 1000)
     } catch (error) {
       console.error("Error saving tool:", error)
-      alert("Error saving tool. Please try again.")
-    } finally {
-      setIsSaving(false)
+      const errorMsg = typeof error === 'string' ? error : (error.detail || "Error saving tool")
+      addToast("Error", errorMsg, "error")
     }
   }
 
@@ -119,6 +309,19 @@ export default function CreateToolPage() {
 
   return (
     <Layout>
+      {/* Toast Notifications */}
+      <ToastContainer position="top-center">
+        {toasts.map((toast) => (
+          <Toast
+            key={toast.id}
+            title={toast.title}
+            description={toast.description}
+            variant={toast.variant}
+            onDismiss={() => removeToast(toast.id)}
+          />
+        ))}
+      </ToastContainer>
+
       <Container>
         {isLoading ? (
           <div style={{
@@ -222,6 +425,8 @@ export default function CreateToolPage() {
                     {toolData.description?.length || 0}/500 characters
                   </p>
                 </div>
+
+
               </Card>
 
               {/* Tool Categories Card */}
@@ -238,8 +443,8 @@ export default function CreateToolPage() {
 
                   {/* Add Category Button */}
                   <div style={{ width: "fit-content" }}>
-                    <Combobox 
-                      value="" 
+                    <Combobox
+                      value=""
                       onValueChange={(category) => {
                         if (category && !toolData.categories?.includes(category)) {
                           setToolData({
@@ -253,8 +458,8 @@ export default function CreateToolPage() {
                             categories: toolData.categories.filter(c => c !== category)
                           })
                         }
-                      }} 
-                      variant="default" 
+                      }}
+                      variant="default"
                       size="md"
                       multiselect={true}
                     >
@@ -482,7 +687,7 @@ export default function CreateToolPage() {
                     if (newFields.length <= 20) {
                       setToolData({ ...toolData, inputFields: newFields })
                     } else {
-                      alert("Maximum 20 input fields allowed")
+                      addToast("Limit Reached", "Maximum 20 input fields allowed", "warning")
                     }
                   }}
                 >
@@ -514,6 +719,18 @@ export default function CreateToolPage() {
                   >
                     Env Variables
                   </Button>
+                </div>
+
+                <div style={{ marginBottom: theme.spacing[4] }}>
+                  <Alert variant="filled" status="info">
+                    <Text size="sm">
+                      <strong>Required Function:</strong> Your code MUST define a function named <code>def execute_tool(...):</code> which accepts inputs and returns a result.
+                      <br />
+                      <strong>Environment Variables:</strong> Access environment variables defined below using the syntax <code>{"{{env.VARIABLE_NAME}}"}</code> within your code string.
+                      <br />
+                      <em>Example:</em> <code>api_key = "{"{{env.API_KEY}}"}"</code>
+                    </Text>
+                  </Alert>
                 </div>
                 <label style={{
                   display: "block",
@@ -604,7 +821,7 @@ export default function CreateToolPage() {
                         marginTop: theme.spacing[1],
                         margin: 0,
                       }}>
-                        Add sensitive configuration variables
+                        Add sensitive configuration variables. Use <code>{"{{env.KEY}}"}</code> to access them in your code.
                       </p>
                     </div>
                     <button
@@ -658,6 +875,7 @@ export default function CreateToolPage() {
                                   newVars[idx].key = e.target.value
                                   setToolData({ ...toolData, environmentVariables: newVars })
                                 }}
+                                disabled={envVar.isExisting}
                               />
                             </div>
 
@@ -682,6 +900,7 @@ export default function CreateToolPage() {
                                     newVars[idx].value = e.target.value
                                     setToolData({ ...toolData, environmentVariables: newVars })
                                   }}
+                                  disabled={envVar.isExisting}
                                 />
                                 <button
                                   onClick={() => toggleEnvVisibility(envVar.id)}
@@ -736,7 +955,7 @@ export default function CreateToolPage() {
                     onClick={() => {
                       const newVars = [
                         ...(toolData.environmentVariables || []),
-                        { id: Date.now(), key: "", value: "", isPassword: true }
+                        { id: Date.now(), key: "", value: "", isPassword: true, isExisting: false }
                       ]
                       if (newVars.length <= 20) {
                         setToolData({ ...toolData, environmentVariables: newVars })
