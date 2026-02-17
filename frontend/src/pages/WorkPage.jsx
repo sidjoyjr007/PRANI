@@ -1,5 +1,6 @@
-import { useState } from "react"
-import { Send, Plus, ChevronDown } from "lucide-react"
+import { useState, useEffect, useRef } from "react"
+import { Send, Plus, ChevronDown, Logs, User, Bot, Check, X, MoreHorizontal, Edit, Trash } from "lucide-react"
+import { useNavigate } from "react-router-dom"
 import { useTheme } from "@/context/ThemeContext"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
@@ -8,13 +9,20 @@ import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Text } from "@/components/ui/text"
 import { Separator } from "@/components/ui/separator"
+import { Dropdown, DropdownTrigger, DropdownContent, DropdownItem, DropdownSeparator } from "@/components/ui/dropdown"
 import Layout from "@/components/Layout"
 
 export default function WorkPage() {
   const theme = useTheme()
+  const navigate = useNavigate()
+  const messagesEndRef = useRef(null)
+  const messagesContainerRef = useRef(null)
   const [messages, setMessages] = useState([])
   const [inputValue, setInputValue] = useState("")
   const [selectedAgent, setSelectedAgent] = useState("")
+  const [streamingIndex, setStreamingIndex] = useState(null) // Track which message is streaming
+  const [messageActions, setMessageActions] = useState({}) // Track which messages show action buttons
+  const [isScrolledToBottom, setIsScrolledToBottom] = useState(true) // Track if user is at bottom
   const [conversations, setConversations] = useState([
     { id: 1, title: "Project Planning", date: "Today" },
     { id: 2, title: "Design Feedback", date: "Yesterday" },
@@ -29,11 +37,87 @@ export default function WorkPage() {
     { id: 3, name: "Llama 2 70B", provider: "Meta" },
   ]
 
+  const botResponses = [
+    "I've analyzed your requirements. This approach should improve performance by 30%.",
+    "Based on the current codebase, I suggest refactoring the authentication module for better scalability.",
+    "I found a potential security issue in the API endpoint. Would you like me to suggest fixes?",
+    "The implementation looks good. I recommend adding unit tests for edge cases.",
+    "I've reviewed the architecture. Consider adding caching to optimize database queries.",
+  ]
+
+  const botActionsResponses = [
+    "Ready to refactor the authentication module. Should I proceed with the changes?",
+    "I can create unit tests for the API endpoints. Do you want me to generate them?",
+    "I suggest applying the security patch to the endpoint. Shall I implement it?",
+    "I can optimize the database queries by adding indexes. Should I proceed?",
+    "Ready to add caching layer to improve response time. Approve this change?",
+  ]
+
   const handleSendMessage = () => {
     if (inputValue.trim()) {
-      setMessages([...messages, { text: inputValue, sender: "user" }])
+      const userMessage = { text: inputValue, sender: "user" }
+      setMessages([...messages, userMessage])
       setInputValue("")
+      
+      // Simulate bot response streaming after a short delay
+      setTimeout(() => {
+        // Randomly decide if this response needs user action (50% chance)
+        const needsAction = Math.random() > 0.5
+        const responseList = needsAction ? botActionsResponses : botResponses
+        const randomBotMessage = responseList[Math.floor(Math.random() * responseList.length)]
+        
+        const newMessages = [...messages, userMessage, { text: "", sender: "bot", needsAction }]
+        setMessages(newMessages)
+        
+        // Stream the message character by character
+        const messageIndex = newMessages.length - 1
+        setStreamingIndex(messageIndex)
+        
+        let charIndex = 0
+        const streamInterval = setInterval(() => {
+          if (charIndex < randomBotMessage.length) {
+            setMessages(prev => {
+              const updated = [...prev]
+              updated[messageIndex].text = randomBotMessage.slice(0, charIndex + 1)
+              return updated
+            })
+            charIndex++
+          } else {
+            clearInterval(streamInterval)
+            setStreamingIndex(null)
+            
+            // Show action buttons only if this message needs user action
+            if (needsAction) {
+              setTimeout(() => {
+                setMessageActions(prev => ({ ...prev, [messageIndex]: true }))
+              }, 500)
+            }
+          }
+        }, 30) // Stream 30ms per character
+      }, 500)
     }
+  }
+
+  // Auto-scroll to bottom when new messages arrive (but not while streaming to avoid flicker)
+  useEffect(() => {
+    if (isScrolledToBottom && streamingIndex === null) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    }
+  }, [messages, isScrolledToBottom, streamingIndex])
+
+  // Detect scroll position
+  const handleScroll = () => {
+    if (!messagesContainerRef.current) return
+    
+    const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 100 // 100px threshold
+    setIsScrolledToBottom(isAtBottom)
+  }
+
+  // Scroll to latest message
+  const scrollToBottom = () => {
+    setIsScrolledToBottom(true)
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }
 
   return (
@@ -62,39 +146,94 @@ export default function WorkPage() {
           </div>
 
           <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", gap: theme.spacing[2] }}>
-            {conversations.map((conv) => (
-              <button
+            {conversations.map((conv) => {
+              const [isHovered, setIsHovered] = useState(false)
+              return (
+              <div
                 key={conv.id}
-                onClick={() => setActiveConversation(conv.id)}
                 style={{
-                  padding: `${theme.spacing[3]} ${theme.spacing[4]}`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: `${theme.spacing[3]} 0`,
                   backgroundColor: activeConversation === conv.id ? theme.colors.primary[600] : "transparent",
-                  color: activeConversation === conv.id ? theme.colors.white : theme.colors.foreground,
-                  border: "none",
                   borderRadius: theme.borderRadius.md,
                   cursor: "pointer",
-                  textAlign: "left",
                   transition: theme.transitions.normal,
                 }}
                 onMouseEnter={(e) => {
+                  setIsHovered(true)
                   if (activeConversation !== conv.id) {
                     e.currentTarget.style.backgroundColor = theme.colors.neutral[100]
                   }
                 }}
                 onMouseLeave={(e) => {
+                  setIsHovered(false)
                   if (activeConversation !== conv.id) {
                     e.currentTarget.style.backgroundColor = "transparent"
                   }
                 }}
               >
-                <Text as="div" variant="body" size="sm" style={{ fontWeight: theme.typography.fontWeight.medium, margin: 0 }}>
-                  {conv.title}
-                </Text>
-                <Text as="div" variant="muted" size="xs" style={{ marginTop: theme.spacing[1], opacity: theme.opacity.disabled, margin: 0 }}>
-                  {conv.date}
-                </Text>
-              </button>
-            ))}
+                <button
+                  onClick={() => setActiveConversation(conv.id)}
+                  style={{
+                    flex: 1,
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    padding: `0 ${theme.spacing[4]}`,
+                  }}
+                >
+                  <Text as="div" variant="body" size="sm" style={{ fontWeight: theme.typography.fontWeight.medium, margin: 0, color: activeConversation === conv.id ? theme.colors.white : theme.colors.foreground }}>
+                    {conv.title}
+                  </Text>
+                </button>
+
+                {/* Dropdown Menu - Only visible on hover */}
+                {isHovered && (
+                  <Dropdown>
+                    <DropdownTrigger asChild>
+                      <button
+                        style={{
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          padding: `0 ${theme.spacing[4]}`,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: activeConversation === conv.id ? theme.colors.white : theme.colors.foreground,
+                        }}
+                      >
+                        <MoreHorizontal size={16} />
+                      </button>
+                    </DropdownTrigger>
+                    <DropdownContent align="end">
+                      <DropdownItem 
+                        leadingIcon={Edit}
+                        onClick={() => console.log("Rename:", conv.title)}
+                      >
+                        Rename
+                      </DropdownItem>
+                      <DropdownSeparator />
+                      <DropdownItem 
+                        variant="destructive"
+                        leadingIcon={Trash}
+                        onClick={() => {
+                          setConversations(conversations.filter(c => c.id !== conv.id))
+                          if (activeConversation === conv.id) {
+                            setActiveConversation(null)
+                          }
+                        }}
+                      >
+                        Delete
+                      </DropdownItem>
+                    </DropdownContent>
+                  </Dropdown>
+                )}
+              </div>
+            )})}
           </div>
         </div>
 
@@ -112,29 +251,133 @@ export default function WorkPage() {
           }}
         >
           {/* Messages Area */}
-          <div style={{ flex: 1, overflow: "auto", marginBottom: theme.spacing[6], display: "flex", flexDirection: "column", gap: theme.spacing[4], padding: `${theme.spacing[4]} 0` }}>
+          <div 
+            ref={messagesContainerRef}
+            onScroll={handleScroll}
+            style={{ flex: 1, overflow: "auto", marginBottom: theme.spacing[6], display: "flex", flexDirection: "column", gap: theme.spacing[4], padding: `${theme.spacing[4]} 0`, position: "relative" }}>
             {messages.length === 0 ? (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: theme.colors.muted_foreground }}>
                 Start a conversation
               </div>
             ) : (
               messages.map((msg, idx) => (
-                <div key={idx} style={{ textAlign: msg.sender === "user" ? "right" : "left" }}>
-                  <div
-                    style={{
-                      display: "inline-block",
-                      backgroundColor: msg.sender === "user" ? theme.colors.primary[600] : theme.colors.muted,
-                      color: msg.sender === "user" ? theme.colors.white : theme.colors.foreground,
-                      padding: `${theme.spacing[2]} ${theme.spacing[4]}`,
-                      borderRadius: theme.borderRadius.md,
-                      maxWidth: "80%",
-                      wordWrap: "break-word",
-                    }}
-                  >
-                    {msg.text}
+                <div key={idx} style={{ display: "flex", alignItems: "flex-end", gap: theme.spacing[3], marginBottom: theme.spacing[3], justifyContent: msg.sender === "user" ? "flex-end" : "flex-start", flexDirection: msg.sender === "user" ? "row" : "row" }}>
+                  {/* Avatar Icon - Bot on left, User on right */}
+                  {msg.sender === "bot" && (
+                    <div style={{
+                      width: "36px",
+                      height: "36px",
+                      borderRadius: "50%",
+                      backgroundColor: theme.colors.neutral[700],
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}>
+                      <Bot size={18} style={{ color: theme.colors.white }} />
+                    </div>
+                  )}
+
+                  {/* Message Content */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: theme.spacing[2], maxWidth: "70%", alignItems: msg.sender === "user" ? "flex-end" : "flex-start" }}>
+                    {/* Message Bubble */}
+                    <div
+                      style={{
+                        backgroundColor: msg.sender === "user" ? theme.colors.primary[600] : theme.colors.card,
+                        border: msg.sender === "user" ? `${theme.borderWidth.sm} solid ${theme.colors.primary[700]}` : `${theme.borderWidth.sm} solid ${theme.colors.border}`,
+                        color: msg.sender === "user" ? theme.colors.white : theme.colors.foreground,
+                        padding: `${theme.spacing[3]} ${theme.spacing[4]}`,
+                        borderRadius: theme.borderRadius.lg,
+                        wordWrap: "break-word",
+                        whiteSpace: "pre-wrap",
+                        boxShadow: msg.sender === "user" ? theme.shadows.lg : theme.shadows.sm,
+                        transition: `all ${theme.transitions.normal}`,
+                      }}
+                    >
+                      <Text as="p" size="sm" style={{ margin: 0, fontWeight: msg.sender === "user" ? theme.typography.fontWeight.medium : theme.typography.fontWeight.normal }}>
+                        {msg.text}
+                      </Text>
+                    </div>
+
+                    {/* Bot Action Buttons - Show only after streaming delay */}
+                    {msg.sender === "bot" && messageActions[idx] && (
+                      <div style={{ display: "flex", gap: theme.spacing[2], animation: `fadeIn ${theme.transitions.normal}` }}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          leadingIcon={Check}
+                          onClick={() => console.log("Approved:", msg.text)}
+                          style={{
+                            color: theme.colors.success.DEFAULT,
+                            borderColor: theme.colors.success.DEFAULT,
+                            padding: `${theme.spacing[1]} ${theme.spacing[3]}`,
+                            fontSize: theme.typography.fontSize.xs,
+                          }}
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          leadingIcon={X}
+                          onClick={() => console.log("Rejected:", msg.text)}
+                          style={{
+                            color: theme.colors.destructive,
+                            borderColor: theme.colors.destructive,
+                            padding: `${theme.spacing[1]} ${theme.spacing[3]}`,
+                            fontSize: theme.typography.fontSize.xs,
+                          }}
+                        >
+                          Reject
+                        </Button>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Avatar Icon - User on right */}
+                  {msg.sender === "user" && (
+                    <div style={{
+                      width: "36px",
+                      height: "36px",
+                      borderRadius: "50%",
+                      backgroundColor: theme.colors.primary[600],
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}>
+                      <User size={18} style={{ color: theme.colors.white }} />
+                    </div>
+                  )}
                 </div>
               ))
+            )}
+            <div ref={messagesEndRef} style={{ height: 0 }} />
+            
+            {/* Scroll Down Button */}
+            {!isScrolledToBottom && messages.length > 0 && (
+              <Button
+                onClick={scrollToBottom}
+                variant="primary"
+                size="sm"
+                style={{
+                  position: "absolute",
+                  bottom: theme.spacing[6],
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  borderRadius: "50%",
+                  width: "40px",
+                  height: "40px",
+                  padding: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  boxShadow: theme.shadows.lg,
+                  zIndex: 10,
+                }}
+              >
+                <ChevronDown size={20} />
+              </Button>
             )}
           </div>
 
@@ -143,21 +386,23 @@ export default function WorkPage() {
             position: "relative",
             backgroundColor: theme.colors.card,
             border: `${theme.borderWidth.sm} solid ${theme.colors.border}`,
-            borderRadius: theme.borderRadius.xxl,
-            boxShadow: theme.shadows.lg,
-            overflow: "visible",
+            borderRadius: theme.borderRadius.lg,
+            boxShadow: theme.shadows.md,
+            overflow: "hidden",
             outline: "2px solid transparent",
             outlineOffset: "-2px",
-            transition: `outline ${theme.transitions.fast}`,
+            transition: `all ${theme.transitions.normal}`,
             display: "flex",
             flexDirection: "column",
             maxHeight: "500px",
           }}
           onFocus={(e) => {
             e.currentTarget.style.outline = `2px solid ${theme.colors.primary[500]}`
+            e.currentTarget.style.boxShadow = theme.shadows.lg
           }}
           onBlur={(e) => {
             e.currentTarget.style.outline = "2px solid transparent"
+            e.currentTarget.style.boxShadow = theme.shadows.md
           }}
           tabIndex={0}
           >
@@ -174,16 +419,16 @@ export default function WorkPage() {
               rows={2}
               placeholder="Write a message..."
               style={{
-                padding: theme.spacing[6],
+                padding: `${theme.spacing[4]} ${theme.spacing[5]}`,
                 backgroundColor: "transparent",
                 color: theme.colors.foreground,
                 resize: "none",
                 border: "none",
                 outline: "none",
                 fontFamily: "inherit",
-                fontSize: "1rem",
+                fontSize: theme.typography.fontSize.sm,
                 overflowY: "auto",
-                lineHeight: "1.5",
+                lineHeight: "1.6",
               }}
               onInput={(e) => {
                 // Auto-grow textarea up to 6 rows, then enable scrolling
@@ -326,6 +571,17 @@ export default function WorkPage() {
               )}
             </TabsContent>
           </Tabs>
+
+          {/* Check Logs Button */}
+          <Button
+            variant="outline"
+            size="md"
+            leadingIcon={Logs}
+            onClick={() => navigate("/logs")}
+            style={{ marginTop: theme.spacing[6], width: "100%" }}
+          >
+            Check Logs
+          </Button>
         </div>
       </div>
     </Layout>

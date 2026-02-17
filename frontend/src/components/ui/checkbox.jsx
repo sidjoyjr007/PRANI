@@ -30,8 +30,15 @@ const Checkbox = React.forwardRef(({
   ...props 
 }, ref) => {
   const theme = useTheme()
-  const [isChecked, setIsChecked] = React.useState(controlledChecked || defaultChecked || false)
+  const [isChecked, setIsChecked] = React.useState(controlledChecked !== undefined ? controlledChecked : defaultChecked || false)
   const [isHovering, setIsHovering] = React.useState(false)
+
+  // Sync with controlled prop
+  React.useEffect(() => {
+    if (controlledChecked !== undefined) {
+      setIsChecked(controlledChecked)
+    }
+  }, [controlledChecked])
 
   const handleChange = (e) => {
     setIsChecked(e.target.checked)
@@ -136,7 +143,14 @@ const Checkbox = React.forwardRef(({
       <button
         type="button"
         disabled={disabled}
-        onClick={() => !disabled && setIsChecked(!isChecked)}
+        onClick={() => {
+          if (!disabled) {
+            const newChecked = !isChecked
+            setIsChecked(newChecked)
+            // Call onChange with synthetic event
+            onChange?.({ target: { checked: newChecked } })
+          }
+        }}
         onMouseEnter={() => !disabled && setIsHovering(true)}
         onMouseLeave={() => setIsHovering(false)}
         style={containerStyle || {
@@ -196,6 +210,13 @@ const Checkbox = React.forwardRef(({
       />
       <div
         style={checkboxStyle}
+        onClick={() => {
+          if (!disabled) {
+            const newChecked = !isChecked
+            setIsChecked(newChecked)
+            onChange?.({ target: { checked: newChecked } })
+          }
+        }}
         onMouseEnter={() => !disabled && setIsHovering(true)}
         onMouseLeave={() => setIsHovering(false)}
       >

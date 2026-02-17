@@ -3,11 +3,14 @@ import { useTheme } from "@/context/ThemeContext"
 import { useNavigate } from "react-router-dom"
 import { Card } from "@/components/ui/card"
 import { Text } from "@/components/ui/text"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Trash2, Play } from "lucide-react"
 
-export default function ToolCard({ tool }) {
+/**
+ * MCPServerCard Component
+ * Displays MCP server information with test and delete actions
+ */
+export default function MCPServerCard({ server }) {
   const theme = useTheme()
   const navigate = useNavigate()
   const [showActions, setShowActions] = React.useState(false)
@@ -15,16 +18,16 @@ export default function ToolCard({ tool }) {
   const handleDelete = (e) => {
     e.stopPropagation()
     // TODO: Implement delete functionality
-    console.log("Delete tool:", tool.id)
+    console.log("Delete MCP server:", server.id)
   }
 
   const handleTest = (e) => {
     e.stopPropagation()
-    // Navigate to tool test page
-    navigate(`/test-tool/${tool.id}`)
+    // TODO: Implement test functionality
+    console.log("Test MCP server:", server.id)
   }
 
-  if (!tool) return null
+  if (!server) return null
 
   return (
     <Card
@@ -43,7 +46,7 @@ export default function ToolCard({ tool }) {
         boxShadow: `0 1px 3px 0 ${theme.colors.shadow}20`,
         position: "relative",
       }}
-      onClick={() => navigate(`/edit-tool/${tool.id}`)}
+      onClick={() => navigate(`/edit-mcp-server/${server.id}`)}
       onMouseEnter={(e) => {
         e.currentTarget.style.boxShadow = theme.shadows.lg
         e.currentTarget.style.transform = "translateY(-2px)"
@@ -79,7 +82,7 @@ export default function ToolCard({ tool }) {
               padding: theme.spacing[2],
               color: theme.colors.primary[600],
             }}
-            title="Test Tool"
+            title="Test MCP Server"
           >
             <Play size={18} />
           </Button>
@@ -96,14 +99,14 @@ export default function ToolCard({ tool }) {
               padding: theme.spacing[2],
               color: theme.colors.destructive[600],
             }}
-            title="Delete Tool"
+            title="Delete MCP Server"
           >
             <Trash2 size={18} />
           </Button>
         </div>
       )}
 
-      {/* Tool Name */}
+      {/* Server Name */}
       <Text
         as="h3"
         variant="label"
@@ -114,10 +117,10 @@ export default function ToolCard({ tool }) {
           fontWeight: theme.typography.fontWeight.semibold,
         }}
       >
-        {tool.name}
+        {server.name}
       </Text>
 
-      {/* Tool Description */}
+      {/* Server Description */}
       <Text
         as="p"
         variant="body"
@@ -129,32 +132,44 @@ export default function ToolCard({ tool }) {
           lineHeight: theme.typography.lineHeight.relaxed,
         }}
       >
-        {tool.description}
+        {server.description}
       </Text>
 
-      {/* Tool Categories */}
-      {tool.categories && tool.categories.length > 0 && (
-        <div
+      {/* Server URL */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: theme.spacing[1],
+          marginTop: theme.spacing[2],
+        }}
+      >
+        <Text
+          as="p"
+          variant="body"
+          size="xs"
           style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: theme.spacing[2],
-            marginTop: theme.spacing[2],
+            margin: 0,
+            color: theme.colors.muted_foreground,
+            fontWeight: theme.typography.fontWeight.semibold,
           }}
         >
-          {tool.categories.map((category, idx) => (
-            <Badge
-              key={idx}
-              variant="outline"
-              color="secondary"
-              size="sm"
-              pill
-            >
-              {category}
-            </Badge>
-          ))}
-        </div>
-      )}
+          URL
+        </Text>
+        <Text
+          as="p"
+          variant="body"
+          size="xs"
+          style={{
+            margin: 0,
+            color: theme.colors.foreground,
+            fontFamily: "monospace",
+            wordBreak: "break-all",
+          }}
+        >
+          {server.url}
+        </Text>
+      </div>
     </Card>
   )
 }

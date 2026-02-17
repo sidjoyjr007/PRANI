@@ -20,7 +20,7 @@ export default function Layout({ children }) {
     { id: "agents", icon: Bot, label: "Agents", route: "/agents" },
     { id: "tools", icon: Wrench, label: "Tools", route: "/tools" },
     { id: "mcp", icon: Network, label: "MCP", route: "/mcp-servers" },
-    { id: "llm", icon: Brain, label: "LLM", route: "/llm" },
+    { id: "llm", icon: Brain, label: "LLM", route: "/llms" },
   ]
 
   const handleLogout = async () => {

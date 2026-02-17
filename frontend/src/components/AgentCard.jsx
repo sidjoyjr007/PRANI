@@ -5,9 +5,13 @@ import { Card } from "@/components/ui/card"
 import { Text } from "@/components/ui/text"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Trash2, Play } from "lucide-react"
+import { Trash2 } from "lucide-react"
 
-export default function ToolCard({ tool }) {
+/**
+ * AgentCard Component
+ * Displays agent information with tool and MCP server counts
+ */
+export default function AgentCard({ agent }) {
   const theme = useTheme()
   const navigate = useNavigate()
   const [showActions, setShowActions] = React.useState(false)
@@ -15,16 +19,10 @@ export default function ToolCard({ tool }) {
   const handleDelete = (e) => {
     e.stopPropagation()
     // TODO: Implement delete functionality
-    console.log("Delete tool:", tool.id)
+    console.log("Delete agent:", agent.id)
   }
 
-  const handleTest = (e) => {
-    e.stopPropagation()
-    // Navigate to tool test page
-    navigate(`/test-tool/${tool.id}`)
-  }
-
-  if (!tool) return null
+  if (!agent) return null
 
   return (
     <Card
@@ -43,7 +41,7 @@ export default function ToolCard({ tool }) {
         boxShadow: `0 1px 3px 0 ${theme.colors.shadow}20`,
         position: "relative",
       }}
-      onClick={() => navigate(`/edit-tool/${tool.id}`)}
+      onClick={() => navigate(`/edit-agent/${agent.id}`)}
       onMouseEnter={(e) => {
         e.currentTarget.style.boxShadow = theme.shadows.lg
         e.currentTarget.style.transform = "translateY(-2px)"
@@ -55,7 +53,7 @@ export default function ToolCard({ tool }) {
         setShowActions(false)
       }}
     >
-      {/* Action Buttons - Visible on Hover */}
+      {/* Delete Button - Visible on Hover */}
       {showActions && (
         <div
           style={{
@@ -67,23 +65,6 @@ export default function ToolCard({ tool }) {
             zIndex: 10,
           }}
         >
-          {/* Test Button */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleTest}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: theme.spacing[2],
-              color: theme.colors.primary[600],
-            }}
-            title="Test Tool"
-          >
-            <Play size={18} />
-          </Button>
-
           {/* Delete Button */}
           <Button
             variant="ghost"
@@ -96,14 +77,14 @@ export default function ToolCard({ tool }) {
               padding: theme.spacing[2],
               color: theme.colors.destructive[600],
             }}
-            title="Delete Tool"
+            title="Delete Agent"
           >
             <Trash2 size={18} />
           </Button>
         </div>
       )}
 
-      {/* Tool Name */}
+      {/* Agent Name */}
       <Text
         as="h3"
         variant="label"
@@ -114,10 +95,10 @@ export default function ToolCard({ tool }) {
           fontWeight: theme.typography.fontWeight.semibold,
         }}
       >
-        {tool.name}
+        {agent.name}
       </Text>
 
-      {/* Tool Description */}
+      {/* Agent Description */}
       <Text
         as="p"
         variant="body"
@@ -129,11 +110,11 @@ export default function ToolCard({ tool }) {
           lineHeight: theme.typography.lineHeight.relaxed,
         }}
       >
-        {tool.description}
+        {agent.description}
       </Text>
 
-      {/* Tool Categories */}
-      {tool.categories && tool.categories.length > 0 && (
+      {/* Agent Capabilities */}
+      {agent.capabilities && agent.capabilities.length > 0 && (
         <div
           style={{
             display: "flex",
@@ -142,7 +123,7 @@ export default function ToolCard({ tool }) {
             marginTop: theme.spacing[2],
           }}
         >
-          {tool.categories.map((category, idx) => (
+          {agent.capabilities.map((capability, idx) => (
             <Badge
               key={idx}
               variant="outline"
@@ -150,11 +131,81 @@ export default function ToolCard({ tool }) {
               size="sm"
               pill
             >
-              {category}
+              {capability}
             </Badge>
           ))}
         </div>
       )}
+
+      {/* Counts Section */}
+      <div
+        style={{
+          display: "flex",
+          gap: theme.spacing[4],
+          paddingTop: theme.spacing[4],
+          borderTop: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
+        }}
+      >
+        {/* Tools Count */}
+        <div style={{ flex: 1 }}>
+          <Text
+            as="p"
+            size="xs"
+            style={{
+              margin: 0,
+              color: theme.colors.muted_foreground,
+              textTransform: "uppercase",
+              fontSize: theme.typography.fontSize.xs,
+              fontWeight: theme.typography.fontWeight.semibold,
+              letterSpacing: "0.05em",
+            }}
+          >
+            Tools
+          </Text>
+          <Text
+            as="p"
+            size="lg"
+            style={{
+              margin: `${theme.spacing[1]} 0 0 0`,
+              color: theme.colors.foreground,
+              fontWeight: theme.typography.fontWeight.bold,
+              fontSize: theme.typography.fontSize.lg,
+            }}
+          >
+            {agent.toolsCount || 0}
+          </Text>
+        </div>
+
+        {/* MCP Servers Count */}
+        <div style={{ flex: 1 }}>
+          <Text
+            as="p"
+            size="xs"
+            style={{
+              margin: 0,
+              color: theme.colors.muted_foreground,
+              textTransform: "uppercase",
+              fontSize: theme.typography.fontSize.xs,
+              fontWeight: theme.typography.fontWeight.semibold,
+              letterSpacing: "0.05em",
+            }}
+          >
+            MCP Servers
+          </Text>
+          <Text
+            as="p"
+            size="lg"
+            style={{
+              margin: `${theme.spacing[1]} 0 0 0`,
+              color: theme.colors.foreground,
+              fontWeight: theme.typography.fontWeight.bold,
+              fontSize: theme.typography.fontSize.lg,
+            }}
+          >
+            {agent.mcpServersCount || 0}
+          </Text>
+        </div>
+      </div>
     </Card>
   )
 }

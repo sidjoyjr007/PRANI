@@ -125,7 +125,7 @@ const Textarea = React.forwardRef(({
               fontFamily: "inherit",
               backgroundColor: currentVariant.bgColor,
               color: theme.colors.foreground,
-              border: "none",
+              border: `${currentVariant.borderWidth} solid ${currentVariant.borderColor}`,
               borderRadius: currentVariant.borderRadius,
               transition: "all 250ms ease",
               resize: "vertical",

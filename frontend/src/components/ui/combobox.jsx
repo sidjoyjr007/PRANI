@@ -48,6 +48,7 @@ const Combobox = React.forwardRef(({
   variant = "default",
   size = "md",
   disabled = false,
+  multiselect = false,
   ...props
 }, ref) => {
   const [isOpen, setIsOpen] = React.useState(false)
@@ -59,8 +60,10 @@ const Combobox = React.forwardRef(({
   const handleValueChange = (newValue) => {
     setSelectedValue(newValue)
     onValueChange?.(newValue)
-    setIsOpen(false)
-    setSearchValue("")
+    if (!multiselect) {
+      setIsOpen(false)
+      setSearchValue("")
+    }
   }
 
   // Close on escape
@@ -88,6 +91,7 @@ const Combobox = React.forwardRef(({
       variant,
       size,
       disabled,
+      multiselect,
     }}>
       <div ref={ref} style={{ position: "relative", width: "100%" }} className={className} {...props}>
         {children}
@@ -314,7 +318,7 @@ const ComboboxItem = React.forwardRef(({
   ...props
 }, ref) => {
   const theme = useTheme()
-  const { value: selectedValue, handleValueChange, searchValue } = React.useContext(ComboboxContext)
+  const { value: selectedValue, handleValueChange, searchValue, multiselect } = React.useContext(ComboboxContext)
   const isSelected = selectedValue === value
   const [isHovering, setIsHovering] = React.useState(false)
 
@@ -413,7 +417,7 @@ const ComboboxItem = React.forwardRef(({
         )}
       </div>
 
-      {isSelected && (
+      {!multiselect && isSelected && (
         <div style={{
           width: "20px",
           height: "20px",

@@ -4,12 +4,18 @@ import { useTheme } from "@/context/ThemeContext"
  * Card Grid Component
  * Reusable grid layout for displaying card-based content
  */
-export default function CardGrid({ items, renderCard, columns = 3, gap = 8 }) {
+export default function CardGrid({ items = [], renderCard, columns = 3, gap = 8 }) {
   const theme = useTheme()
+
+  if (!items || items.length === 0) {
+    return null
+  }
 
   const gridTemplateColumns = columns === "auto" 
     ? "repeat(auto-fill, minmax(300px, 1fr))"
-    : `repeat(${columns}, 1fr)`
+    : columns === 3
+      ? "repeat(auto-fit, minmax(350px, 1fr))"
+      : `repeat(${columns}, 1fr)`
 
   return (
     <div style={{

@@ -5,75 +5,23 @@ import Layout from "@/components/Layout"
 import Container from "@/components/Container"
 import PageHeader from "@/components/PageHeader"
 import CardGrid from "@/components/CardGrid"
-import MCPServerCard from "@/components/MCPServerCard"
+import LLMCard from "@/components/LLMCard"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationEllipsis,
+import { Chips } from "@/components/ui/chips"
+import { Combobox, ComboboxTrigger, ComboboxContent, ComboboxItem, ComboboxSearch } from "@/components/ui/combobox"
+import { 
+  Pagination, 
+  PaginationContent, 
+  PaginationItem, 
+  PaginationLink, 
+  PaginationEllipsis 
 } from "@/components/ui/pagination"
-import { Plus, Search } from "lucide-react"
+import { Plus, Search, Check } from "lucide-react"
 
-// Mock MCP Servers data
-const MOCK_MCP_SERVERS = [
-  {
-    id: 1,
-    name: "File System Server",
-    description: "Access and manage files from the file system",
-    url: "http://localhost:3001",
-    hasAuth: true,
-    authType: "header",
-    headerName: "X-API-Key",
-    headerValue: "sk-file-system-key-123",
-  },
-  {
-    id: 2,
-    name: "Database Server",
-    description: "Query and manage database operations seamlessly",
-    url: "http://db.example.com:5432",
-    hasAuth: true,
-    authType: "bearer",
-    bearerToken: "bearer-token-database-456",
-  },
-  {
-    id: 3,
-    name: "Web API Server",
-    description: "Make HTTP requests and API calls to external services",
-    url: "https://api.example.com/mcp",
-    hasAuth: true,
-    authType: "header",
-    headerName: "Authorization",
-    headerValue: "sk-web-api-key-789",
-  },
-  {
-    id: 4,
-    name: "Public MCP Server",
-    description: "Public MCP server without authentication required",
-    url: "https://public.example.com/mcp",
-    hasAuth: false,
-  },
-  {
-    id: 5,
-    name: "Analytics Server",
-    description: "Process and analyze data with advanced analytics",
-    url: "http://analytics.internal.com:8080",
-    hasAuth: true,
-    authType: "bearer",
-    bearerToken: "bearer-analytics-token-101",
-  },
-  {
-    id: 6,
-    name: "Cache Server",
-    description: "Fast caching and data retrieval system",
-    url: "redis://cache.internal.com:6379",
-    hasAuth: false,
-  },
-]
-
-// Fuzzy search helper
+/**
+ * Fuzzy search helper
+ */
 const fuzzySearch = (query, text) => {
   if (!query) return true
   const lowerQuery = query.toLowerCase()
@@ -81,32 +29,111 @@ const fuzzySearch = (query, text) => {
   return lowerText.includes(lowerQuery)
 }
 
-export default function MCPServersPage() {
+// Mock LLM data
+const MOCK_LLMS = [
+  {
+    id: 1,
+    name: "Production GPT-4",
+    provider: "OpenAI",
+    model: "gpt-4",
+    authType: "Bearer",
+  },
+  {
+    id: 2,
+    name: "Claude Opus",
+    provider: "Anthropic",
+    model: "claude-3-opus",
+    authType: "Bearer",
+  },
+  {
+    id: 3,
+    name: "Gemini Pro",
+    provider: "Gemini",
+    model: "gemini-pro",
+    authType: "Param",
+  },
+  {
+    id: 4,
+    name: "Anthropic Sonnet",
+    provider: "Anthropic",
+    model: "claude-3-sonnet",
+    authType: "Bearer",
+  },
+  {
+    id: 5,
+    name: "GPT-3.5 Turbo",
+    provider: "OpenAI",
+    model: "gpt-3.5-turbo",
+    authType: "Bearer",
+  },
+  {
+    id: 6,
+    name: "Mistral 7B",
+    provider: "HuggingFace",
+    model: "mistral-7b",
+    authType: "Header",
+  },
+  {
+    id: 7,
+    name: "Gemini 1.5 Pro",
+    provider: "Gemini",
+    model: "gemini-1.5-pro",
+    authType: "Param",
+  },
+  {
+    id: 8,
+    name: "Llama 2 70B",
+    provider: "HuggingFace",
+    model: "llama-2-70b",
+    authType: "Header",
+  },
+]
+
+const PROVIDERS = ["OpenAI", "Anthropic", "Gemini", "HuggingFace"]
+
+export default function LLMsPage() {
   const theme = useTheme()
   const navigate = useNavigate()
 
   const [searchQuery, setSearchQuery] = useState("")
+  const [selectedProviders, setSelectedProviders] = useState([])
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 6
 
-  // Filter servers based on search
-  const filteredServers = useMemo(() => {
-    return MOCK_MCP_SERVERS.filter(server =>
-      fuzzySearch(searchQuery, `${server.name} ${server.description} ${server.url}`)
-    )
-  }, [searchQuery])
+  // Filter LLMs based on search and provider
+  const filteredLLMs = useMemo(() => {
+    return MOCK_LLMS.filter(llm => {
+      const matchesSearch = fuzzySearch(searchQuery, `${llm.name} ${llm.model}`)
+      const matchesProvider = selectedProviders.length === 0 || 
+        selectedProviders.includes(llm.provider)
+      return matchesSearch && matchesProvider
+    })
+  }, [searchQuery, selectedProviders])
 
   // Calculate pagination
-  const totalPages = Math.ceil(filteredServers.length / itemsPerPage)
-  const paginatedServers = useMemo(() => {
+  const totalPages = Math.ceil(filteredLLMs.length / itemsPerPage)
+  const paginatedLLMs = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage
     const endIndex = startIndex + itemsPerPage
-    return filteredServers.slice(startIndex, endIndex)
-  }, [filteredServers, currentPage])
+    return filteredLLMs.slice(startIndex, endIndex)
+  }, [filteredLLMs, currentPage])
 
-  // Reset to page 1 when search changes
+  // Handle search change
   const handleSearchChange = (e) => {
     setSearchQuery(e.target.value)
+    setCurrentPage(1)
+  }
+
+  // Handle provider selection
+  const handleProviderToggle = (provider) => {
+    setSelectedProviders(prev => {
+      const isSelected = prev.includes(provider)
+      if (isSelected) {
+        return prev.filter(p => p !== provider)
+      } else {
+        return [...prev, provider]
+      }
+    })
     setCurrentPage(1)
   }
 
@@ -185,8 +212,8 @@ export default function MCPServersPage() {
           >
             <div style={{ flex: 1 }}>
               <PageHeader
-                title="MCP Servers"
-                subtitle="Manage and configure Model Context Protocol servers"
+                title="LLM Configurations"
+                subtitle="Create and manage LLM provider configurations"
               />
             </div>
             <Button
@@ -194,31 +221,69 @@ export default function MCPServersPage() {
               size="md"
               leadingIcon={Plus}
               style={{ marginTop: theme.spacing[2], whiteSpace: "nowrap" }}
-              onClick={() => navigate("/create-mcp-server")}
+              onClick={() => navigate("/create-llm")}
             >
               Create
             </Button>
           </div>
 
           {/* Search Box */}
-          <div style={{ maxWidth: "500px" }}>
+          <div style={{ maxWidth: "500px", marginBottom: theme.spacing[6] }}>
             <Input
-              placeholder="Search servers..."
+              placeholder="Search LLMs..."
               value={searchQuery}
               onChange={handleSearchChange}
               leadingIcon={Search}
             />
           </div>
+
+          {/* Provider Filter */}
+          <div style={{ marginBottom: theme.spacing[6] }}>
+            <div style={{ marginBottom: theme.spacing[3] }}>
+              <span
+                style={{
+                  fontSize: theme.typography.fontSize.sm,
+                  fontWeight: theme.typography.fontWeight.semibold,
+                  color: theme.colors.muted_foreground,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                }}
+              >
+                Filter by Provider
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: theme.spacing[2], flexWrap: "wrap" }}>
+              {PROVIDERS.map(provider => (
+                <Chips
+                  key={provider}
+                  onClick={() => handleProviderToggle(provider)}
+                  onRemove={() => handleProviderToggle(provider)}
+                  variant={selectedProviders.includes(provider) ? "primary" : "outline"}
+                  style={{
+                    cursor: "pointer",
+                    display: "flex",
+                    gap: theme.spacing[1],
+                    alignItems: "center",
+                  }}
+                >
+                  {selectedProviders.includes(provider) && (
+                    <Check size={14} />
+                  )}
+                  {provider}
+                </Chips>
+              ))}
+            </div>
+          </div>
         </div>
 
-        {/* Servers Grid */}
-        {paginatedServers.length > 0 ? (
+        {/* LLMs Grid */}
+        {paginatedLLMs.length > 0 ? (
           <>
             <CardGrid 
-              items={paginatedServers}
+              items={paginatedLLMs}
               columns={3} 
               gap={6}
-              renderCard={(server) => <MCPServerCard server={server} />}
+              renderCard={(llm) => <LLMCard llm={llm} />}
             />
 
             {/* Pagination */}
@@ -264,7 +329,7 @@ export default function MCPServersPage() {
             }}
           >
             <p style={{ fontSize: theme.typography.fontSize.lg }}>
-              No MCP servers found matching your search.
+              No LLM configurations found matching your search.
             </p>
           </div>
         )}

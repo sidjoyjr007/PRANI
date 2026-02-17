@@ -65,6 +65,8 @@ const Card = React.forwardRef(({
         padding: theme.spacing[6],
         transition: hoverable ? `all ${theme.transitions.normal}` : "none",
         cursor: hoverable ? "pointer" : "default",
+        position: "relative",
+        overflow: "visible",
       }}
       className={cn(className)}
       onMouseEnter={hoverable ? (e) => {

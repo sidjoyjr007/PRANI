@@ -118,6 +118,12 @@ export default function ComponentsShowcasePage() {
             <Button variant="outline" disabled>Disabled</Button>
           </VariantGroup>
 
+          <VariantGroup label="Outline Buttons with Leading Icon">
+            <Button variant="outline" leadingIcon={Download}>Download</Button>
+            <Button variant="outline" leadingIcon={Edit}>Edit</Button>
+            <Button variant="outline" leadingIcon={ChevronRight}>Next</Button>
+          </VariantGroup>
+
           <VariantGroup label="Ghost Buttons">
             <Button variant="ghost">Ghost Button</Button>
             <Button variant="ghost" disabled>Disabled</Button>

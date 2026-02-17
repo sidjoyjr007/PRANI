@@ -59,7 +59,7 @@ const Input = React.forwardRef(({
           style={{
             width: "100%",
             height: theme.spacing[12],
-            paddingLeft: LeadingIcon ? theme.spacing[11] : theme.spacing[4],
+            paddingLeft: LeadingIcon ? `calc(${theme.spacing[3]} + 20px + ${theme.spacing[3]})` : theme.spacing[4],
             paddingRight: TrailingIcon ? theme.spacing[11] : theme.spacing[4],
             backgroundColor: disabled 
               ? theme.colors.neutral[50]
@@ -89,6 +89,12 @@ const Input = React.forwardRef(({
           onBlur={() => setIsFocused(false)}
           {...props}
         />
+        <style>{`
+          input::placeholder {
+            color: ${theme.colors.neutral[400]};
+            opacity: 1;
+          }
+        `}</style>
 
         {TrailingIcon && (
           <div style={{

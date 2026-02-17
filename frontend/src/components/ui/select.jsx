@@ -177,11 +177,48 @@ const SelectTrigger = React.forwardRef(({
 })
 SelectTrigger.displayName = "SelectTrigger"
 
-const SelectContent = React.forwardRef(({ className, maxHeight = "320px", ...props }, ref) => {
+const SelectContent = React.forwardRef(({ className, maxHeight = "320px", side = "auto", ...props }, ref) => {
   const theme = useTheme()
   const { isOpen, handleOpenChange } = React.useContext(SelectContext)
+  const [position, setPosition] = React.useState("bottom")
+  const contentRef = React.useRef(null)
+
+  React.useEffect(() => {
+    if (!isOpen || side !== "auto") {
+      setPosition(side === "top" ? "top" : "bottom")
+      return
+    }
+
+    // Auto-detect if dropdown should appear on top
+    const checkPosition = () => {
+      if (contentRef.current) {
+        const contentRect = contentRef.current.getBoundingClientRect()
+        const isHidden = contentRect.bottom > window.innerHeight - 10
+        setPosition(isHidden ? "top" : "bottom")
+      }
+    }
+
+    // Check position after a small delay to ensure content is rendered
+    const timer = setTimeout(checkPosition, 0)
+    return () => clearTimeout(timer)
+  }, [isOpen, side])
 
   if (!isOpen) return null
+
+  const positionStyles = {
+    bottom: {
+      top: "100%",
+      marginTop: "8px",
+      marginBottom: "0",
+    },
+    top: {
+      bottom: "100%",
+      marginTop: "0",
+      marginBottom: "8px",
+    }
+  }
+
+  const currentPosition = positionStyles[position] || positionStyles.bottom
 
   return (
     <>
@@ -189,25 +226,24 @@ const SelectContent = React.forwardRef(({ className, maxHeight = "320px", ...pro
         style={{
           position: "fixed",
           inset: 0,
-          zIndex: 40,
+          zIndex: 9998,
         }}
         onClick={() => handleOpenChange(false)}
       />
       <div
-        ref={ref}
+        ref={contentRef}
         style={{
           position: "absolute",
-          top: "100%",
           left: 0,
-          marginTop: "8px",
           minWidth: "200px",
           maxHeight: maxHeight,
           borderRadius: "8px",
           border: `2px solid ${theme.colors.neutral[200]}`,
           backgroundColor: theme.colors.card,
           boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
-          zIndex: 50,
+          zIndex: 9999,
           overflowY: "auto",
+          ...currentPosition,
         }}
         className={cn(className)}
         {...props}
