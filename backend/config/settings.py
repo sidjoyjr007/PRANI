@@ -34,7 +34,15 @@ class Settings(BaseSettings):
     debug: bool = True
     # Change type to str | List[str] to allow pydantic-settings to read the raw string from env
     # The validator will then convert it to a list
-    allowed_origins: str | List[str] = ["http://localhost:5173", "http://localhost:3000"]
+    allowed_origins: str | List[str] = [
+        "http://localhost:5173", 
+        "http://localhost:5174", 
+        "http://localhost:5175", 
+        "http://localhost:5176",
+        "http://localhost:5177",
+        "http://localhost:5178",
+        "http://localhost:3000"
+    ]
     
     # Frontend
     frontend_url: str = "http://localhost:5173"

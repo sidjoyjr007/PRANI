@@ -1,5 +1,7 @@
-import { useState, useMemo } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
+import { useDispatch, useSelector } from "react-redux"
+import { fetchMCPs, setPage } from "@/store/slices/mcpSlice"
 import { useTheme } from "@/context/ThemeContext"
 import Layout from "@/components/Layout"
 import Container from "@/components/Container"
@@ -13,104 +15,54 @@ import {
   PaginationContent,
   PaginationItem,
   PaginationLink,
-  PaginationEllipsis,
+  PaginationEllipsis
 } from "@/components/ui/pagination"
-import { Plus, Search } from "lucide-react"
-
-// Mock MCP Servers data
-const MOCK_MCP_SERVERS = [
-  {
-    id: 1,
-    name: "File System Server",
-    description: "Access and manage files from the file system",
-    url: "http://localhost:3001",
-    hasAuth: true,
-    authType: "header",
-    headerName: "X-API-Key",
-    headerValue: "sk-file-system-key-123",
-  },
-  {
-    id: 2,
-    name: "Database Server",
-    description: "Query and manage database operations seamlessly",
-    url: "http://db.example.com:5432",
-    hasAuth: true,
-    authType: "bearer",
-    bearerToken: "bearer-token-database-456",
-  },
-  {
-    id: 3,
-    name: "Web API Server",
-    description: "Make HTTP requests and API calls to external services",
-    url: "https://api.example.com/mcp",
-    hasAuth: true,
-    authType: "header",
-    headerName: "Authorization",
-    headerValue: "sk-web-api-key-789",
-  },
-  {
-    id: 4,
-    name: "Public MCP Server",
-    description: "Public MCP server without authentication required",
-    url: "https://public.example.com/mcp",
-    hasAuth: false,
-  },
-  {
-    id: 5,
-    name: "Analytics Server",
-    description: "Process and analyze data with advanced analytics",
-    url: "http://analytics.internal.com:8080",
-    hasAuth: true,
-    authType: "bearer",
-    bearerToken: "bearer-analytics-token-101",
-  },
-  {
-    id: 6,
-    name: "Cache Server",
-    description: "Fast caching and data retrieval system",
-    url: "redis://cache.internal.com:6379",
-    hasAuth: false,
-  },
-]
-
-// Fuzzy search helper
-const fuzzySearch = (query, text) => {
-  if (!query) return true
-  const lowerQuery = query.toLowerCase()
-  const lowerText = text.toLowerCase()
-  return lowerText.includes(lowerQuery)
-}
+import { Plus, Search, Server } from "lucide-react"
+import useDebounce from "@/hooks/useDebounce"
+import { Empty } from "@/components/ui/empty"
+import { Toast, ToastContainer } from "@/components/ui/toast"
+import { Spinner } from "@/components/ui/spinner"
 
 export default function MCPServersPage() {
   const theme = useTheme()
   const navigate = useNavigate()
+  const dispatch = useDispatch()
+
+  const { items: mcps, total: totalItems, page: currentPage, size: itemsPerPage, isLoading } = useSelector((state) => state.mcps)
 
   const [searchQuery, setSearchQuery] = useState("")
-  const [currentPage, setCurrentPage] = useState(1)
-  const itemsPerPage = 6
+  const debouncedSearchQuery = useDebounce(searchQuery, 500)
 
-  // Filter servers based on search
-  const filteredServers = useMemo(() => {
-    return MOCK_MCP_SERVERS.filter(server =>
-      fuzzySearch(searchQuery, `${server.name} ${server.description} ${server.url}`)
-    )
-  }, [searchQuery])
+  // Toast State
+  const [toasts, setToasts] = useState([])
+  const addToast = (title, description, variant = "info") => {
+    const id = Date.now().toString()
+    setToasts((prev) => [...prev, { id, title, description, variant }])
+    setTimeout(() => removeToast(id), 5000)
+  }
+  const removeToast = (id) => setToasts((prev) => prev.filter((t) => t.id !== id))
 
-  // Calculate pagination
-  const totalPages = Math.ceil(filteredServers.length / itemsPerPage)
-  const paginatedServers = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage
-    const endIndex = startIndex + itemsPerPage
-    return filteredServers.slice(startIndex, endIndex)
-  }, [filteredServers, currentPage])
+  useEffect(() => {
+    dispatch(fetchMCPs({
+      page: currentPage,
+      size: itemsPerPage,
+      search: debouncedSearchQuery
+    }))
+  }, [dispatch, currentPage, itemsPerPage, debouncedSearchQuery])
 
-  // Reset to page 1 when search changes
+  useEffect(() => {
+    if (currentPage !== 1) {
+      dispatch(setPage(1))
+    }
+  }, [debouncedSearchQuery])
+
+  const totalPages = Math.ceil(totalItems / itemsPerPage)
+
   const handleSearchChange = (e) => {
     setSearchQuery(e.target.value)
-    setCurrentPage(1)
   }
 
-  // Generate pagination buttons
+  /* Pagination Logic */
   const getPaginationButtons = () => {
     const buttons = []
     const maxButtons = 5
@@ -124,69 +76,64 @@ export default function MCPServersPage() {
     if (startPage > 1) {
       buttons.push(
         <PaginationItem key="first">
-          <PaginationLink onClick={() => setCurrentPage(1)}>1</PaginationLink>
+          <PaginationLink onClick={() => dispatch(setPage(1))}>1</PaginationLink>
         </PaginationItem>
       )
       if (startPage > 2) {
-        buttons.push(
-          <PaginationItem key="ellipsis-start">
-            <PaginationEllipsis />
-          </PaginationItem>
-        )
+        buttons.push(<PaginationItem key="ellipsis-start"><PaginationEllipsis /></PaginationItem>)
       }
     }
 
     for (let i = startPage; i <= endPage; i++) {
       buttons.push(
         <PaginationItem key={i}>
-          <PaginationLink
-            onClick={() => setCurrentPage(i)}
-            isActive={currentPage === i}
-          >
-            {i}
-          </PaginationLink>
+          <PaginationLink onClick={() => dispatch(setPage(i))} isActive={currentPage === i}>{i}</PaginationLink>
         </PaginationItem>
       )
     }
 
     if (endPage < totalPages) {
       if (endPage < totalPages - 1) {
-        buttons.push(
-          <PaginationItem key="ellipsis-end">
-            <PaginationEllipsis />
-          </PaginationItem>
-        )
+        buttons.push(<PaginationItem key="ellipsis-end"><PaginationEllipsis /></PaginationItem>)
       }
       buttons.push(
         <PaginationItem key="last">
-          <PaginationLink onClick={() => setCurrentPage(totalPages)}>
-            {totalPages}
-          </PaginationLink>
+          <PaginationLink onClick={() => dispatch(setPage(totalPages))}>{totalPages}</PaginationLink>
         </PaginationItem>
       )
     }
-
     return buttons
   }
 
   return (
     <Layout>
+      {/* Toast Notifications */}
+      <ToastContainer position="top-center">
+        {toasts.map((toast) => (
+          <Toast
+            key={toast.id}
+            title={toast.title}
+            description={toast.description}
+            variant={toast.variant}
+            onDismiss={() => removeToast(toast.id)}
+          />
+        ))}
+      </ToastContainer>
+
       <Container>
         {/* Header with Title and Search */}
         <div style={{ marginBottom: theme.spacing[8] }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-start",
-              gap: theme.spacing[4],
-              marginBottom: theme.spacing[6],
-            }}
-          >
+          <div style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: theme.spacing[4],
+            marginBottom: theme.spacing[6],
+          }}>
             <div style={{ flex: 1 }}>
               <PageHeader
                 title="MCP Servers"
-                subtitle="Manage and configure Model Context Protocol servers"
+                subtitle="Manage and configure Model Context Protocol (MCP) servers"
               />
             </div>
             <Button
@@ -201,25 +148,34 @@ export default function MCPServersPage() {
           </div>
 
           {/* Search Box */}
-          <div style={{ maxWidth: "500px" }}>
+          <div style={{ maxWidth: "500px", position: "relative" }}>
             <Input
-              placeholder="Search servers..."
+              placeholder="Search MCP servers..."
               value={searchQuery}
               onChange={handleSearchChange}
               leadingIcon={Search}
+              trailingIcon={isLoading && mcps.length > 0 ? Spinner : undefined}
             />
           </div>
         </div>
 
-        {/* Servers Grid */}
-        {paginatedServers.length > 0 ? (
-          <>
-            <CardGrid 
-              items={paginatedServers}
-              columns={3} 
-              gap={6}
-              renderCard={(server) => <MCPServerCard server={server} />}
-            />
+        {isLoading && mcps.length === 0 ? (
+          <div style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            minHeight: "400px"
+          }}>
+            <Spinner size="lg" variant="primary" />
+          </div>
+        ) : mcps.length > 0 ? (
+          <div style={{
+            opacity: isLoading ? 0.6 : 1,
+            transition: "opacity 0.2s ease-in-out"
+          }}>
+            <CardGrid items={mcps} columns={3} gap={6} renderCard={(server) => (
+              <MCPServerCard server={server} addToast={addToast} />
+            )} />
 
             {/* Pagination */}
             {totalPages > 1 && (
@@ -229,7 +185,7 @@ export default function MCPServersPage() {
                     {/* Previous Button */}
                     <PaginationItem>
                       <PaginationLink
-                        onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                        onClick={() => dispatch(setPage(Math.max(1, currentPage - 1)))}
                         disabled={currentPage === 1}
                       >
                         ← Previous
@@ -242,9 +198,7 @@ export default function MCPServersPage() {
                     {/* Next Button */}
                     <PaginationItem>
                       <PaginationLink
-                        onClick={() =>
-                          setCurrentPage(Math.min(totalPages, currentPage + 1))
-                        }
+                        onClick={() => dispatch(setPage(Math.min(totalPages, currentPage + 1)))}
                         disabled={currentPage === totalPages}
                       >
                         Next →
@@ -254,19 +208,27 @@ export default function MCPServersPage() {
                 </Pagination>
               </div>
             )}
-          </>
-        ) : (
-          <div
-            style={{
-              textAlign: "center",
-              padding: theme.spacing[12],
-              color: theme.colors.muted_foreground,
-            }}
-          >
-            <p style={{ fontSize: theme.typography.fontSize.lg }}>
-              No MCP servers found matching your search.
-            </p>
           </div>
+        ) : (
+          <Empty
+            icon={Server}
+            title="No MCP servers found"
+            description={
+              searchQuery
+                ? `No MCP servers match your search "${searchQuery}".`
+                : "You haven't added any MCP servers yet. Get started by adding your first server."
+            }
+            action={
+              <Button
+                variant="primary"
+                size="md"
+                leadingIcon={Plus}
+                onClick={() => navigate("/create-mcp-server")}
+              >
+                Create Server
+              </Button>
+            }
+          />
         )}
       </Container>
     </Layout>

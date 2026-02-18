@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react"
 import { useNavigate, useParams } from "react-router-dom"
+import { useDispatch, useSelector } from "react-redux"
 import { useTheme } from "@/context/ThemeContext"
+import Editor from "@monaco-editor/react"
 import Layout from "@/components/Layout"
 import Container from "@/components/Container"
 import { Button } from "@/components/ui/button"
@@ -8,152 +10,193 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Text } from "@/components/ui/text"
 import { Card } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
-import { ChevronLeft, Check, Eye, EyeOff } from "lucide-react"
+import { Alert } from "@/components/ui/alert"
+import { ChevronLeft, Check, Plus, Trash2, Eye, EyeOff, X } from "lucide-react"
+import { Toast, ToastContainer } from "@/components/ui/toast"
+import { fetchMCPById, createMCP, updateMCP, clearCurrentMCP } from "@/store/slices/mcpSlice"
 
-// Mock MCP Servers data for editing
-const MOCK_MCP_SERVERS = [
-  {
-    id: 1,
-    name: "File System Server",
-    description: "Access and manage files from the file system",
-    url: "http://localhost:3001",
-    hasAuth: true,
-    authType: "header",
-    headerName: "X-API-Key",
-    headerValue: "sk-file-system-key-123",
-  },
-  {
-    id: 2,
-    name: "Database Server",
-    description: "Query and manage database operations seamlessly",
-    url: "http://db.example.com:5432",
-    hasAuth: true,
-    authType: "bearer",
-    bearerToken: "bearer-token-database-456",
-  },
-  {
-    id: 3,
-    name: "Public MCP Server",
-    description: "Public MCP server without authentication required",
-    url: "https://public.example.com/mcp",
-    hasAuth: false,
-  },
-]
-
-const AUTH_TYPES = ["header", "bearer"]
+// Sub-component for Adding Env Var - REMOVED, logic moved to main component modal
 
 export default function CreateMCPServerPage() {
   const theme = useTheme()
   const navigate = useNavigate()
   const { serverId } = useParams()
+  const isEditMode = !!serverId
 
+  /* Redux Hooks */
+  const dispatch = useDispatch()
+  const { isSaving } = useSelector((state) => state.mcps)
+
+  // Form state
   const [mcpData, setMcpData] = useState({
     name: "",
-    description: "",
     url: "",
-    hasAuth: false,
-    authType: "header",
-    headerName: "",
-    headerValue: "",
-    bearerToken: "",
+    headers: "{\n  \"Authorization\": \"Bearer {{env.API_KEY}}\"\n}",
+    environmentVariables: [],
+    is_active: true
   })
+  const [originalData, setOriginalData] = useState(null)
 
-  const [isLoading, setIsLoading] = useState(!!serverId)
-  const [isSaving, setIsSaving] = useState(false)
-  const [errors, setErrors] = useState({})
-  const [showPassword, setShowPassword] = useState(false)
+  // UI state
+  const [isLoading, setIsLoading] = useState(isEditMode)
+  const [showEnvModal, setShowEnvModal] = useState(false)
+  const [envVisibility, setEnvVisibility] = useState({})
 
-  // Load server data if editing
+  // Toast State
+  const [toasts, setToasts] = useState([])
+  const addToast = (title, description, variant = "info") => {
+    const id = Date.now().toString()
+    setToasts((prev) => [...prev, { id, title, description, variant }])
+    setTimeout(() => removeToast(id), 5000)
+  }
+  const removeToast = (id) => setToasts((prev) => prev.filter((t) => t.id !== id))
+
+  // Load existing MCP if editing
   useEffect(() => {
     if (serverId) {
-      const server = MOCK_MCP_SERVERS.find(s => s.id === parseInt(serverId))
-      if (server) {
-        setMcpData(server)
-      } else {
-        alert("MCP Server not found")
-        navigate("/mcp-servers")
-      }
+      dispatch(fetchMCPById(serverId))
+        .unwrap()
+        .then((data) => {
+          const envVars = (data.environmentVariables || []).map((ev, idx) => ({
+            ...ev,
+            id: Date.now() + idx,
+            isExisting: true
+          }))
+
+          const mapped = {
+            name: data.name || "",
+            url: data.url || "",
+            headers: data.headers || "{}",
+            environmentVariables: envVars,
+            is_active: data.is_active !== undefined ? data.is_active : true
+          }
+
+          setMcpData(mapped)
+          setOriginalData(JSON.parse(JSON.stringify(mapped))) // Deep copy for diff
+
+          const visibility = {}
+          envVars.forEach(env => visibility[env.id] = false)
+          setEnvVisibility(visibility)
+          setIsLoading(false)
+        })
+        .catch((err) => {
+          console.error("Failed to fetch MCP:", err)
+          addToast("Error", "Failed to load MCP Server configuration", "error")
+          setTimeout(() => navigate("/mcp-servers"), 2000)
+        })
+    } else {
+      dispatch(clearCurrentMCP())
       setIsLoading(false)
     }
-  }, [serverId, navigate])
+  }, [serverId, dispatch, navigate])
 
-  // Validation logic
-  const validateForm = () => {
-    const newErrors = {}
-
-    if (!mcpData.name || mcpData.name.trim().length < 3) {
-      newErrors.name = "MCP server name must be at least 3 characters"
+  // Helper to validate JSON
+  const isValidJson = (str) => {
+    try {
+      if (!str) return true // Empty is valid (or treat as {})
+      JSON.parse(str)
+      return true
+    } catch (e) {
+      return false
     }
-
-    if (!mcpData.description || mcpData.description.trim().length < 10) {
-      newErrors.description = "Description must be at least 10 characters"
-    }
-
-    if (!mcpData.url) {
-      newErrors.url = "URL is required"
-    } else if (!/^https?:\/\/|^redis:\/\/|^postgresql:\/\//.test(mcpData.url)) {
-      newErrors.url = "URL must start with http://, https://, redis://, or postgresql://"
-    }
-
-    // Validate authentication fields if auth is enabled
-    if (mcpData.hasAuth) {
-      if (!mcpData.authType) {
-        newErrors.authType = "Authentication type is required"
-      }
-
-      if (mcpData.authType === "header") {
-        if (!mcpData.headerName) {
-          newErrors.headerName = "Header name is required"
-        }
-        if (!mcpData.headerValue) {
-          newErrors.headerValue = "Header value is required"
-        }
-      }
-
-      if (mcpData.authType === "bearer") {
-        if (!mcpData.bearerToken) {
-          newErrors.bearerToken = "Bearer token is required"
-        }
-      }
-    }
-
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
   }
 
-  // Handle save
   const handleSave = async () => {
-    if (!validateForm()) {
+    // Validation
+    if (!mcpData.name.trim()) {
+      addToast("Validation Error", "MCP Name is required", "destructive")
+      return
+    }
+    if (!mcpData.url.trim()) {
+      addToast("Validation Error", "Server URL is required", "destructive")
+      return
+    }
+    if (!isValidJson(mcpData.headers)) {
+      addToast("Validation Error", "Headers must be valid JSON", "destructive")
       return
     }
 
-    setIsSaving(true)
-    try {
-      console.log(serverId ? "MCP Server updated:" : "MCP Server created:", mcpData)
-      alert(serverId ? "MCP Server updated successfully!" : "MCP Server created successfully!")
-      navigate("/mcp-servers")
-    } catch (error) {
-      console.error("Error saving MCP server:", error)
-      alert("Error saving MCP server. Please try again.")
-    } finally {
-      setIsSaving(false)
+    let payload = {}
+
+    if (isEditMode && originalData) {
+      // UPDATE: Only send changed fields (diff-based)
+      if (mcpData.name !== originalData.name) payload.name = mcpData.name
+      if (mcpData.url !== originalData.url) payload.url = mcpData.url
+      if (mcpData.headers !== originalData.headers) payload.headers = mcpData.headers
+      if (mcpData.is_active !== originalData.is_active) payload.is_active = mcpData.is_active
+
+      // Compare env vars
+      const currentEnvKeys = mcpData.environmentVariables.map(e => e.key).sort()
+      const originalEnvKeys = originalData.environmentVariables.map(e => e.key).sort()
+
+      const keysChanged = JSON.stringify(currentEnvKeys) !== JSON.stringify(originalEnvKeys)
+      const valuesChanged = mcpData.environmentVariables.some(e => !e.isExisting && e.value) // Any new var added
+
+      if (keysChanged || valuesChanged) {
+        payload.environmentVariables = mcpData.environmentVariables.map(e => ({
+          key: e.key,
+          value: e.isExisting ? undefined : e.value
+        })).filter(e => e.key)
+      }
+
+      if (Object.keys(payload).length === 0) {
+        addToast("Info", "No changes detected.", "info")
+        return
+      }
+    } else {
+      // CREATE: Send full payload
+      payload = {
+        name: mcpData.name,
+        url: mcpData.url,
+        headers: mcpData.headers,
+        environmentVariables: mcpData.environmentVariables.map(e => ({
+          key: e.key,
+          value: e.value
+        })).filter(e => e.key)
+      }
     }
+
+    try {
+      if (isEditMode) {
+        await dispatch(updateMCP({ id: serverId, mcpData: payload })).unwrap()
+        addToast("Success", "MCP Server updated successfully!", "success")
+      } else {
+        await dispatch(createMCP(payload)).unwrap()
+        addToast("Success", "MCP Server created successfully!", "success")
+      }
+      setTimeout(() => navigate("/mcp-servers"), 1000)
+    } catch (error) {
+      console.error("Error saving MCP:", error)
+      let errorMsg = "Error saving MCP Server"
+      if (typeof error === 'string') {
+        errorMsg = error
+      } else if (error.response?.data?.detail) {
+        const detail = error.response.data.detail
+        if (typeof detail === 'string') {
+          errorMsg = detail
+        } else if (Array.isArray(detail)) {
+          // FastAPI validation error
+          errorMsg = detail.map(d => d.msg).join(", ")
+        } else {
+          errorMsg = JSON.stringify(detail)
+        }
+      } else if (error.message) {
+        errorMsg = error.message
+      }
+      addToast("Error", errorMsg, "destructive")
+    }
+  }
+
+  const toggleEnvVisibility = (envId) => {
+    setEnvVisibility(prev => ({ ...prev, [envId]: !prev[envId] }))
   }
 
   if (isLoading) {
     return (
       <Layout>
         <Container>
-          <div style={{
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            minHeight: "400px",
-            color: theme.colors.muted_foreground
-          }}>
-            <p>Loading MCP server data...</p>
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px', color: theme.colors.muted_foreground }}>
+            <p>Loading MCP data...</p>
           </div>
         </Container>
       </Layout>
@@ -162,449 +205,265 @@ export default function CreateMCPServerPage() {
 
   return (
     <Layout>
+      <ToastContainer position="top-center">
+        {toasts.map((toast) => (
+          <Toast
+            key={toast.id}
+            title={toast.title}
+            description={toast.description}
+            variant={toast.variant}
+            onDismiss={() => removeToast(toast.id)}
+          />
+        ))}
+      </ToastContainer>
+
       <Container>
         {/* Header */}
         <div style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: theme.spacing[8],
-          paddingBottom: theme.spacing[4],
-          borderBottom: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          marginBottom: theme.spacing[8], paddingBottom: theme.spacing[4],
+          borderBottom: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`
         }}>
           <Button variant="outline" size="md" leadingIcon={ChevronLeft} onClick={() => navigate("/mcp-servers")}>
             Back
           </Button>
           <h1 style={{
-            fontSize: theme.typography.fontSize.xl2,
-            fontWeight: theme.typography.fontWeight.bold,
-            color: theme.colors.foreground,
-            margin: 0,
+            fontSize: theme.typography.fontSize.xl2, fontWeight: theme.typography.fontWeight.bold,
+            color: theme.colors.foreground, margin: 0,
+            flex: 1, textAlign: "center",
           }}>
-            {serverId ? "Edit MCP Server" : "Create MCP Server"}
+            {isEditMode ? "Edit MCP Server" : "Create New MCP Server"}
           </h1>
-          <Button
-            variant="primary"
-            size="md"
-            leadingIcon={Check}
-            onClick={handleSave}
-            disabled={isSaving}
-          >
-            {isSaving ? (serverId ? "Updating..." : "Saving...") : (serverId ? "Update Server" : "Save Server")}
+          <Button variant="primary" size="md" leadingIcon={Check} onClick={handleSave} disabled={isSaving}>
+            {isSaving ? (isEditMode ? "Updating..." : "Saving...") : (isEditMode ? "Update" : "Save")}
           </Button>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: theme.spacing[8], marginBottom: theme.spacing[8] }}>
-          {/* Section 1: Basic Information */}
-          <Card style={{
-            padding: theme.spacing[6],
-            border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-            borderRadius: theme.borderRadius.md,
-            backgroundColor: theme.colors.card,
-          }}>
-            <Text as="h3" size="lg" variant="label" style={{ marginBottom: theme.spacing[6] }}>
-              Basic Information
-            </Text>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: theme.spacing[6] }}>
-              {/* Name Field */}
+          {/* Basic Info */}
+          <Card style={{ padding: theme.spacing[6], backgroundColor: theme.colors.card, border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`, borderRadius: theme.borderRadius.md }}>
+            <Text as="h3" size="lg" variant="label" style={{ marginBottom: theme.spacing[6] }}>Basic Information</Text>
+
+            <div style={{ display: "grid", gap: theme.spacing[6] }}>
               <div>
-                <label style={{
-                  display: "block",
-                  fontSize: theme.typography.fontSize.sm,
-                  fontWeight: theme.typography.fontWeight.semibold,
-                  color: theme.colors.foreground,
-                  marginBottom: theme.spacing[2],
-                }}>
-                  MCP Server Name *
+                <label style={{ display: "block", fontSize: theme.typography.fontSize.sm, fontWeight: theme.typography.fontWeight.semibold, marginBottom: theme.spacing[2], color: theme.colors.foreground }}>
+                  Server Name *
                 </label>
                 <Input
-                  placeholder="e.g., File System Server"
+                  placeholder="e.g. Local File Server"
                   value={mcpData.name}
-                  onChange={(e) => {
-                    setMcpData({ ...mcpData, name: e.target.value })
-                    setErrors(prev => ({ ...prev, name: "" }))
-                  }}
-                  disabled={isSaving}
-                  error={errors.name}
+                  onChange={(e) => setMcpData({ ...mcpData, name: e.target.value })}
                 />
-                {errors.name && (
-                  <p style={{
-                    fontSize: theme.typography.fontSize.xs,
-                    color: theme.colors.destructive[600],
-                    margin: `${theme.spacing[2]} 0 0 0`,
-                  }}>
-                    {errors.name}
-                  </p>
-                )}
               </div>
 
-              {/* Description Field */}
               <div>
-                <label style={{
-                  display: "block",
-                  fontSize: theme.typography.fontSize.sm,
-                  fontWeight: theme.typography.fontWeight.semibold,
-                  color: theme.colors.foreground,
-                  marginBottom: theme.spacing[2],
-                }}>
-                  Description *
+                <label style={{ display: "block", fontSize: theme.typography.fontSize.sm, fontWeight: theme.typography.fontWeight.semibold, marginBottom: theme.spacing[2], color: theme.colors.foreground }}>
+                  Server URL *
                 </label>
-                <Textarea
-                  placeholder="Describe the purpose and capabilities of this MCP server"
-                  value={mcpData.description}
-                  onChange={(e) => {
-                    setMcpData({ ...mcpData, description: e.target.value })
-                    setErrors(prev => ({ ...prev, description: "" }))
-                  }}
-                  disabled={isSaving}
-                  rows={4}
-                  error={errors.description}
+                <Input
+                  placeholder="e.g. http://localhost:3000/sse"
+                  value={mcpData.url}
+                  onChange={(e) => setMcpData({ ...mcpData, url: e.target.value })}
                 />
-                {errors.description && (
-                  <p style={{
-                    fontSize: theme.typography.fontSize.xs,
-                    color: theme.colors.destructive[600],
-                    margin: `${theme.spacing[2]} 0 0 0`,
-                  }}>
-                    {errors.description}
-                  </p>
-                )}
+                <Text size="xs" variant="muted" style={{ marginTop: theme.spacing[1], display: "block" }}>
+                  Supported schemes: http, https, redis, postgresql
+                </Text>
               </div>
             </div>
           </Card>
 
-          {/* Section 2: Configuration */}
-          <Card style={{
-            padding: theme.spacing[6],
-            border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-            borderRadius: theme.borderRadius.md,
-            backgroundColor: theme.colors.card,
-          }}>
-            <Text as="h3" size="lg" variant="label" style={{ marginBottom: theme.spacing[6] }}>
-              Configuration
-            </Text>
-
-            <div>
-              <label style={{
-                display: "block",
-                fontSize: theme.typography.fontSize.sm,
-                fontWeight: theme.typography.fontWeight.semibold,
-                color: theme.colors.foreground,
-                marginBottom: theme.spacing[2],
-              }}>
-                Server URL *
-              </label>
-              <Input
-                placeholder="e.g., http://localhost:3001 or https://api.example.com"
-                value={mcpData.url}
-                onChange={(e) => {
-                  setMcpData({ ...mcpData, url: e.target.value })
-                  setErrors(prev => ({ ...prev, url: "" }))
-                }}
-                disabled={isSaving}
-                error={errors.url}
-              />
-              {errors.url && (
-                <p style={{
-                  fontSize: theme.typography.fontSize.xs,
-                  color: theme.colors.destructive[600],
-                  margin: `${theme.spacing[2]} 0 0 0`,
-                }}>
-                  {errors.url}
-                </p>
-              )}
-            </div>
-          </Card>
-
-          {/* Section 3: Authentication */}
-          <Card style={{
-            padding: theme.spacing[6],
-            border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-            borderRadius: theme.borderRadius.md,
-            backgroundColor: theme.colors.card,
-          }}>
-            <Text as="h3" size="lg" variant="label" style={{ marginBottom: theme.spacing[6] }}>
-              Authentication
-            </Text>
-
-            {/* Authentication Checkbox */}
-            <div style={{
-              display: "flex",
-              alignItems: "center",
-              gap: theme.spacing[3],
-              marginBottom: theme.spacing[6],
-            }}>
-              <Checkbox
-                checked={mcpData.hasAuth || false}
-                onChange={(e) => {
-                  setMcpData({
-                    ...mcpData,
-                    hasAuth: e.target.checked,
-                    headerValue: e.target.checked ? mcpData.headerValue : "",
-                    bearerToken: e.target.checked ? mcpData.bearerToken : "",
-                  })
-                  setErrors(prev => ({ ...prev, authType: "", headerName: "", headerValue: "", bearerToken: "" }))
-                }}
-                disabled={isSaving}
-              />
-              <label style={{
-                fontSize: theme.typography.fontSize.sm,
-                fontWeight: theme.typography.fontWeight.semibold,
-                color: theme.colors.foreground,
-                cursor: isSaving ? "not-allowed" : "pointer",
-              }}>
-                Configure Authentication
-              </label>
-            </div>
-
-            {/* Conditional Authentication Fields */}
-            {mcpData.hasAuth && (
-              <div style={{ display: "flex", flexDirection: "column", gap: theme.spacing[6] }}>
-                {/* Authentication Type */}
-                <div>
-                  <label style={{
-                    display: "block",
-                    fontSize: theme.typography.fontSize.sm,
-                    fontWeight: theme.typography.fontWeight.semibold,
-                    color: theme.colors.foreground,
-                    marginBottom: theme.spacing[2],
-                  }}>
-                    Authentication Type *
-                  </label>
-                  <Select
-                    value={mcpData.authType}
-                    onValueChange={(authType) => {
-                      setMcpData({ ...mcpData, authType })
-                      setErrors(prev => ({ ...prev, authType: "" }))
-                    }}
-                    disabled={isSaving}
-                  >
-                    <SelectTrigger disabled={isSaving}>
-                      <SelectValue placeholder="Select authentication type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {AUTH_TYPES.map(type => (
-                        <SelectItem key={type} value={type}>
-                          {type.charAt(0).toUpperCase() + type.slice(1)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {errors.authType && (
-                    <p style={{
-                      fontSize: theme.typography.fontSize.xs,
-                      color: theme.colors.destructive[600],
-                      margin: `${theme.spacing[2]} 0 0 0`,
-                    }}>
-                      {errors.authType}
-                    </p>
-                  )}
-                </div>
-
-                {/* Header Authentication */}
-                {mcpData.authType === "header" && (
-                  <>
-                    {/* Header Name */}
-                    <div>
-                      <label style={{
-                        display: "block",
-                        fontSize: theme.typography.fontSize.sm,
-                        fontWeight: theme.typography.fontWeight.semibold,
-                        color: theme.colors.foreground,
-                        marginBottom: theme.spacing[2],
-                      }}>
-                        Header Name *
-                      </label>
-                      <Input
-                        placeholder="e.g., X-API-Key or Authorization"
-                        value={mcpData.headerName}
-                        onChange={(e) => {
-                          setMcpData({ ...mcpData, headerName: e.target.value })
-                          setErrors(prev => ({ ...prev, headerName: "" }))
-                        }}
-                        disabled={isSaving}
-                        error={errors.headerName}
-                      />
-                      {errors.headerName && (
-                        <p style={{
-                          fontSize: theme.typography.fontSize.xs,
-                          color: theme.colors.destructive[600],
-                          margin: `${theme.spacing[2]} 0 0 0`,
-                        }}>
-                          {errors.headerName}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Header Value */}
-                    <div>
-                      <label style={{
-                        display: "block",
-                        fontSize: theme.typography.fontSize.sm,
-                        fontWeight: theme.typography.fontWeight.semibold,
-                        color: theme.colors.foreground,
-                        marginBottom: theme.spacing[2],
-                      }}>
-                        Header Value *
-                      </label>
-                      <div style={{
-                        position: "relative",
-                        display: "flex",
-                        alignItems: "center",
-                      }}>
-                        <input
-                          type={showPassword ? "text" : "password"}
-                          placeholder="Enter header value"
-                          value={mcpData.headerValue || ""}
-                          onChange={(e) => {
-                            setMcpData({ ...mcpData, headerValue: e.target.value })
-                            setErrors(prev => ({ ...prev, headerValue: "" }))
-                          }}
-                          disabled={isSaving}
-                          style={{
-                            width: "100%",
-                            padding: `${theme.spacing[3]} ${theme.spacing[4]}`,
-                            paddingRight: theme.spacing[12],
-                            fontSize: theme.typography.fontSize.sm,
-                            border: errors.headerValue ? `${theme.borderWidth.sm} solid ${theme.colors.destructive[600]}` : `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-                            borderRadius: theme.borderRadius.md,
-                            backgroundColor: theme.colors.background,
-                            color: theme.colors.foreground,
-                            fontFamily: "monospace",
-                            letterSpacing: "0.05em",
-                          }}
-                        />
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setShowPassword(!showPassword)}
-                          disabled={isSaving}
-                          style={{
-                            position: "absolute",
-                            right: theme.spacing[3],
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            padding: 0,
-                            color: theme.colors.muted_foreground,
-                            minWidth: "unset",
-                          }}
-                          title={showPassword ? "Hide value" : "Show value"}
-                        >
-                          {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                        </Button>
-                      </div>
-                      {errors.headerValue && (
-                        <p style={{
-                          fontSize: theme.typography.fontSize.xs,
-                          color: theme.colors.destructive[600],
-                          margin: `${theme.spacing[2]} 0 0 0`,
-                        }}>
-                          {errors.headerValue}
-                        </p>
-                      )}
-                    </div>
-                  </>
-                )}
-
-                {/* Bearer Authentication */}
-                {mcpData.authType === "bearer" && (
-                  <div>
-                    <label style={{
-                      display: "block",
-                      fontSize: theme.typography.fontSize.sm,
-                      fontWeight: theme.typography.fontWeight.semibold,
-                      color: theme.colors.foreground,
-                      marginBottom: theme.spacing[2],
-                    }}>
-                      Bearer Token *
-                    </label>
-                    <div style={{
-                      position: "relative",
-                      display: "flex",
-                      alignItems: "center",
-                    }}>
-                      <input
-                        type={showPassword ? "text" : "password"}
-                        placeholder="Enter bearer token"
-                        value={mcpData.bearerToken || ""}
-                        onChange={(e) => {
-                          setMcpData({ ...mcpData, bearerToken: e.target.value })
-                          setErrors(prev => ({ ...prev, bearerToken: "" }))
-                        }}
-                        disabled={isSaving}
-                        style={{
-                          width: "100%",
-                          padding: `${theme.spacing[3]} ${theme.spacing[4]}`,
-                          paddingRight: theme.spacing[12],
-                          fontSize: theme.typography.fontSize.sm,
-                          border: errors.bearerToken ? `${theme.borderWidth.sm} solid ${theme.colors.destructive[600]}` : `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-                          borderRadius: theme.borderRadius.md,
-                          backgroundColor: theme.colors.background,
-                          color: theme.colors.foreground,
-                          fontFamily: "monospace",
-                          letterSpacing: "0.05em",
-                        }}
-                      />
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowPassword(!showPassword)}
-                        disabled={isSaving}
-                        style={{
-                          position: "absolute",
-                          right: theme.spacing[3],
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          padding: 0,
-                          color: theme.colors.muted_foreground,
-                          minWidth: "unset",
-                        }}
-                        title={showPassword ? "Hide token" : "Show token"}
-                      >
-                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                      </Button>
-                    </div>
-                    {errors.bearerToken && (
-                      <p style={{
-                        fontSize: theme.typography.fontSize.xs,
-                        color: theme.colors.destructive[600],
-                        margin: `${theme.spacing[2]} 0 0 0`,
-                      }}>
-                        {errors.bearerToken}
-                      </p>
-                    )}
-                  </div>
-                )}
+          {/* Configuration Card */}
+          <Card style={{ padding: theme.spacing[6], backgroundColor: theme.colors.card, border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`, borderRadius: theme.borderRadius.md }}>
+            <div style={{ marginBottom: theme.spacing[6], display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <Text as="h3" size="lg" variant="label">Headers (JSON)</Text>
+                <Text as="p" size="sm" variant="body" style={{ color: theme.colors.muted_foreground, marginTop: theme.spacing[1] }}>
+                  Supports {`{{env.KEY}}`} for variable substitution
+                </Text>
               </div>
-            )}
-          </Card>
-        </div>
+              <Button variant="outline" size="sm" leadingIcon={Plus} onClick={() => setShowEnvModal(true)}>
+                Env Variables
+              </Button>
+            </div>
 
-        {/* Footer Section */}
-        <div style={{
-          display: "flex",
-          justifyContent: "flex-end",
-          gap: theme.spacing[3],
-          paddingTop: theme.spacing[6],
-          borderTop: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-        }}>
-          <Button variant="outline" size="md" onClick={() => navigate("/mcp-servers")}>
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            size="md"
-            leadingIcon={Check}
-            onClick={handleSave}
-            disabled={isSaving}
-          >
-            {isSaving ? (serverId ? "Updating..." : "Saving...") : (serverId ? "Update Server" : "Save Server")}
-          </Button>
+            <div style={{ height: "300px", border: `1px solid ${theme.colors.neutral[200]}`, borderRadius: theme.borderRadius.sm, overflow: "hidden" }}>
+              <Editor
+                height="100%"
+                defaultLanguage="json"
+                value={mcpData.headers}
+                onChange={(value) => setMcpData({ ...mcpData, headers: value })}
+                options={{ minimap: { enabled: false }, fontSize: 13, scrollBeyondLastLine: false }}
+              />
+            </div>
+          </Card>
+
+          {/* Footer Section - Sticky at bottom of page content */}
+          <div style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: theme.spacing[3],
+            paddingTop: theme.spacing[6],
+            borderTop: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
+          }}>
+            <Button variant="outline" size="md" onClick={() => navigate("/mcp-servers")}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              leadingIcon={Check}
+              onClick={handleSave}
+              disabled={isSaving}
+            >
+              {isSaving ? (isEditMode ? "Updating..." : "Saving...") : (isEditMode ? "Update Server" : "Save Server")}
+            </Button>
+          </div>
+
         </div>
       </Container>
+
+
+      {/* Environment Variables Modal - Full Management */}
+      {showEnvModal && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: "rgba(0,0,0,0.5)",
+          display: "flex", justifyContent: "center", alignItems: "center",
+          zIndex: 1000
+        }}>
+          <Card style={{
+            width: "600px",
+            maxHeight: "80vh",
+            overflow: "auto",
+            padding: theme.spacing[6],
+            backgroundColor: theme.colors.background,
+            boxShadow: theme.shadows.xl,
+            border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
+            borderRadius: theme.borderRadius.lg
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: theme.spacing[6] }}>
+              <div>
+                <h2 style={{
+                  fontSize: theme.typography.fontSize.lg,
+                  fontWeight: theme.typography.fontWeight.semibold,
+                  color: theme.colors.foreground,
+                  margin: 0,
+                }}>
+                  Environment Variables
+                </h2>
+                <p style={{
+                  fontSize: theme.typography.fontSize.sm,
+                  color: theme.colors.muted_foreground,
+                  marginTop: theme.spacing[1],
+                  margin: 0,
+                }}>
+                  Add sensitive configuration variables. Use <code>{"{{env.KEY}}"}</code> to access them.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowEnvModal(false)}
+                style={{ background: "transparent", border: "none", cursor: "pointer", color: theme.colors.muted_foreground }}
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            {mcpData.environmentVariables.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: theme.spacing[3], marginBottom: theme.spacing[6] }}>
+                {mcpData.environmentVariables.map((env, idx) => (
+                  <div key={env.id} style={{
+                    display: "flex", flexDirection: "column", gap: theme.spacing[3],
+                    padding: theme.spacing[4], backgroundColor: theme.colors.neutral[50],
+                    borderRadius: theme.borderRadius.sm, border: `1px solid ${theme.colors.neutral[200]}`
+                  }}>
+                    {/* Key and Value Inputs */}
+                    <div style={{ display: "flex", gap: theme.spacing[3] }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ display: "block", fontSize: theme.typography.fontSize.xs, fontWeight: theme.typography.fontWeight.semibold, color: theme.colors.foreground, marginBottom: theme.spacing[1] }}>Key</label>
+                        <Input
+                          placeholder="e.g. API_KEY"
+                          value={env.key}
+                          onChange={e => {
+                            const newVars = [...mcpData.environmentVariables]
+                            newVars[idx].key = e.target.value
+                            setMcpData({ ...mcpData, environmentVariables: newVars })
+                          }}
+                          disabled={env.isExisting}
+                        />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ display: "block", fontSize: theme.typography.fontSize.xs, fontWeight: theme.typography.fontWeight.semibold, color: theme.colors.foreground, marginBottom: theme.spacing[1] }}>Value</label>
+                        <div style={{ position: "relative" }}>
+                          <Input
+                            type={envVisibility[env.id] ? "text" : "password"}
+                            placeholder="Value"
+                            value={env.value}
+                            onChange={e => {
+                              const newVars = [...mcpData.environmentVariables]
+                              newVars[idx].value = e.target.value
+                              setMcpData({ ...mcpData, environmentVariables: newVars })
+                            }}
+                            disabled={env.isExisting}
+                          />
+                          {!env.isExisting && (
+                            <button
+                              onClick={() => toggleEnvVisibility(env.id)}
+                              style={{
+                                position: "absolute", right: theme.spacing[3], top: "50%", transform: "translateY(-50%)",
+                                background: "none", border: "none", cursor: "pointer", padding: 0, color: theme.colors.muted_foreground, display: 'flex'
+                              }}
+                            >
+                              {envVisibility[env.id] ? <EyeOff size={18} /> : <Eye size={18} />}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Remove Button */}
+                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        leadingIcon={Trash2}
+                        onClick={() => {
+                          const newVars = mcpData.environmentVariables.filter((_, i) => i !== idx)
+                          setMcpData({ ...mcpData, environmentVariables: newVars })
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <Button
+              variant="outline"
+              size="md"
+              leadingIcon={Plus}
+              onClick={() => {
+                const newVars = [
+                  ...mcpData.environmentVariables,
+                  { id: Date.now(), key: "", value: "", isPassword: true, isExisting: false }
+                ]
+                setMcpData({ ...mcpData, environmentVariables: newVars })
+              }}
+              style={{ marginBottom: theme.spacing[6], width: "100%" }}
+            >
+              Add Environment Variable
+            </Button>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: theme.spacing[3], paddingTop: theme.spacing[4], borderTop: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}` }}>
+              <Button variant="outline" size="md" onClick={() => setShowEnvModal(false)}>
+                Close
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
     </Layout>
   )
 }

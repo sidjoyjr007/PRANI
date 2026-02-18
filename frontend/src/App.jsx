@@ -15,6 +15,7 @@ import ToolTestPage from './pages/ToolTestPage'
 import CreateToolPage from './pages/CreateToolPage'
 import MCPServersPage from './pages/MCPServersPage'
 import CreateMCPServerPage from './pages/CreateMCPServerPage'
+import MCPTestPage from './pages/MCPTestPage'
 import LLMsPage from './pages/LLMsPage'
 import CreateLLMPage from './pages/CreateLLMPage'
 import LLMTestPage from './pages/LLMTestPage'
@@ -46,6 +47,7 @@ function App() {
         <Route path="/mcp-servers" element={<ProtectedRoute><MCPServersPage /></ProtectedRoute>} />
         <Route path="/create-mcp-server" element={<ProtectedRoute><CreateMCPServerPage /></ProtectedRoute>} />
         <Route path="/edit-mcp-server/:serverId" element={<ProtectedRoute><CreateMCPServerPage /></ProtectedRoute>} />
+        <Route path="/test-mcp-server/:serverId" element={<ProtectedRoute><MCPTestPage /></ProtectedRoute>} />
         <Route path="/llms" element={<ProtectedRoute><LLMsPage /></ProtectedRoute>} />
         <Route path="/create-llm" element={<ProtectedRoute><CreateLLMPage /></ProtectedRoute>} />
         <Route path="/edit-llm/:llmId" element={<ProtectedRoute><CreateLLMPage /></ProtectedRoute>} />
