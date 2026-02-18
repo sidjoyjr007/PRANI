@@ -1,5 +1,7 @@
-import { useState, useMemo } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
+import { useDispatch, useSelector } from "react-redux"
+import { fetchAgents, setPage } from "@/store/slices/agentSlice"
 import { useTheme } from "@/context/ThemeContext"
 import Layout from "@/components/Layout"
 import Container from "@/components/Container"
@@ -15,110 +17,52 @@ import {
   PaginationLink,
   PaginationEllipsis,
 } from "@/components/ui/pagination"
-import { Plus, Search } from "lucide-react"
-
-// Mock agents data
-const MOCK_AGENTS = [
-  {
-    id: 1,
-    name: "Research Agent",
-    description: "Handles research tasks and data analysis with multiple tools",
-    capabilities: ["research", "analysis", "documentation"],
-    toolIds: [1, 5],
-    mcpServerIds: [1],
-    humanInLoop: true,
-    llmConfig: "gpt-4",
-  },
-  {
-    id: 2,
-    name: "Developer Agent",
-    description: "Writes and executes code with debugging capabilities",
-    capabilities: ["code", "execution", "debugging"],
-    toolIds: [2, 4],
-    mcpServerIds: [3],
-    humanInLoop: false,
-    llmConfig: "gpt-4",
-  },
-  {
-    id: 3,
-    name: "Data Processing Agent",
-    description: "Processes and analyzes large datasets",
-    capabilities: ["data", "processing", "analysis"],
-    toolIds: [5, 3],
-    mcpServerIds: [2],
-    humanInLoop: false,
-    llmConfig: "gpt-3.5",
-  },
-  {
-    id: 4,
-    name: "Content Creator Agent",
-    description: "Creates and manages content across platforms",
-    capabilities: ["content", "writing", "management"],
-    toolIds: [1, 8],
-    mcpServerIds: [1, 2],
-    humanInLoop: true,
-    llmConfig: "claude-2",
-  },
-  {
-    id: 5,
-    name: "API Integration Agent",
-    description: "Handles API calls and integrations",
-    capabilities: ["api", "integration", "networking"],
-    toolIds: [4, 9],
-    mcpServerIds: [3],
-    humanInLoop: false,
-    llmConfig: "gpt-4",
-  },
-  {
-    id: 6,
-    name: "File Management Agent",
-    description: "Manages files and documents efficiently",
-    capabilities: ["file", "management", "organization"],
-    toolIds: [3, 7],
-    mcpServerIds: [2],
-    humanInLoop: false,
-    llmConfig: "gpt-3.5",
-  },
-]
-
-// Fuzzy search helper
-const fuzzySearch = (query, text) => {
-  if (!query) return true
-  const lowerQuery = query.toLowerCase()
-  const lowerText = text.toLowerCase()
-  return lowerText.includes(lowerQuery)
-}
+import { Plus, Search, Bot } from "lucide-react"
+import useDebounce from "@/hooks/useDebounce"
+import { Empty } from "@/components/ui/empty"
+import { Toast, ToastContainer } from "@/components/ui/toast"
+import { Spinner } from "@/components/ui/spinner"
 
 export default function AgentsPage() {
   const theme = useTheme()
   const navigate = useNavigate()
+  const dispatch = useDispatch()
+
+  const { items: agents, total: totalAgents, page: currentPage, size: itemsPerPage, isLoading } = useSelector((state) => state.agents)
 
   const [searchQuery, setSearchQuery] = useState("")
-  const [currentPage, setCurrentPage] = useState(1)
-  const itemsPerPage = 6
+  const debouncedSearchQuery = useDebounce(searchQuery, 500)
 
-  // Filter agents based on search
-  const filteredAgents = useMemo(() => {
-    return MOCK_AGENTS.filter(agent =>
-      fuzzySearch(searchQuery, `${agent.name} ${agent.description}`)
-    )
-  }, [searchQuery])
+  // Toast State
+  const [toasts, setToasts] = useState([])
+  const addToast = (title, description, variant = "info") => {
+    const id = Date.now().toString()
+    setToasts((prev) => [...prev, { id, title, description, variant }])
+    setTimeout(() => removeToast(id), 5000)
+  }
+  const removeToast = (id) => setToasts((prev) => prev.filter((t) => t.id !== id))
 
-  // Calculate pagination
-  const totalPages = Math.ceil(filteredAgents.length / itemsPerPage)
-  const paginatedAgents = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage
-    const endIndex = startIndex + itemsPerPage
-    return filteredAgents.slice(startIndex, endIndex)
-  }, [filteredAgents, currentPage])
+  useEffect(() => {
+    dispatch(fetchAgents({
+      page: currentPage,
+      size: itemsPerPage,
+      search: debouncedSearchQuery
+    }))
+  }, [dispatch, currentPage, itemsPerPage, debouncedSearchQuery])
 
-  // Reset to page 1 when search changes
+  useEffect(() => {
+    if (currentPage !== 1) {
+      dispatch(setPage(1))
+    }
+  }, [debouncedSearchQuery])
+
+  const totalPages = Math.ceil(totalAgents / itemsPerPage)
+
   const handleSearchChange = (e) => {
     setSearchQuery(e.target.value)
-    setCurrentPage(1)
   }
 
-  // Generate pagination buttons
+  // Generate pagination buttons (matching ToolsPage pattern)
   const getPaginationButtons = () => {
     const buttons = []
     const maxButtons = 5
@@ -132,7 +76,7 @@ export default function AgentsPage() {
     if (startPage > 1) {
       buttons.push(
         <PaginationItem key="first">
-          <PaginationLink onClick={() => setCurrentPage(1)}>1</PaginationLink>
+          <PaginationLink onClick={() => dispatch(setPage(1))}>1</PaginationLink>
         </PaginationItem>
       )
       if (startPage > 2) {
@@ -148,7 +92,7 @@ export default function AgentsPage() {
       buttons.push(
         <PaginationItem key={i}>
           <PaginationLink
-            onClick={() => setCurrentPage(i)}
+            onClick={() => dispatch(setPage(i))}
             isActive={currentPage === i}
           >
             {i}
@@ -167,7 +111,7 @@ export default function AgentsPage() {
       }
       buttons.push(
         <PaginationItem key="last">
-          <PaginationLink onClick={() => setCurrentPage(totalPages)}>
+          <PaginationLink onClick={() => dispatch(setPage(totalPages))}>
             {totalPages}
           </PaginationLink>
         </PaginationItem>
@@ -179,18 +123,29 @@ export default function AgentsPage() {
 
   return (
     <Layout>
+      {/* Toast Notifications */}
+      <ToastContainer position="top-center">
+        {toasts.map((toast) => (
+          <Toast
+            key={toast.id}
+            title={toast.title}
+            description={toast.description}
+            variant={toast.variant}
+            onDismiss={() => removeToast(toast.id)}
+          />
+        ))}
+      </ToastContainer>
+
       <Container>
         {/* Header with Title and Search */}
         <div style={{ marginBottom: theme.spacing[8] }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-start",
-              gap: theme.spacing[4],
-              marginBottom: theme.spacing[6],
-            }}
-          >
+          <div style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: theme.spacing[4],
+            marginBottom: theme.spacing[6],
+          }}>
             <div style={{ flex: 1 }}>
               <PageHeader
                 title="Agents"
@@ -209,24 +164,39 @@ export default function AgentsPage() {
           </div>
 
           {/* Search Box */}
-          <div style={{ maxWidth: "500px" }}>
+          <div style={{
+            maxWidth: "500px",
+            position: "relative"
+          }}>
             <Input
               placeholder="Search agents..."
               value={searchQuery}
               onChange={handleSearchChange}
               leadingIcon={Search}
+              trailingIcon={isLoading && agents.length > 0 ? Spinner : undefined}
             />
           </div>
         </div>
 
-        {/* Agents Grid */}
-        {paginatedAgents.length > 0 ? (
-          <>
-            <CardGrid 
-              items={paginatedAgents}
-              columns={3} 
+        {isLoading && agents.length === 0 ? (
+          <div style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            minHeight: "400px"
+          }}>
+            <Spinner size="lg" variant="primary" />
+          </div>
+        ) : agents.length > 0 ? (
+          <div style={{
+            opacity: isLoading ? 0.6 : 1,
+            transition: "opacity 0.2s ease-in-out"
+          }}>
+            <CardGrid
+              items={agents}
+              columns={3}
               gap={6}
-              renderCard={(agent) => <AgentCard agent={agent} />}
+              renderCard={(agent) => <AgentCard agent={agent} addToast={addToast} />}
             />
 
             {/* Pagination */}
@@ -237,7 +207,7 @@ export default function AgentsPage() {
                     {/* Previous Button */}
                     <PaginationItem>
                       <PaginationLink
-                        onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                        onClick={() => dispatch(setPage(Math.max(1, currentPage - 1)))}
                         disabled={currentPage === 1}
                       >
                         ← Previous
@@ -250,9 +220,7 @@ export default function AgentsPage() {
                     {/* Next Button */}
                     <PaginationItem>
                       <PaginationLink
-                        onClick={() =>
-                          setCurrentPage(Math.min(totalPages, currentPage + 1))
-                        }
+                        onClick={() => dispatch(setPage(Math.min(totalPages, currentPage + 1)))}
                         disabled={currentPage === totalPages}
                       >
                         Next →
@@ -262,19 +230,27 @@ export default function AgentsPage() {
                 </Pagination>
               </div>
             )}
-          </>
-        ) : (
-          <div
-            style={{
-              textAlign: "center",
-              padding: theme.spacing[12],
-              color: theme.colors.muted_foreground,
-            }}
-          >
-            <p style={{ fontSize: theme.typography.fontSize.lg }}>
-              No agents found matching your search.
-            </p>
           </div>
+        ) : (
+          <Empty
+            icon={Bot}
+            title="No agents found"
+            description={
+              searchQuery
+                ? `No agents match your search "${searchQuery}".`
+                : "You haven't created any agents yet. Get started by creating your first intelligent agent."
+            }
+            action={
+              <Button
+                variant="primary"
+                size="md"
+                leadingIcon={Plus}
+                onClick={() => navigate("/create-agent")}
+              >
+                Create Agent
+              </Button>
+            }
+          />
         )}
       </Container>
     </Layout>
