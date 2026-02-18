@@ -17,6 +17,7 @@ import MCPServersPage from './pages/MCPServersPage'
 import CreateMCPServerPage from './pages/CreateMCPServerPage'
 import LLMsPage from './pages/LLMsPage'
 import CreateLLMPage from './pages/CreateLLMPage'
+import LLMTestPage from './pages/LLMTestPage'
 import LogsPage from './pages/LogsPage'
 import ComponentShowcase from './pages/ComponentShowcase'
 import NotFoundPage from './pages/NotFoundPage'
@@ -48,6 +49,7 @@ function App() {
         <Route path="/llms" element={<ProtectedRoute><LLMsPage /></ProtectedRoute>} />
         <Route path="/create-llm" element={<ProtectedRoute><CreateLLMPage /></ProtectedRoute>} />
         <Route path="/edit-llm/:llmId" element={<ProtectedRoute><CreateLLMPage /></ProtectedRoute>} />
+        <Route path="/test-llm/:llmId" element={<ProtectedRoute><LLMTestPage /></ProtectedRoute>} />
         <Route path="/components" element={<ComponentShowcase />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>

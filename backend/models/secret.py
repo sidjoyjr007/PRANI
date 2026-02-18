@@ -33,3 +33,31 @@ class UserToolSecret(Base):
 
     def __repr__(self):
         return f"<UserToolSecret {self.name}>"
+
+
+class LLMSecret(Base):
+    """
+    Stores encrypted secrets for LLMs.
+    Link secrets strictly to the LLM configuration, accessible by the owner.
+    """
+    __tablename__ = "llm_secrets"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    llm_id = Column(UUID(as_uuid=True), ForeignKey("llms.id"), nullable=False)
+    
+    name = Column(String(255), nullable=False)     # e.g., "OPENAI_API_KEY"
+    encrypted_value = Column(String, nullable=False) # Fernet encrypted
+    
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    llm = relationship("LLM", backref="secrets")
+    
+    # Constraints: One value per variable per LLM
+    __table_args__ = (
+        UniqueConstraint('llm_id', 'name', name='uq_llm_secret'),
+    )
+
+    def __repr__(self):
+        return f"<LLMSecret {self.name}>"

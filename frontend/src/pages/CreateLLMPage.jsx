@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react"
 import { useNavigate, useParams } from "react-router-dom"
+import { useDispatch, useSelector } from "react-redux"
 import { useTheme } from "@/context/ThemeContext"
+import Editor from "@monaco-editor/react"
 import Layout from "@/components/Layout"
 import Container from "@/components/Container"
 import { Button } from "@/components/ui/button"
@@ -8,47 +10,23 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Text } from "@/components/ui/text"
 import { Card } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
+import { Alert } from "@/components/ui/alert"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
-import { ChevronLeft, Check, Eye, EyeOff } from "lucide-react"
+import { ChevronLeft, Check, Plus, Trash2, Eye, EyeOff, Settings, X } from "lucide-react"
+import { Toast, ToastContainer } from "@/components/ui/toast"
+import { fetchLLMById, createLLM, updateLLM, clearCurrentLLM } from "@/store/slices/llmSlice"
 
-// Provider and model mapping
-const PROVIDER_MODELS = {
-  OpenAI: ["gpt-4", "gpt-4-turbo", "gpt-3.5-turbo", "gpt-3.5"],
-  Anthropic: ["claude-3-opus", "claude-3-sonnet", "claude-2"],
-  Gemini: ["gemini-pro", "gemini-1.5-pro"],
-  HuggingFace: ["mistral-7b", "llama-2-70b", "neural-chat-7b"],
-}
-
-const PROVIDERS = Object.keys(PROVIDER_MODELS)
-const AUTH_TYPES = ["param", "header", "Bearer"]
-
-// Mock data for editing
-const MOCK_LLMS = [
-  {
-    id: 1,
-    name: "Production GPT-4",
-    description: "Production GPT-4 configuration",
-    provider: "OpenAI",
-    model: "gpt-4",
-    apiKey: "sk-...",
-    authType: "Bearer",
-  },
-  {
-    id: 2,
-    name: "Claude Opus",
-    description: "Claude Opus configuration",
-    provider: "Anthropic",
-    model: "claude-3-opus",
-    apiKey: "sk-ant-...",
-    authType: "Bearer",
-  },
-]
+const PROVIDERS = ["OpenAI", "Anthropic", "Gemini", "HuggingFace", "Mistral", "Cohere", "Other"]
 
 export default function CreateLLMPage() {
   const theme = useTheme()
   const navigate = useNavigate()
   const { llmId } = useParams()
+  const isEditMode = !!llmId
+
+  /* Redux Hooks */
+  const dispatch = useDispatch()
+  const { currentLLM, isSaving } = useSelector((state) => state.llms)
 
   // Form state
   const [llmData, setLLMData] = useState({
@@ -56,136 +34,169 @@ export default function CreateLLMPage() {
     description: "",
     provider: "",
     model: "",
-    apiKey: "",
-    authType: "param",
-    authParam: "",
-    huggingFaceToken: "",
-    hasApiKey: false,
+    headers: "{\n  \"Authorization\": \"Bearer {{env.API_KEY}}\"\n}",
+    environmentVariables: []
   })
+  const [originalData, setOriginalData] = useState(null)
 
   // UI state
-  const [showPassword, setShowPassword] = useState(false)
-  const [isLoading, setIsLoading] = useState(!!llmId)
-  const [isSaving, setIsSaving] = useState(false)
-  const [errors, setErrors] = useState({})
+  const [isLoading, setIsLoading] = useState(isEditMode)
+  const [showEnvModal, setShowEnvModal] = useState(false)
+  const [envVisibility, setEnvVisibility] = useState({})
+
+  // Toast State
+  const [toasts, setToasts] = useState([])
+  const addToast = (title, description, variant = "info") => {
+    const id = Date.now().toString()
+    setToasts((prev) => [...prev, { id, title, description, variant }])
+    setTimeout(() => removeToast(id), 5000)
+  }
+  const removeToast = (id) => setToasts((prev) => prev.filter((t) => t.id !== id))
 
   // Load existing LLM if editing
   useEffect(() => {
     if (llmId) {
-      const llm = MOCK_LLMS.find(l => l.id === parseInt(llmId))
-      if (llm) {
-        setLLMData({
-          ...llm,
-          hasApiKey: !!llm.apiKey,
+      dispatch(fetchLLMById(llmId))
+        .unwrap()
+        .then((data) => {
+          const envVars = (data.environmentVariables || []).map((ev, idx) => ({
+            ...ev,
+            id: Date.now() + idx,
+            isExisting: true
+          }))
+
+          const mapped = {
+            name: data.name || "",
+            description: data.description || "",
+            provider: data.provider || "",
+            model: data.model || "",
+            headers: data.headers || "{}",
+            environmentVariables: envVars
+          }
+
+          setLLMData(mapped)
+          setOriginalData(JSON.parse(JSON.stringify(mapped))) // Deep copy for diff
+
+          const visibility = {}
+          envVars.forEach(env => visibility[env.id] = false)
+          setEnvVisibility(visibility)
+          setIsLoading(false)
         })
-      } else {
-        alert("LLM not found")
-        navigate("/llms")
-      }
+        .catch((err) => {
+          console.error("Failed to fetch LLM:", err)
+          addToast("Error", "Failed to load LLM configuration", "error")
+          navigate("/llms")
+        })
+    } else {
+      // Clear current LLM in redux when creating new
+      dispatch(clearCurrentLLM())
       setIsLoading(false)
     }
-  }, [llmId, navigate])
+  }, [llmId, dispatch, navigate])
 
-  // Validate form
-  const validateForm = () => {
-    const newErrors = {}
-
-    if (!llmData.name || llmData.name.trim().length < 2) {
-      newErrors.name = "LLM name is required"
+  // Helper to validate JSON
+  const isValidJson = (str) => {
+    try {
+      JSON.parse(str)
+      return true
+    } catch (e) {
+      return false
     }
-
-    if (!llmData.description || llmData.description.trim().length < 10) {
-      newErrors.description = "Description is required"
-    }
-
-    if (!llmData.provider) {
-      newErrors.provider = "Provider is required"
-    }
-
-    if (!llmData.model) {
-      newErrors.model = "Model is required"
-    }
-
-    // Only validate API key/token if checkbox is checked (or HuggingFace is always required)
-    if (llmData.provider === "HuggingFace") {
-      if (!llmData.huggingFaceToken) {
-        newErrors.huggingFaceToken = "HuggingFace token is required"
-      }
-    } else if (llmData.hasApiKey) {
-      if (!llmData.apiKey) {
-        newErrors.apiKey = "API key is required"
-      }
-
-      if (!llmData.authType) {
-        newErrors.authType = "Authentication type is required"
-      }
-
-      if ((llmData.authType === "param" || llmData.authType === "header") && !llmData.authParam) {
-        newErrors.authParam = `${llmData.authType === "param" ? "Parameter" : "Header"} name is required`
-      }
-    }
-
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
   }
 
-  // Handle save
   const handleSave = async () => {
-    if (!validateForm()) {
-      alert("Please fix the validation errors")
+    // Validation
+    if (!llmData.name.trim()) {
+      addToast("Validation Error", "LLM Name is required", "destructive")
+      return
+    }
+    if (!llmData.provider) {
+      addToast("Validation Error", "Provider is required", "destructive")
+      return
+    }
+    if (!llmData.model.trim()) {
+      addToast("Validation Error", "Model Name is required", "destructive")
+      return
+    }
+    if (!isValidJson(llmData.headers)) {
+      addToast("Validation Error", "Headers must be valid JSON", "destructive")
       return
     }
 
-    setIsSaving(true)
+    let payload = {}
+
+    if (isEditMode && originalData) {
+      // UPDATE: Only send changed fields (diff-based like Tools page)
+      if (llmData.name !== originalData.name) payload.name = llmData.name
+      if (llmData.description !== originalData.description) payload.description = llmData.description
+      if (llmData.provider !== originalData.provider) payload.provider = llmData.provider
+      if (llmData.model !== originalData.model) payload.model = llmData.model
+      if (llmData.headers !== originalData.headers) payload.headers = llmData.headers
+
+      // Compare env vars (by keys)
+      const currentEnvKeys = llmData.environmentVariables.map(e => e.key).sort()
+      const originalEnvKeys = originalData.environmentVariables.map(e => e.key).sort()
+      if (JSON.stringify(currentEnvKeys) !== JSON.stringify(originalEnvKeys)) {
+        payload.environmentVariables = llmData.environmentVariables.map(e => ({
+          key: e.key,
+          value: e.isExisting ? undefined : e.value,
+        })).filter(e => e.key) // Only pass if key is set
+      }
+
+      // Include new env var values (secrets for newly added vars)
+      const newEnvVars = llmData.environmentVariables.filter(e => !e.isExisting && e.key && e.value)
+      if (newEnvVars.length > 0 && !payload.environmentVariables) {
+        payload.environmentVariables = llmData.environmentVariables.map(e => ({
+          key: e.key,
+          value: e.isExisting ? undefined : e.value,
+        })).filter(e => e.key)
+      }
+
+      if (Object.keys(payload).length === 0) {
+        addToast("Info", "No changes detected.", "info")
+        return
+      }
+    } else {
+      // CREATE: Send full payload
+      payload = {
+        name: llmData.name,
+        description: llmData.description,
+        provider: llmData.provider,
+        model: llmData.model,
+        headers: llmData.headers,
+        environmentVariables: llmData.environmentVariables.map(e => ({
+          key: e.key,
+          value: e.value,
+        })).filter(e => e.key)
+      }
+    }
+
     try {
-      console.log("Saving LLM:", llmData)
-      alert("LLM saved successfully!")
-      navigate("/llms")
+      if (isEditMode) {
+        await dispatch(updateLLM({ id: llmId, llmData: payload })).unwrap()
+        addToast("Success", "LLM updated successfully!", "success")
+      } else {
+        await dispatch(createLLM(payload)).unwrap()
+        addToast("Success", "LLM created successfully!", "success")
+      }
+      // Delay navigation slightly to show success toast
+      setTimeout(() => navigate("/llms"), 1000)
     } catch (error) {
-      alert("Error saving LLM: " + error.message)
-    } finally {
-      setIsSaving(false)
+      console.error("Error saving LLM:", error)
+      const errorMsg = typeof error === 'string' ? error : (error.detail || "Error saving LLM")
+      addToast("Error", errorMsg, "error")
     }
   }
 
-  // Handle delete
-  const handleDelete = async () => {
-    if (!confirm("Are you sure you want to delete this LLM configuration?")) {
-      return
-    }
-
-    try {
-      console.log("Delete LLM:", llmId)
-      navigate("/llms")
-    } catch (error) {
-      alert("Error deleting LLM: " + error.message)
-    }
+  const toggleEnvVisibility = (envId) => {
+    setEnvVisibility(prev => ({ ...prev, [envId]: !prev[envId] }))
   }
-
-  // Handle provider change
-  const handleProviderChange = (newProvider) => {
-    setLLMData(prev => ({
-      ...prev,
-      provider: newProvider,
-      model: "", // Reset model when provider changes
-    }))
-    setErrors(prev => ({ ...prev, model: "" }))
-  }
-
-  // Get available models for current provider
-  const availableModels = llmData.provider ? PROVIDER_MODELS[llmData.provider] : []
 
   if (isLoading) {
     return (
       <Layout>
         <Container>
-          <div style={{
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            minHeight: "400px",
-            color: theme.colors.muted_foreground
-          }}>
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px', color: theme.colors.muted_foreground }}>
             <p>Loading LLM data...</p>
           </div>
         </Container>
@@ -195,499 +206,230 @@ export default function CreateLLMPage() {
 
   return (
     <Layout>
+      {/* Toast Notifications */}
+      <ToastContainer position="top-center">
+        {toasts.map((toast) => (
+          <Toast
+            key={toast.id}
+            title={toast.title}
+            description={toast.description}
+            variant={toast.variant}
+            onDismiss={() => removeToast(toast.id)}
+          />
+        ))}
+      </ToastContainer>
+
       <Container>
-        {/* Header Section */}
+        {/* Header */}
         <div style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: theme.spacing[8],
-          paddingBottom: theme.spacing[4],
-          borderBottom: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          marginBottom: theme.spacing[8], paddingBottom: theme.spacing[4],
+          borderBottom: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`
         }}>
-          <Button
-            variant="outline"
-            size="md"
-            leadingIcon={ChevronLeft}
-            onClick={() => navigate("/llms")}
-          >
+          <Button variant="outline" size="md" leadingIcon={ChevronLeft} onClick={() => navigate("/llms")}>
             Back
           </Button>
-
           <h1 style={{
-            fontSize: theme.typography.fontSize.xl2,
-            fontWeight: theme.typography.fontWeight.bold,
-            color: theme.colors.foreground,
-            margin: 0,
-            flex: 1,
-            textAlign: "center",
+            fontSize: theme.typography.fontSize.xl2, fontWeight: theme.typography.fontWeight.bold,
+            color: theme.colors.foreground, margin: 0, flex: 1, textAlign: "center"
           }}>
-            {llmId ? "Edit LLM Configuration" : "Create New LLM"}
+            {isEditMode ? "Edit LLM" : "Create New LLM"}
           </h1>
-
-          <Button
-            variant="primary"
-            size="md"
-            leadingIcon={Check}
-            onClick={handleSave}
-            disabled={isSaving}
-          >
-            {isSaving ? (llmId ? "Updating..." : "Saving...") : (llmId ? "Update" : "Save")}
+          <Button variant="primary" size="md" leadingIcon={Check} onClick={handleSave} disabled={isSaving}>
+            {isSaving ? (isEditMode ? "Updating..." : "Saving...") : (isEditMode ? "Update" : "Save")}
           </Button>
         </div>
 
-        {/* Main Content Sections */}
-        <div style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: theme.spacing[8],
-          marginBottom: theme.spacing[8],
-        }}>
-          {/* Section 1: LLM Information */}
-          <Card style={{
-            padding: theme.spacing[6],
-            border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-            borderRadius: theme.borderRadius.md,
-            backgroundColor: theme.colors.card,
-          }}>
-            <Text as="h3" size="lg" variant="label" style={{ marginBottom: theme.spacing[6] }}>
-              LLM Information
-            </Text>
+        <div style={{ display: "flex", flexDirection: "column", gap: theme.spacing[8], marginBottom: theme.spacing[8] }}>
 
-            {/* Name */}
+          {/* 1. Basic Info */}
+          <Card style={{ padding: theme.spacing[6], backgroundColor: theme.colors.card, border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`, borderRadius: theme.borderRadius.md }}>
+            <Text as="h3" size="lg" variant="label" style={{ marginBottom: theme.spacing[6] }}>LLM Information</Text>
+
             <div style={{ marginBottom: theme.spacing[6] }}>
-              <label style={{
-                display: "block",
-                fontSize: theme.typography.fontSize.sm,
-                fontWeight: theme.typography.fontWeight.semibold,
-                color: theme.colors.foreground,
-                marginBottom: theme.spacing[2],
-              }}>
-                LLM Name *
-              </label>
-              <Input
-                placeholder="e.g., Production GPT-4"
-                value={llmData.name || ""}
-                onChange={(e) => {
-                  setLLMData({ ...llmData, name: e.target.value })
-                  setErrors(prev => ({ ...prev, name: "" }))
-                }}
-                disabled={isSaving}
-              />
-              {errors.name && (
-                <p style={{
-                  fontSize: theme.typography.fontSize.xs,
-                  color: theme.colors.destructive[600],
-                  margin: `${theme.spacing[2]} 0 0 0`,
-                }}>
-                  {errors.name}
-                </p>
-              )}
+              <label style={{ display: "block", fontSize: theme.typography.fontSize.sm, fontWeight: theme.typography.fontWeight.semibold, marginBottom: theme.spacing[2], color: theme.colors.foreground }}>LLM Name *</label>
+              <Input placeholder="e.g., Production GPT-4" value={llmData.name} onChange={(e) => setLLMData({ ...llmData, name: e.target.value })} />
             </div>
 
-            {/* Description */}
             <div>
-              <label style={{
-                display: "block",
-                fontSize: theme.typography.fontSize.sm,
-                fontWeight: theme.typography.fontWeight.semibold,
-                color: theme.colors.foreground,
-                marginBottom: theme.spacing[2],
-              }}>
-                Description *
-              </label>
-              <Textarea
-                placeholder="Describe this LLM configuration"
-                value={llmData.description || ""}
-                onChange={(e) => {
-                  setLLMData({ ...llmData, description: e.target.value })
-                  setErrors(prev => ({ ...prev, description: "" }))
-                }}
-                rows={3}
-                disabled={isSaving}
-              />
-              {errors.description && (
-                <p style={{
-                  fontSize: theme.typography.fontSize.xs,
-                  color: theme.colors.destructive[600],
-                  margin: `${theme.spacing[2]} 0 0 0`,
-                }}>
-                  {errors.description}
-                </p>
-              )}
+              <label style={{ display: "block", fontSize: theme.typography.fontSize.sm, fontWeight: theme.typography.fontWeight.semibold, marginBottom: theme.spacing[2], color: theme.colors.foreground }}>Description</label>
+              <Textarea placeholder="Describe this configuration" value={llmData.description || ""} onChange={(e) => setLLMData({ ...llmData, description: e.target.value })} rows={3} />
             </div>
           </Card>
 
-          {/* Section 2: Provider & Model */}
-          <Card style={{
-            padding: theme.spacing[6],
-            border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-            borderRadius: theme.borderRadius.md,
-            backgroundColor: theme.colors.card,
-          }}>
-            <Text as="h3" size="lg" variant="label" style={{ marginBottom: theme.spacing[6] }}>
-              Provider & Model
-            </Text>
+          {/* 2. Provider & Model */}
+          <Card style={{ padding: theme.spacing[6], backgroundColor: theme.colors.card, border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`, borderRadius: theme.borderRadius.md }}>
+            <Text as="h3" size="lg" variant="label" style={{ marginBottom: theme.spacing[6] }}>Provider & Model</Text>
 
-            {/* Provider */}
-            <div style={{ marginBottom: theme.spacing[6] }}>
-              <label style={{
-                display: "block",
-                fontSize: theme.typography.fontSize.sm,
-                fontWeight: theme.typography.fontWeight.semibold,
-                color: theme.colors.foreground,
-                marginBottom: theme.spacing[2],
-              }}>
-                Provider *
-              </label>
-              <Select
-                value={llmData.provider}
-                onValueChange={handleProviderChange}
-              >
-                <SelectTrigger disabled={isSaving}>
-                  <SelectValue placeholder="Select provider" />
-                </SelectTrigger>
-                <SelectContent>
-                  {PROVIDERS.map(provider => (
-                    <SelectItem key={provider} value={provider}>
-                      {provider}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.provider && (
-                <p style={{
-                  fontSize: theme.typography.fontSize.xs,
-                  color: theme.colors.destructive[600],
-                  margin: `${theme.spacing[2]} 0 0 0`,
-                }}>
-                  {errors.provider}
-                </p>
-              )}
-            </div>
-
-            {/* Model - Input for HuggingFace, Select for others */}
-            <div>
-              <label style={{
-                display: "block",
-                fontSize: theme.typography.fontSize.sm,
-                fontWeight: theme.typography.fontWeight.semibold,
-                color: theme.colors.foreground,
-                marginBottom: theme.spacing[2],
-              }}>
-                Model *
-              </label>
-              {llmData.provider === "HuggingFace" ? (
-                <Input
-                  placeholder="e.g., mistral-7b, llama-2-70b"
-                  value={llmData.model || ""}
-                  onChange={(e) => {
-                    setLLMData({ ...llmData, model: e.target.value })
-                    setErrors(prev => ({ ...prev, model: "" }))
-                  }}
-                  disabled={isSaving}
-                />
-              ) : (
-                <Select
-                  value={llmData.model}
-                  onValueChange={(model) => {
-                    setLLMData({ ...llmData, model })
-                    setErrors(prev => ({ ...prev, model: "" }))
-                  }}
-                  disabled={!llmData.provider || isSaving}
-                >
-                  <SelectTrigger disabled={!llmData.provider || isSaving}>
-                    <SelectValue placeholder="Select model" />
-                  </SelectTrigger>
+            <div style={{ display: 'flex', flexDirection: "column", gap: theme.spacing[6] }}>
+              <div>
+                <label style={{ display: "block", fontSize: theme.typography.fontSize.sm, fontWeight: theme.typography.fontWeight.semibold, marginBottom: theme.spacing[2], color: theme.colors.foreground }}>Provider *</label>
+                <Select value={llmData.provider} onValueChange={(val) => setLLMData({ ...llmData, provider: val })}>
+                  <SelectTrigger><SelectValue placeholder="Select Provider" /></SelectTrigger>
                   <SelectContent>
-                    {availableModels.map(model => (
-                      <SelectItem key={model} value={model}>
-                        {model}
-                      </SelectItem>
-                    ))}
+                    {PROVIDERS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
                   </SelectContent>
                 </Select>
-              )}
-              {errors.model && (
-                <p style={{
-                  fontSize: theme.typography.fontSize.xs,
-                  color: theme.colors.destructive[600],
-                  margin: `${theme.spacing[2]} 0 0 0`,
-                }}>
-                  {errors.model}
-                </p>
-              )}
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: theme.typography.fontSize.sm, fontWeight: theme.typography.fontWeight.semibold, marginBottom: theme.spacing[2], color: theme.colors.foreground }}>Model Name *</label>
+                <Input placeholder="e.g., gpt-4, claude-3-opus" value={llmData.model} onChange={(e) => setLLMData({ ...llmData, model: e.target.value })} />
+              </div>
             </div>
           </Card>
 
-          {/* Section 3: API Configuration & Authentication */}
-          <Card style={{
-            padding: theme.spacing[6],
-            border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-            borderRadius: theme.borderRadius.md,
-            backgroundColor: theme.colors.card,
-          }}>
-            <Text as="h3" size="lg" variant="label" style={{ marginBottom: theme.spacing[6] }}>
-              Authentication
-            </Text>
-
-            {llmData.provider === "HuggingFace" ? (
-              // HuggingFace: Always show Token only (no Auth Type)
+          {/* 3. Headers & Env Vars */}
+          <Card style={{ padding: theme.spacing[6], backgroundColor: theme.colors.card, border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`, borderRadius: theme.borderRadius.md }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: theme.spacing[6] }}>
               <div>
-                <label style={{
-                  display: "block",
-                  fontSize: theme.typography.fontSize.sm,
-                  fontWeight: theme.typography.fontWeight.semibold,
-                  color: theme.colors.foreground,
-                  marginBottom: theme.spacing[2],
-                }}>
-                  HuggingFace Token *
-                </label>
-                <div style={{
-                  position: "relative",
-                  display: "flex",
-                  alignItems: "center",
-                }}>
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Enter your HuggingFace token"
-                    value={llmData.huggingFaceToken || ""}
-                    onChange={(e) => {
-                      setLLMData({ ...llmData, huggingFaceToken: e.target.value })
-                      setErrors(prev => ({ ...prev, huggingFaceToken: "" }))
-                    }}
-                    disabled={isSaving}
-                    style={{
-                      width: "100%",
-                      padding: `${theme.spacing[3]} ${theme.spacing[4]}`,
-                      paddingRight: theme.spacing[12],
-                      fontSize: theme.typography.fontSize.sm,
-                      border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-                      borderRadius: theme.borderRadius.md,
-                      backgroundColor: theme.colors.background,
-                      color: theme.colors.foreground,
-                      fontFamily: "monospace",
-                      letterSpacing: "0.05em",
-                    }}
-                  />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowPassword(!showPassword)}
-                    disabled={isSaving}
-                    style={{
-                      position: "absolute",
-                      right: theme.spacing[3],
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      padding: 0,
-                      color: theme.colors.muted_foreground,
-                      minWidth: "unset",
-                    }}
-                    title={showPassword ? "Hide token" : "Show token"}
-                  >
-                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </Button>
-                </div>
-                {errors.huggingFaceToken && (
-                  <p style={{
-                    fontSize: theme.typography.fontSize.xs,
-                    color: theme.colors.destructive[600],
-                    margin: `${theme.spacing[2]} 0 0 0`,
-                  }}>
-                    {errors.huggingFaceToken}
-                  </p>
-                )}
+                <Text as="h3" size="lg" variant="label">Headers Configuration</Text>
+                <Text as="p" size="sm" style={{ color: theme.colors.muted_foreground, marginTop: theme.spacing[1] }}>Define HTTP headers (JSON format)</Text>
               </div>
-            ) : (
-              // Other providers: Checkbox for API Key + Auth Type
-              <>
-                <div style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: theme.spacing[3],
-                  marginBottom: theme.spacing[6],
-                }}>
-                  <Checkbox
-                    checked={llmData.hasApiKey || false}
-                    onChange={(e) => {
-                      setLLMData({
-                        ...llmData,
-                        hasApiKey: e.target.checked,
-                        apiKey: e.target.checked ? llmData.apiKey : "",
-                      })
-                      setErrors(prev => ({ ...prev, apiKey: "", authType: "", authParam: "" }))
-                    }}
-                    disabled={isSaving}
-                  />
-                  <label style={{
-                    fontSize: theme.typography.fontSize.sm,
-                    fontWeight: theme.typography.fontWeight.semibold,
-                    color: theme.colors.foreground,
-                    cursor: isSaving ? "not-allowed" : "pointer",
-                  }}>
-                    Configure API Key
-                  </label>
-                </div>
+              <Button variant="outline" size="sm" leadingIcon={Settings} onClick={() => setShowEnvModal(true)}>
+                Env Variables
+              </Button>
+            </div>
 
-                {llmData.hasApiKey && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: theme.spacing[6] }}>
-                    <div>
-                      <label style={{
-                        display: "block",
-                        fontSize: theme.typography.fontSize.sm,
-                        fontWeight: theme.typography.fontWeight.semibold,
-                        color: theme.colors.foreground,
-                        marginBottom: theme.spacing[2],
-                      }}>
-                        API Key *
-                      </label>
-                      <div style={{
-                        position: "relative",
-                        display: "flex",
-                        alignItems: "center",
-                      }}>
-                        <input
-                          type={showPassword ? "text" : "password"}
-                          placeholder="Enter your API key"
-                          value={llmData.apiKey || ""}
-                          onChange={(e) => {
-                            setLLMData({ ...llmData, apiKey: e.target.value })
-                            setErrors(prev => ({ ...prev, apiKey: "" }))
-                          }}
-                          disabled={isSaving}
-                          style={{
-                            width: "100%",
-                            padding: `${theme.spacing[3]} ${theme.spacing[4]}`,
-                            paddingRight: theme.spacing[12],
-                            fontSize: theme.typography.fontSize.sm,
-                            border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-                            borderRadius: theme.borderRadius.md,
-                            backgroundColor: theme.colors.background,
-                            color: theme.colors.foreground,
-                            fontFamily: "monospace",
-                            letterSpacing: "0.05em",
-                          }}
-                        />
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setShowPassword(!showPassword)}
-                          disabled={isSaving}
-                          style={{
-                            position: "absolute",
-                            right: theme.spacing[3],
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            padding: 0,
-                            color: theme.colors.muted_foreground,
-                            minWidth: "unset",
-                          }}
-                          title={showPassword ? "Hide API key" : "Show API key"}
-                        >
-                          {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                        </Button>
-                      </div>
-                      {errors.apiKey && (
-                        <p style={{
-                          fontSize: theme.typography.fontSize.xs,
-                          color: theme.colors.destructive[600],
-                          margin: `${theme.spacing[2]} 0 0 0`,
-                        }}>
-                          {errors.apiKey}
-                        </p>
-                      )}
-                    </div>
+            <div style={{ marginBottom: theme.spacing[4] }}>
+              <Alert variant="filled" status="info">
+                <Text size="sm">
+                  Use <code>{"{{env.VARIABLE_NAME}}"}</code> to reference environment variables securely.<br />
+                  Example: <code>{`"Authorization": "Bearer {{env.OPENAI_API_KEY}}"`}</code>
+                </Text>
+              </Alert>
+            </div>
 
-                    <div>
-                      <label style={{
-                        display: "block",
-                        fontSize: theme.typography.fontSize.sm,
-                        fontWeight: theme.typography.fontWeight.semibold,
-                        color: theme.colors.foreground,
-                        marginBottom: theme.spacing[2],
-                      }}>
-                        Authentication Type *
-                      </label>
-                      <Select
-                        value={llmData.authType}
-                        onValueChange={(authType) => {
-                          setLLMData({ ...llmData, authType })
-                        }}
-                        disabled={isSaving}
-                      >
-                        <SelectTrigger disabled={isSaving}>
-                          <SelectValue placeholder="Select authentication type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {AUTH_TYPES.map(type => (
-                            <SelectItem key={type} value={type}>
-                              {type.charAt(0).toUpperCase() + type.slice(1)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-
-                      <p style={{
-                        fontSize: theme.typography.fontSize.xs,
-                        color: theme.colors.muted_foreground,
-                        margin: `${theme.spacing[2]} 0 0 0`,
-                      }}>
-                        {llmData.authType === "param" && "API key passed as query parameter"}
-                        {llmData.authType === "header" && "API key passed in custom header"}
-                        {llmData.authType === "Bearer" && "API key passed as Bearer token"}
-                      </p>
-                    </div>
-
-                    {(llmData.authType === "param" || llmData.authType === "header") && (
-                      <div>
-                        <label style={{
-                          display: "block",
-                          fontSize: theme.typography.fontSize.sm,
-                          fontWeight: theme.typography.fontWeight.semibold,
-                          color: theme.colors.foreground,
-                          marginBottom: theme.spacing[2],
-                        }}>
-                          {llmData.authType === "param" ? "Parameter Name" : "Header Name"} *
-                        </label>
-                        <input
-                          type="text"
-                          placeholder={llmData.authType === "param" ? "e.g., api_key" : "e.g., X-API-Key"}
-                          value={llmData.authParam || ""}
-                          onChange={(e) => {
-                            setLLMData({ ...llmData, authParam: e.target.value })
-                            setErrors(prev => ({ ...prev, authParam: "" }))
-                          }}
-                          disabled={isSaving}
-                          style={{
-                            width: "100%",
-                            padding: `${theme.spacing[3]} ${theme.spacing[4]}`,
-                            fontSize: theme.typography.fontSize.sm,
-                            border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-                            borderRadius: theme.borderRadius.md,
-                            backgroundColor: theme.colors.background,
-                            color: theme.colors.foreground,
-                          }}
-                        />
-                        {errors.authParam && (
-                          <p style={{
-                            fontSize: theme.typography.fontSize.xs,
-                            color: theme.colors.destructive[600],
-                            margin: `${theme.spacing[2]} 0 0 0`,
-                          }}>
-                            {errors.authParam}
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
+            <div style={{ border: `2px solid ${theme.colors.neutral[300]}`, borderRadius: theme.borderRadius.md, overflow: "hidden" }}>
+              <Editor
+                height="200px"
+                defaultLanguage="json"
+                value={llmData.headers}
+                onChange={(value) => setLLMData({ ...llmData, headers: value || "" })}
+                theme={theme.isDark ? "vs-dark" : "vs"}
+                options={{ minimap: { enabled: false }, fontSize: 13, lineNumbers: "off", folding: false }}
+              />
+            </div>
           </Card>
         </div>
+
+        {/* Environment Variables Modal */}
+        {showEnvModal && (
+          <div style={{
+            position: "fixed",
+            top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex", justifyContent: "center", alignItems: "center",
+            zIndex: 1000,
+          }}>
+            <Card style={{
+              padding: theme.spacing[6],
+              borderRadius: theme.borderRadius.lg,
+              backgroundColor: theme.colors.card,
+              maxWidth: "600px", width: "90%",
+              maxHeight: "80vh", overflow: "auto",
+              border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: theme.spacing[6] }}>
+                <div>
+                  <h2 style={{ fontSize: theme.typography.fontSize.lg, fontWeight: theme.typography.fontWeight.semibold, color: theme.colors.foreground, margin: 0 }}>
+                    Environment Variables
+                  </h2>
+                  <p style={{ fontSize: theme.typography.fontSize.sm, color: theme.colors.muted_foreground, marginTop: theme.spacing[1], margin: 0 }}>
+                    {isEditMode
+                      ? "Existing variables are read-only. You can delete them or add new ones."
+                      : <>Add sensitive configuration variables. Use <code>{"{{env.KEY}}"}</code> to access them.</>
+                    }
+                  </p>
+                </div>
+                <button onClick={() => setShowEnvModal(false)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: theme.colors.muted_foreground }}>
+                  <X size={24} />
+                </button>
+              </div>
+
+              {llmData.environmentVariables && llmData.environmentVariables.length > 0 && (
+                <div style={{ marginBottom: theme.spacing[6] }}>
+                  {llmData.environmentVariables.map((envVar, idx) => (
+                    <div key={envVar.id || idx} style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: theme.spacing[3],
+                      marginBottom: theme.spacing[4],
+                      padding: theme.spacing[4],
+                      border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
+                      borderRadius: theme.borderRadius.sm,
+                      backgroundColor: envVar.isExisting ? theme.colors.neutral[100] : theme.colors.neutral[50],
+                    }}>
+                      <div style={{ display: "flex", gap: theme.spacing[3] }}>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ display: "block", fontSize: theme.typography.fontSize.xs, fontWeight: theme.typography.fontWeight.semibold, color: theme.colors.foreground, marginBottom: theme.spacing[1] }}>Key</label>
+                          <Input
+                            placeholder="e.g., API_KEY"
+                            value={envVar.key || ""}
+                            onChange={(e) => {
+                              const newVars = [...llmData.environmentVariables]
+                              newVars[idx].key = e.target.value.toUpperCase()
+                              setLLMData({ ...llmData, environmentVariables: newVars })
+                            }}
+                            disabled={envVar.isExisting}
+                          />
+                        </div>
+
+                        <div style={{ flex: 1 }}>
+                          <label style={{ display: "block", fontSize: theme.typography.fontSize.xs, fontWeight: theme.typography.fontWeight.semibold, color: theme.colors.foreground, marginBottom: theme.spacing[1] }}>Value</label>
+                          <div style={{ position: "relative" }}>
+                            <Input
+                              placeholder={envVar.isExisting ? "••••••••••••" : "Enter value"}
+                              type={envVisibility[envVar.id] ? "text" : "password"}
+                              value={envVar.isExisting ? "****************" : (envVar.value || "")}
+                              onChange={(e) => {
+                                if (envVar.isExisting) return
+                                const newVars = [...llmData.environmentVariables]
+                                newVars[idx].value = e.target.value
+                                setLLMData({ ...llmData, environmentVariables: newVars })
+                              }}
+                              disabled={envVar.isExisting}
+                            />
+                            {!envVar.isExisting && (
+                              <button
+                                onClick={() => toggleEnvVisibility(envVar.id)}
+                                style={{ position: "absolute", right: theme.spacing[3], top: "50%", transform: "translateY(-50%)", background: "none", border: "none", padding: 0, cursor: "pointer", color: theme.colors.muted_foreground, display: "flex", alignItems: "center", justifyContent: "center" }}
+                                type="button"
+                              >
+                                {envVisibility[envVar.id] ? <EyeOff size={18} /> : <Eye size={18} />}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                        <Button variant="destructive" size="sm" leadingIcon={Trash2} onClick={() => {
+                          const newVars = llmData.environmentVariables.filter((_, i) => i !== idx)
+                          setLLMData({ ...llmData, environmentVariables: newVars })
+                        }}>
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <Button variant="outline" size="md" leadingIcon={Plus} onClick={() => {
+                const newVars = [...(llmData.environmentVariables || []), { id: Date.now(), key: "", value: "", isPassword: true, isExisting: false }]
+                if (newVars.length <= 20) setLLMData({ ...llmData, environmentVariables: newVars })
+                else addToast("Limit Exceeded", "Maximum 20 environment variables allowed", "destructive")
+              }} style={{ marginBottom: theme.spacing[6], width: "100%" }}>
+                Add Environment Variable
+              </Button>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: theme.spacing[3], paddingTop: theme.spacing[4], borderTop: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}` }}>
+                <Button variant="outline" size="md" onClick={() => setShowEnvModal(false)}>Close</Button>
+              </div>
+            </Card>
+          </div>
+        )}
 
         {/* Footer Section */}
         <div style={{
@@ -707,9 +449,10 @@ export default function CreateLLMPage() {
             onClick={handleSave}
             disabled={isSaving}
           >
-            {isSaving ? (llmId ? "Updating..." : "Saving...") : (llmId ? "Update LLM" : "Save LLM")}
+            {isSaving ? (isEditMode ? "Updating..." : "Saving...") : (isEditMode ? "Update LLM" : "Save LLM")}
           </Button>
         </div>
+
       </Container>
     </Layout>
   )
