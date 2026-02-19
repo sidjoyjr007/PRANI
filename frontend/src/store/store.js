@@ -4,6 +4,7 @@ import authReducer from './slices/authSlice'
 import llmReducer from './slices/llmSlice'
 import mcpReducer from './slices/mcpSlice'
 import agentReducer from './slices/agentSlice'
+import conversationReducer from './slices/conversationSlice'
 
 export const store = configureStore({
     reducer: {
@@ -12,5 +13,6 @@ export const store = configureStore({
         llms: llmReducer,
         mcps: mcpReducer,
         agents: agentReducer,
+        conversations: conversationReducer,
     },
 })

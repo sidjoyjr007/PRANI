@@ -2,21 +2,40 @@ import { useState } from "react"
 import { useTheme } from "@/context/ThemeContext"
 import { Button } from "@/components/ui/button"
 import { Text } from "@/components/ui/text"
-import { Dropdown, DropdownTrigger, DropdownContent, DropdownItem, DropdownSeparator } from "@/components/ui/dropdown"
-import { Plus, MoreHorizontal, Edit, Trash, MessageSquare } from "lucide-react"
+import { Plus, Edit, Trash, MessageSquare } from "lucide-react"
 import { Empty } from "@/components/ui/empty"
+import DeleteResourceDialog from "@/components/DeleteResourceDialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 
 export default function ConversationsPanel({
     conversations,
     activeConversation,
-    setActiveConversation,
-    setConversations,
+    onSelectConversation,
+    onNewConversation,
+    onDeleteConversation,
+    onRenameConversation,
     selectedAgentId
 }) {
     const theme = useTheme()
     const [hoveredConversationId, setHoveredConversationId] = useState(null)
 
+    // Dialog State
+    const [deleteId, setDeleteId] = useState(null)
+    const [renameId, setRenameId] = useState(null)
+    const [renameValue, setRenameValue] = useState("")
+
     const hasAgentSelected = !!selectedAgentId
+
+    const handleRenameSubmit = () => {
+        if (renameId && renameValue.trim()) {
+            onRenameConversation(renameId, renameValue.trim())
+            setRenameId(null)
+            setRenameValue("")
+        }
+    }
+
+    const conversationToDelete = conversations.find(c => c.id === deleteId)
 
     return (
         <div
@@ -35,6 +54,7 @@ export default function ConversationsPanel({
                     variant="primary"
                     size="sm"
                     disabled={!hasAgentSelected}
+                    onClick={onNewConversation}
                     style={{ width: "32px", height: "32px", padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
                 >
                     <Plus size={16} />
@@ -77,6 +97,7 @@ export default function ConversationsPanel({
                                     borderRadius: theme.borderRadius.md,
                                     cursor: "pointer",
                                     transition: theme.transitions.normal,
+                                    position: "relative", // For absolute positioning if needed, but flex works well
                                 }}
                                 onMouseEnter={(e) => {
                                     setHoveredConversationId(conv.id)
@@ -92,7 +113,7 @@ export default function ConversationsPanel({
                                 }}
                             >
                                 <button
-                                    onClick={() => setActiveConversation(conv.id)}
+                                    onClick={() => onSelectConversation(conv.id)}
                                     style={{
                                         flex: 1,
                                         background: "none",
@@ -100,6 +121,11 @@ export default function ConversationsPanel({
                                         cursor: "pointer",
                                         textAlign: "left",
                                         padding: `0 ${theme.spacing[4]}`,
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap",
+                                        marginRight: isHovered ? "60px" : "0", // Make space for buttons
+                                        transition: "margin-right 0.2s",
                                     }}
                                 >
                                     <Text as="div" variant="body" size="sm" style={{ fontWeight: theme.typography.fontWeight.medium, margin: 0, color: activeConversation === conv.id ? theme.colors.white : theme.colors.foreground }}>
@@ -107,53 +133,103 @@ export default function ConversationsPanel({
                                     </Text>
                                 </button>
 
-                                {/* Dropdown Menu - Only visible on hover */}
+                                {/* Action Buttons - Visible on Hover */}
                                 {isHovered && (
-                                    <Dropdown>
-                                        <DropdownTrigger asChild>
-                                            <button
-                                                style={{
-                                                    background: "none",
-                                                    border: "none",
-                                                    cursor: "pointer",
-                                                    padding: `0 ${theme.spacing[4]}`,
-                                                    display: "flex",
-                                                    alignItems: "center",
-                                                    justifyContent: "center",
-                                                    color: activeConversation === conv.id ? theme.colors.white : theme.colors.foreground,
-                                                }}
-                                            >
-                                                <MoreHorizontal size={16} />
-                                            </button>
-                                        </DropdownTrigger>
-                                        <DropdownContent align="end">
-                                            <DropdownItem
-                                                leadingIcon={Edit}
-                                                onClick={() => console.log("Rename:", conv.title)}
-                                            >
-                                                Rename
-                                            </DropdownItem>
-                                            <DropdownSeparator />
-                                            <DropdownItem
-                                                variant="destructive"
-                                                leadingIcon={Trash}
-                                                onClick={() => {
-                                                    setConversations(conversations.filter(c => c.id !== conv.id))
-                                                    if (activeConversation === conv.id) {
-                                                        setActiveConversation(null)
-                                                    }
-                                                }}
-                                            >
-                                                Delete
-                                            </DropdownItem>
-                                        </DropdownContent>
-                                    </Dropdown>
+                                    <div style={{
+                                        position: "absolute",
+                                        right: theme.spacing[2],
+                                        top: "50%",
+                                        transform: "translateY(-50%)",
+                                        display: "flex",
+                                        gap: theme.spacing[1],
+                                    }}>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                setRenameId(conv.id)
+                                                setRenameValue(conv.title)
+                                            }}
+                                            style={{
+                                                background: "none",
+                                                border: "none",
+                                                cursor: "pointer",
+                                                color: activeConversation === conv.id ? theme.colors.white : theme.colors.muted_foreground,
+                                                padding: "4px",
+                                                display: "flex",
+                                                alignItems: "center",
+                                                opacity: 0.8,
+                                            }}
+                                            title="Rename"
+                                        >
+                                            <Edit size={14} />
+                                        </button>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                setDeleteId(conv.id)
+                                            }}
+                                            style={{
+                                                background: "none",
+                                                border: "none",
+                                                cursor: "pointer",
+                                                color: activeConversation === conv.id ? theme.colors.white : theme.colors.destructive,
+                                                padding: "4px",
+                                                display: "flex",
+                                                alignItems: "center",
+                                                opacity: 0.8,
+                                            }}
+                                            title="Delete"
+                                        >
+                                            <Trash size={14} />
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                         )
                     })
                 )}
             </div>
+
+            {/* Delete Confirmation Dialog */}
+            <DeleteResourceDialog
+                isOpen={!!deleteId}
+                onClose={() => setDeleteId(null)}
+                onConfirm={() => {
+                    onDeleteConversation(deleteId)
+                    setDeleteId(null)
+                }}
+                title="Delete Conversation"
+                resourceName={conversationToDelete?.title || "Conversation"}
+                confirmationKeyword="DELETE"
+                description={
+                    <>
+                        Are you sure you want to delete this conversation? This will permanently remove all message history.
+                        <br />
+                        Type <strong>DELETE</strong> to confirm.
+                    </>
+                }
+            />
+
+            {/* Rename Dialog */}
+            <Dialog open={!!renameId} onOpenChange={() => setRenameId(null)}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Rename Conversation</DialogTitle>
+                    </DialogHeader>
+                    <div style={{ padding: `${theme.spacing[4]} 0` }}>
+                        <Input
+                            value={renameValue}
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            placeholder="Enter new name"
+                            autoFocus
+                        />
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setRenameId(null)}>Cancel</Button>
+                        <Button variant="primary" onClick={handleRenameSubmit}>Save</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     )
 }

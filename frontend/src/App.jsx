@@ -7,7 +7,7 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import VerifyEmailPage from './pages/VerifyEmailPage'
 import WorkPage from './pages/WorkPage'
-import WorkConversationPage from './pages/WorkConversationPage'
+
 import AgentsPage from './pages/AgentsPage'
 import CreateAgentPage from './pages/CreateAgentPage'
 import ToolsPage from './pages/ToolsPage'
@@ -35,7 +35,7 @@ function App() {
         <Route path="/reset-password" element={<PublicRoute><ResetPasswordPage /></PublicRoute>} />
         <Route path="/verify-email" element={<PublicRoute><VerifyEmailPage /></PublicRoute>} />
         <Route path="/work" element={<ProtectedRoute><WorkPage /></ProtectedRoute>} />
-        <Route path="/work/:sessionId" element={<ProtectedRoute><WorkConversationPage /></ProtectedRoute>} />
+        <Route path="/work/:sessionId" element={<ProtectedRoute><WorkPage /></ProtectedRoute>} />
         <Route path="/logs" element={<ProtectedRoute><LogsPage /></ProtectedRoute>} />
         <Route path="/agents" element={<ProtectedRoute><AgentsPage /></ProtectedRoute>} />
         <Route path="/create-agent" element={<ProtectedRoute><CreateAgentPage /></ProtectedRoute>} />
