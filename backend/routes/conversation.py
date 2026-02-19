@@ -52,16 +52,42 @@ def delete_conversation(conversation_id: UUID, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Conversation not found")
     return {"message": "Conversation deleted successfully"}
 
-@router.post("/{conversation_id}/messages", response_model=MessageResponse)
-def add_message(conversation_id: UUID, message: MessageCreate, db: Session = Depends(get_db)):
-    service = ConversationService(db)
+from fastapi.responses import StreamingResponse
+from services.execution_service import ExecutionService
+
+@router.post("/{conversation_id}/messages", response_model=None)
+async def add_message(conversation_id: UUID, message: MessageCreate, db: Session = Depends(get_db)):
+    """
+    Adds a user message and streams the agent's response.
+    Returns a StreamingResponse (Server-Sent Events).
+    """
+    conversation_service = ConversationService(db)
     # Verify conversation exists first
-    conversation = service.get_conversation(conversation_id)
+    conversation = conversation_service.get_conversation(conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
-        
-    created_message = service.add_message(conversation_id, message)
-    return created_message
+    
+    # If no agent attached, just save the message (fallback behavior, or raise error)
+    if not conversation.agent_id:
+        # Fallback: Just save user message
+        created_message = conversation_service.add_message(conversation_id, message)
+        # Mock stream or return JSON? 
+        # For consistency with frontend expecting stream, we might want to mock a stream 
+        # or handle this case in frontend. 
+        # For now, let's just return the message as JSON if no agent (client handles 200 JSON vs Stream).
+        # Actually, best to enforce Agent for now or stream a "No agent selected" message.
+        return created_message
+
+    execution_service = ExecutionService(db)
+    
+    # Create generator
+    # We pass user content string. Handle rich content parsing if needed.
+    user_content = message.content if isinstance(message.content, str) else str(message.content)
+
+    return StreamingResponse(
+        execution_service.run_agent(conversation.agent_id, conversation_id, user_content),
+        media_type="text/event-stream"
+    )
 
 @router.get("/{conversation_id}/messages", response_model=List[MessageResponse])
 def get_messages(conversation_id: UUID, db: Session = Depends(get_db)):

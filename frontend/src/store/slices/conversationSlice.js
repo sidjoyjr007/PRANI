@@ -44,10 +44,31 @@ const conversationSlice = createSlice({
     reducers: {
         setCurrentConversationId: (state, action) => {
             state.currentConversationId = action.payload
-            state.messages = [] // Clear messages on switch
+            state.messages = []
         },
         clearMessages: (state) => {
             state.messages = []
+        },
+        addMessage: (state, action) => {
+            // Optimistically add message
+            state.messages.push(action.payload)
+        },
+        updateStreamingMessage: (state, action) => {
+            // Payload: { content: string, role: string }
+            // Assumes the last message is the one being streamed if role matches, 
+            // or creates a new one if last message is from user.
+            const lastMsg = state.messages[state.messages.length - 1]
+            if (lastMsg && lastMsg.role === action.payload.role) {
+                // Append content
+                lastMsg.content += action.payload.content
+            } else {
+                // New message
+                state.messages.push({
+                    role: action.payload.role,
+                    content: action.payload.content,
+                    created_at: new Date().toISOString() // temporary
+                })
+            }
         }
     },
     extraReducers: (builder) => {
@@ -104,5 +125,5 @@ const conversationSlice = createSlice({
     },
 })
 
-export const { setCurrentConversationId, clearMessages } = conversationSlice.actions
+export const { setCurrentConversationId, clearMessages, addMessage, updateStreamingMessage } = conversationSlice.actions
 export default conversationSlice.reducer

@@ -20,10 +20,13 @@ import {
   updateConversation
 } from "@/store/slices/conversationSlice"
 
+import { useAgentStream } from "@/hooks/useAgentStream"
+
 export default function WorkPage() {
   const dispatch = useDispatch()
   const navigate = useNavigate()
   const { sessionId } = useParams()
+  const { streamMessage, isStreaming } = useAgentStream()
 
   // -- Redux Data --
   const { items: agents } = useSelector((state) => state.agents)
@@ -80,14 +83,14 @@ export default function WorkPage() {
   }
 
   const handleSendMessage = async () => {
-    if (!inputValue.trim()) return
+    if (!inputValue.trim() || isStreaming) return
 
     const content = inputValue
     setInputValue("")
 
     if (sessionId) {
       // Existing conversation
-      await dispatch(sendMessage({ conversationId: sessionId, role: "user", content })).unwrap()
+      await streamMessage(sessionId, content, selectedAgentId)
     } else {
       // New conversation
       if (!selectedAgentId) return
@@ -99,8 +102,8 @@ export default function WorkPage() {
         })).unwrap()
 
         navigate(`/work/${newConv.id}`)
-        // Dispatch message to the new conversation
-        await dispatch(sendMessage({ conversationId: newConv.id, role: "user", content })).unwrap()
+        // Stream message to the new conversation
+        await streamMessage(newConv.id, content, selectedAgentId)
       } catch (error) {
         console.error("Failed to create conversation:", error)
         // Restore input on error?
