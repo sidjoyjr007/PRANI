@@ -13,31 +13,31 @@ import { useTheme } from "@/context/ThemeContext"
 const fuzzySearch = (query, text) => {
   const lowerQuery = query.toLowerCase().trim()
   const lowerText = text.toLowerCase()
-  
+
   // If query is empty, match all
   if (!lowerQuery) return true
-  
+
   let queryIdx = 0
   let textIdx = 0
-  
+
   while (textIdx < lowerText.length && queryIdx < lowerQuery.length) {
     if (lowerQuery[queryIdx] === lowerText[textIdx]) {
       queryIdx++
     }
     textIdx++
   }
-  
+
   // If we've matched all query characters, it's a match
   return queryIdx === lowerQuery.length
 }
 
 const ComboboxContext = React.createContext({
   isOpen: false,
-  handleOpenChange: () => {},
+  handleOpenChange: () => { },
   searchValue: "",
-  setSearchValue: () => {},
+  setSearchValue: () => { },
   value: "",
-  handleValueChange: () => {},
+  handleValueChange: () => { },
 })
 
 const Combobox = React.forwardRef(({
@@ -106,6 +106,7 @@ const ComboboxTrigger = React.forwardRef(({
   size = "md",
   disabled = false,
   children,
+  style,
   ...props
 }, ref) => {
   const theme = useTheme()
@@ -146,6 +147,12 @@ const ComboboxTrigger = React.forwardRef(({
       textColor: theme.colors.foreground,
       boxShadow: isOpen ? `0 0 0 3px ${theme.colors.primary[100]}` : "none",
     },
+    ghost: {
+      bgColor: isHovering && !disabled ? theme.colors.neutral[100] : "transparent",
+      borderColor: "transparent",
+      textColor: theme.colors.foreground,
+      boxShadow: "none",
+    },
   }
 
   const currentVariant = variantStyles[variant] || variantStyles.default
@@ -174,6 +181,7 @@ const ComboboxTrigger = React.forwardRef(({
         opacity: disabled ? theme.opacity.disabled : 1,
         cursor: disabled ? "not-allowed" : "pointer",
         boxShadow: currentVariant.boxShadow,
+        ...style,
       }}
       className={cn(className)}
       onMouseEnter={() => !disabled && setIsHovering(true)}
@@ -335,7 +343,7 @@ const ComboboxItem = React.forwardRef(({
       return ''
     })
     .join(' ')
-  
+
   const isVisible = fuzzySearch(searchValue, textToSearch)
 
   if (!isVisible) return null
