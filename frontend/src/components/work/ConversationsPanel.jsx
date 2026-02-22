@@ -61,7 +61,7 @@ export default function ConversationsPanel({
                 </Button>
             </div>
 
-            <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", gap: theme.spacing[2], height: "100%" }}>
+            <div className="hover-scrollbar" style={{ flex: 1, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column", gap: theme.spacing[2], height: "100%", paddingRight: "4px" }}>
                 {!hasAgentSelected ? (
                     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
                         <Empty
@@ -93,24 +93,18 @@ export default function ConversationsPanel({
                                     alignItems: "center",
                                     justifyContent: "space-between",
                                     padding: `${theme.spacing[3]} 0`,
-                                    backgroundColor: activeConversation === conv.id ? theme.colors.primary[600] : "transparent",
+                                    backgroundColor: activeConversation === conv.id
+                                        ? theme.colors.primary[600]
+                                        : isHovered
+                                            ? theme.colors.neutral[100]
+                                            : "transparent",
                                     borderRadius: theme.borderRadius.md,
                                     cursor: "pointer",
                                     transition: theme.transitions.normal,
                                     position: "relative", // For absolute positioning if needed, but flex works well
                                 }}
-                                onMouseEnter={(e) => {
-                                    setHoveredConversationId(conv.id)
-                                    if (activeConversation !== conv.id) {
-                                        e.currentTarget.style.backgroundColor = theme.colors.neutral[100]
-                                    }
-                                }}
-                                onMouseLeave={(e) => {
-                                    setHoveredConversationId(null)
-                                    if (activeConversation !== conv.id) {
-                                        e.currentTarget.style.backgroundColor = "transparent"
-                                    }
-                                }}
+                                onMouseEnter={() => setHoveredConversationId(conv.id)}
+                                onMouseLeave={() => setHoveredConversationId(null)}
                             >
                                 <button
                                     onClick={() => onSelectConversation(conv.id)}

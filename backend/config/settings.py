@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     # Encryption
     encryption_key: Optional[str] = None
     
+    # ChromaDB Vector Store
+    chroma_url: str = "http://localhost:8100"
+    
     @field_validator("allowed_origins", mode="before")
     @classmethod
     def parse_allowed_origins(cls, v):

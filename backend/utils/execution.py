@@ -14,8 +14,26 @@ logger = logging.getLogger(__name__)
 
 def extract_imports(code: str) -> List[str]:
     """
-    Extract top-level imports from Python code to determine dependencies.
+    Extract all top-level imports from Python code to determine third-party dependencies.
+    Built-in stdlib modules are excluded so they are never passed to pip.
     """
+    import sys
+    # All known stdlib module names
+    stdlib_modules = set(sys.stdlib_module_names) if hasattr(sys, "stdlib_module_names") else {
+        "os", "sys", "re", "json", "math", "time", "datetime", "random", "string",
+        "hashlib", "hmac", "base64", "uuid", "pathlib", "io", "collections",
+        "itertools", "functools", "operator", "copy", "pprint", "types", "typing",
+        "abc", "contextlib", "dataclasses", "enum", "weakref", "gc", "inspect",
+        "traceback", "logging", "warnings", "unittest", "doctest",
+        "smtplib", "imaplib", "poplib", "email", "mailbox", "html", "xml",
+        "http", "urllib", "ftplib", "telnetlib", "socket", "ssl", "select",
+        "asyncio", "threading", "multiprocessing", "concurrent", "subprocess",
+        "csv", "configparser", "pickle", "shelve", "sqlite3", "zipfile",
+        "tarfile", "gzip", "bz2", "lzma", "tempfile", "shutil", "glob",
+        "fnmatch", "stat", "platform", "struct", "codecs", "textwrap", "unicodedata",
+        "argparse", "getopt", "getpass", "signal", "atexit", "sysconfig",
+    }
+
     imports = set()
     try:
         tree = ast.parse(code)
@@ -25,61 +43,31 @@ def extract_imports(code: str) -> List[str]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                imports.add(alias.name.split('.')[0])
+                top = alias.name.split(".")[0]
+                if top not in stdlib_modules:
+                    imports.add(top)
         elif isinstance(node, ast.ImportFrom):
             if node.module:
-                imports.add(node.module.split('.')[0])
-    
-    # Filter out standard library modules (approximation)
-    # A robust solution would check against a list of stdlib modules for the target python version.
-    # For now, we will just list some common 3rd party ones we might expect or let pip handle it (it might fail if stdlib).
-    # Better approach: Just try to install everything that is imported? No, that's slow.
-    # Alternative: Only install what is explicitly likely to be 3rd party.
-    # Let's just return all top-level imports. The caller can decide what to install.
-    # Actually, pip install stdlib_module usually fails or does nothing.
-    
-    # List of common 3rd party libs to explicitly support auto-install
-    common_packages = {
-        "requests", "numpy", "pandas", "scikit-learn", "matplotlib", "seaborn", 
-        "scipy", "bs4", "beautifulsoup4", "openai", "langchain", "pydantic", "fastapi"
-    }
-    
-    # Map import names to package names if different
-    package_map = {
-        "bs4": "beautifulsoup4",
-        "sklearn": "scikit-learn",
-        "PIL": "Pillow",
-        "cv2": "opencv-python"
-    }
-    
-    final_packages = set()
-    for imp in imports:
-        # Check package map first
-        pkg = package_map.get(imp, imp)
-        # If it's a known common package or just pass it through?
-        # Let's pass it through. If pip fails, we catch it?
-        final_packages.add(pkg)
-        
-    # Remove stdlib modules to save time (limited list)
-    stdlib = {
-        "os", "sys", "json", "time", "datetime", "math", "random", "re", 
-        "typing", "collections", "itertools", "functools", "logging", "ast", "shutil", "tempfile"
-    }
-    
-    return list(final_packages - stdlib)
+                top = node.module.split(".")[0]
+                if top not in stdlib_modules:
+                    imports.add(top)
+
+    return list(imports)
 
 def convert_inputs(inputs: Dict[str, Any], input_fields: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Convert string inputs to their target types based on tool definition.
     """
     converted = {}
+    if not input_fields:
+        return inputs
+        
     for field in input_fields:
         name = field.get("name")
         type_str = field.get("type", "str")
         value = inputs.get(name)
         
         # Handle empty/missing values
-        # If type is not string, empty string should be treated as missing/default
         if value is None or (isinstance(value, str) and value == "" and type_str != "str"):
             if field.get("default") is not None:
                  converted[name] = field.get("default")
@@ -109,7 +97,6 @@ def convert_inputs(inputs: Dict[str, Any], input_fields: List[Dict[str, Any]]) -
                 converted[name] = str(value)
         except Exception as e:
             logger.warning(f"Failed to convert input {name} to {type_str}: {e}")
-            # Keep original value if conversion fails (or raise error?)
             converted[name] = value
             
     return converted
@@ -120,32 +107,19 @@ def execute_python_tool(code: str, inputs: Dict[str, Any], secrets: Dict[str, st
     """
     
     # 1. Type Conversion
-    if input_fields:
-        try:
-            inputs = convert_inputs(inputs, input_fields)
-        except Exception as e:
-            return {"success": False, "error": f"Input conversion failed: {str(e)}"}
+    try:
+        inputs = convert_inputs(inputs, input_fields)
+    except Exception as e:
+        return {"success": False, "error": f"Input conversion failed: {str(e)}"}
             
     # 2. Dependency Analysis
     dependencies = extract_imports(code)
     
-    # 3. Secure Variables Handling
-    # Replace {{env.VAR}} mostly for compatibility, but we rely on Env injection.
+    # 3. Secure Variables Handling (Templating)
     processed_code = code
-    
-    # We iterate through keys to perform replacement
     for key in secrets.keys():
-        # 1. Handle Quoted: " {{env.KEY}} " or ' {{env.KEY}} '
-        # Users often write: api_key = "{{env.API_KEY}}"
-        # If we just replace inner part, we get: api_key = "os.environ.get('API_KEY')" -> String literal!
-        # We want: api_key = os.environ.get('API_KEY') -> Function call
-        # So we match the quotes and replace the whole thing.
-        
         quoted_pattern = f"([\"']){{{{env.{key}}}}}\\1"
         processed_code = re.sub(quoted_pattern, f"os.environ.get('{key}')", processed_code)
-
-        # 2. Handle Unquoted: {{env.KEY}}
-        # e.g. api_key = {{env.API_KEY}}
         unquoted_pattern = f"{{{{env.{key}}}}}"
         processed_code = processed_code.replace(unquoted_pattern, f"os.environ.get('{key}')")
     
@@ -154,9 +128,13 @@ def execute_python_tool(code: str, inputs: Dict[str, Any], secrets: Dict[str, st
     temp_dir = tempfile.mkdtemp()
     
     try:
+        # Dedent: remove common leading whitespace that gets saved when
+        # code is written inside an indented block in the UI / DB.
+        import textwrap
+        processed_code = textwrap.dedent(processed_code)
+        
         # Write user code
-        # Ensure 'import os' is present for env var retrieval
-        if "import os" not in processed_code:
+        if "os.environ" in processed_code and "import os" not in processed_code:
             final_code = "import os\n" + processed_code
         else:
             final_code = processed_code
@@ -165,7 +143,6 @@ def execute_python_tool(code: str, inputs: Dict[str, Any], secrets: Dict[str, st
         with open(user_code_path, "w") as f:
             f.write(final_code)
             
-        # Write inputs.json
         with open(os.path.join(temp_dir, "inputs.json"), "w") as f:
             json.dump(inputs, f)
 
@@ -175,28 +152,20 @@ import sys
 import json
 import os
 import traceback
+import inspect
 
-# Add current dir to path
 sys.path.append(os.getcwd())
 
 try:
-    # 1. Parse Inputs (from file)
     with open('inputs.json', 'r') as f:
         inputs = json.load(f)
     
-# 2. Import User Module
     import user_tool
-    import inspect
-    
-    # 3. Check Function
     if not hasattr(user_tool, "execute_tool"):
         print(json.dumps({"status": "error", "error": "Function 'execute_tool' not found"}))
         sys.exit(0)
         
     func = user_tool.execute_tool
-    
-    # 4. Execute
-    # Check signature to see how to call it
     sig = inspect.signature(func)
     params = list(sig.parameters.keys())
     
@@ -205,18 +174,22 @@ try:
     elif len(params) == 1 and params[0] == 'inputs':
         result = func(inputs)
     else:
-        # Helper: check for **kwargs
         has_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
-        
         if has_kwargs:
             result = func(**inputs)
         else:
-            # Filter inputs to only those accepted by the function
-            # This prevents TypeError if UI sends extra fields
-            filtered = {k: v for k, v in inputs.items() if k in params}
-            result = func(**filtered)
+            # Build kwargs: value from inputs if present, else None for required params,
+            # else skip (let the default apply) for optional params.
+            _EMPTY = inspect.Parameter.empty
+            kwargs = {}
+            for pname, param in sig.parameters.items():
+                if pname in inputs:
+                    kwargs[pname] = inputs[pname]
+                elif param.default is _EMPTY:
+                    kwargs[pname] = None  # required but not supplied → pass None
+                # else optional with default → don't pass, use its own default
+            result = func(**kwargs)
     
-    # 5. Output Result
     print(json.dumps({"status": "success", "result": result}))
     
 except Exception as e:
@@ -228,35 +201,28 @@ except Exception as e:
             f.write(runner_script)
 
         # 5. Prepare Container Execution
-        # Install deps command
         pip_cmd = ""
         if dependencies:
             deps_str = " ".join(dependencies)
-            pip_cmd = f"pip install {deps_str} && "
+            # Use -q for quiet but catch errors
+            pip_cmd = f"pip install -q {deps_str} && "
             
         cmd = f"{pip_cmd}python runner.py"
         
-        # Inject secrets as Env Vars
-        env_vars = secrets.copy()
-        
         # 6. Run Container
-        container = client.containers.run(
-            "python:3.10-slim",
+        container_output = client.containers.run(
+            "python:3.11-slim",
             command=f"/bin/sh -c \"{cmd}\"",
             volumes={temp_dir: {'bind': '/app', 'mode': 'rw'}},
             working_dir="/app",
-            environment=env_vars,
+            environment=secrets,
             remove=True,
             stdout=True,
             stderr=True,
-            # network_mode="host" # Removed to allow default bridge networking
         )
         
         # 7. Parse Output
-        output = container.decode("utf-8")
-        
-        # The output might contain pip logs and other noise. 
-        # We need to find the last JSON line which should be our result.
+        output = container_output.decode("utf-8")
         lines = output.strip().split("\n")
         json_result = None
         
@@ -270,30 +236,23 @@ except Exception as e:
                 continue
                 
         if not json_result:
-             return {
-                "success": False,
-                "error": "Failed to parse container output",
-                "raw_output": output
-            }
+             return {"success": False, "error": "Failed to parse container output", "raw_output": output}
             
         if json_result["status"] == "error":
-            return {
-                "success": False,
-                "error": json_result.get("error"),
-                "traceback": json_result.get("traceback")
-            }
+            return {"success": False, "error": json_result.get("error"), "traceback": json_result.get("traceback")}
             
-        return {
-            "success": True,
-            "result": json_result["result"]
-        }
+        return {"success": True, "result": json_result["result"]}
 
     except docker.errors.ContainerError as e:
-        return {"success": False, "error": f"Container Error: {e.stderr.decode('utf-8') if e.stderr else str(e)}"}
+        # ContainerError may expose output via .stderr or .output depending on SDK version
+        raw = getattr(e, "stderr", None) or getattr(e, "output", None) or b""
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", errors="replace")
+        return {"success": False, "error": f"Container error: {raw or str(e)}"}
     except docker.errors.ImageNotFound:
-        return {"success": False, "error": "Docker image 'python:3.10-slim' not found. Please pull it first."}
+        return {"success": False, "error": "Docker image 'python:3.11-slim' not found. Please pull it first."}
     except Exception as e:
         return {"success": False, "error": f"Execution Error: {str(e)}"}
     finally:
-        # Cleanup
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        if 'temp_dir' in locals():
+            shutil.rmtree(temp_dir, ignore_errors=True)

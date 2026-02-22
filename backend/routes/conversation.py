@@ -98,3 +98,31 @@ def get_messages(conversation_id: UUID, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Conversation not found")
         
     return service.get_messages(conversation_id)
+
+from schemas.execution import ApprovalRequest
+
+@router.post("/{conversation_id}/resume", response_model=None)
+async def resume_execution(conversation_id: UUID, request: ApprovalRequest, db: Session = Depends(get_db)):
+    """
+    Resumes execution for a paused conversation (HITL).
+    Accepts approved tool calls and continues the agent loop.
+    """
+    conversation_service = ConversationService(db)
+    conversation = conversation_service.get_conversation(conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    if not conversation.agent_id:
+        raise HTTPException(status_code=400, detail="Conversation has no agent attached")
+
+    execution_service = ExecutionService(db)
+    
+    return StreamingResponse(
+        execution_service.run_agent(
+            agent_id=conversation.agent_id, 
+            session_id=conversation_id, 
+            user_content=None, 
+            approved_tool_calls=request.approved_tool_calls
+        ),
+        media_type="text/event-stream"
+    )

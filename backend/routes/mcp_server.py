@@ -14,13 +14,13 @@ router = APIRouter(
 )
 
 @router.post("/", response_model=MCPResponse)
-def create_mcp(
+async def create_mcp(
     mcp_data: MCPCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Create a new MCP server configuration"""
-    return mcp_service.create_mcp(db=db, mcp_data=mcp_data, user_id=current_user.id)
+    return await mcp_service.create_mcp(db=db, mcp_data=mcp_data, user_id=current_user.id)
 
 @router.get("/", response_model=MCPListResponse)
 def list_mcps(
@@ -48,7 +48,7 @@ def get_mcp(
     return mcp_service.format_mcp(mcp)
 
 @router.put("/{mcp_id}", response_model=MCPResponse)
-def update_mcp(
+async def update_mcp(
     mcp_id: UUID,
     mcp_data: MCPUpdate,
     db: Session = Depends(get_db),
@@ -61,7 +61,7 @@ def update_mcp(
     if mcp.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to update this MCP server")
     
-    updated_mcp = mcp_service.update_mcp(db=db, mcp_id=mcp_id, update_data=mcp_data, user_id=current_user.id)
+    updated_mcp = await mcp_service.update_mcp(db=db, mcp_id=mcp_id, update_data=mcp_data, user_id=current_user.id)
     return updated_mcp
 
 @router.delete("/{mcp_id}")

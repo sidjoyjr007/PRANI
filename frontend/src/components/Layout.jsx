@@ -53,9 +53,9 @@ export default function Layout({ children }) {
         }}
       >
         <div>
-          <img 
+          <img
             src={praniLogo}
-            alt="Prani" 
+            alt="Prani"
             style={{
               height: "32px",
               width: "auto",
@@ -67,8 +67,8 @@ export default function Layout({ children }) {
           <Dropdown>
             <DropdownTrigger asChild>
               <Button variant="ghost" size="sm" style={{ padding: theme.spacing[1], borderRadius: theme.borderRadius.md }}>
-                <Avatar 
-                  size="md" 
+                <Avatar
+                  size="md"
                   fallback={getInitials(user?.name)}
                 />
               </Button>
@@ -94,9 +94,9 @@ export default function Layout({ children }) {
 
               <DropdownSeparator />
 
-              <DropdownItem 
-                onClick={handleLogout} 
-                disabled={isLoading} 
+              <DropdownItem
+                onClick={handleLogout}
+                disabled={isLoading}
                 variant="destructive"
                 leadingIcon={LogOut}
               >
@@ -134,7 +134,7 @@ export default function Layout({ children }) {
         >
           {menuItems.map((item) => {
             const Icon = item.icon
-            const isActive = location.pathname === item.route
+            const isActive = location.pathname === item.route || location.pathname.startsWith(`${item.route}/`)
             return (
               <Tooltip key={item.id} content={item.label} side="right">
                 <button

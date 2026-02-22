@@ -7,8 +7,13 @@ from uuid import UUID
 from typing import Optional, List
 
 
+from engine.retrieval import RetrievalSystem
+
 class ToolService:
-    """Service for managing tools"""
+    """Service for managing tools and their embeddings"""
+    
+    def __init__(self):
+        self.retrieval = RetrievalSystem()
 
     def create_tool(self, db: Session, tool_data: ToolCreate, owner_id: UUID) -> Tool:
         """Create a new tool and optionally set initial secrets"""
@@ -37,7 +42,39 @@ class ToolService:
             for name, value in secrets.items():
                 self.save_secret(db, db_tool.id, owner_id, ToolSecretCreate(name=name, value=value))
                 
+        # Index into ChromaDB for zero-latency retrieval
+        self._index_db_tool(db_tool)
+        
         return db_tool
+
+    def _index_db_tool(self, tool: Tool):
+        """Converts a DB Tool into a Tool Def and indexes it."""
+        try:
+            TYPE_MAP = {"int": "integer", "float": "number", "bool": "boolean", "str": "string", "list": "array", "dict": "object"}
+            properties = {}
+            required = []
+            if tool.input_fields:
+                for field in tool.input_fields:
+                    raw_type = field.get("type", "string")
+                    json_type = TYPE_MAP.get(raw_type, raw_type)
+                    properties[field["name"]] = {"type": json_type, "description": field.get("description", "")}
+                    if field.get("required"): required.append(field["name"])
+            
+            schema = {"type": "object", "properties": properties, "required": required}
+            tool_def = {
+                "id": str(tool.id),
+                "name": tool.name,
+                "description": tool.description,
+                "schema": schema,
+                "source": "db",
+                "metadata": {"type": "python", "content": tool.code},
+                "input_fields": tool.input_fields
+            }
+            self.retrieval.index_tools([tool_def])
+        except Exception as e:
+            # We don't fail the API request if indexing fails, but we log it.
+            import logging
+            logging.getLogger(__name__).error(f"Failed to index tool {tool.id}: {e}")
 
     def get_tool(self, db: Session, tool_id: UUID) -> Optional[Tool]:
         """Get a tool by ID"""
@@ -103,6 +140,10 @@ class ToolService:
             
         db.commit()
         db.refresh(db_tool)
+        
+        # Re-index
+        self._index_db_tool(db_tool)
+        
         return db_tool
 
     def delete_tool(self, db: Session, tool_id: UUID, owner_id: UUID) -> bool:
@@ -111,12 +152,17 @@ class ToolService:
         if not db_tool or db_tool.owner_id != owner_id:
             return False
         
+        
         # Secrets cascade delete? DB constraints might handle or we do it manually
         # SQLAlchemy cascade should handle if configured, else manual:
         db.query(UserToolSecret).filter(UserToolSecret.tool_id == tool_id).delete()
         
         db.delete(db_tool)
         db.commit()
+        
+        # Remove from vector index
+        self.retrieval.delete_tools([str(tool_id)])
+        
         return True
 
     def save_secret(self, db: Session, tool_id: UUID, user_id: UUID, secret_data: ToolSecretCreate):

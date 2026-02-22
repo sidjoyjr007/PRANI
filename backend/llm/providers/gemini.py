@@ -17,35 +17,88 @@ class GeminiProvider(LLMProvider):
     def _convert_role(self, role: str) -> str:
         if role == "user": return "user"
         if role == "assistant": return "model"
-        if role == "system": return "user" # Gemini often uses system instructions or merging with user
+        if role == "system": return "user"
+        if role == "tool": return "function"
         return "user"
 
-    def _prepare_payload(self, messages: List[ProviderMessage]):
+    def _prepare_payload(self, messages: List[ProviderMessage], tools: List[Dict] = None):
         contents = []
         system_instruction = None
 
+        # 1. Separate system message and process others
         for m in messages:
             if m.role == "system":
-                # Check if model supports system_instruction, else merge 
-                # For now, let's treat system as user message at start or separate field
-                system_instruction = {"parts": [{"text": m.content}]}
-                continue
-            
-            parts = [{"text": m.content}] if isinstance(m.content, str) else m.content
-            contents.append({
-                "role": self._convert_role(m.role),
-                "parts": parts
-            })
-            
+                if not system_instruction:
+                    system_instruction = {"parts": [{"text": m.content}]}
+                else:
+                    system_instruction["parts"].append({"text": m.content})
+            else:
+                role = self._convert_role(m.role)
+                parts = []
+                
+                # Handle Tool/Function specialized parts
+                if role == "function":
+                    # Gemini expects 'functionResponse' part
+                    # We need the name of the tool, stored in tool_call_id or passed along
+                    # If we don't have it, we might need a fallback or check history
+                    # Assuming m.tool_call_id (which we now store) contains the name or ID
+                    parts.append({
+                        "functionResponse": {
+                            "name": m.tool_call_id or "unknown_tool",
+                            "response": {"result": m.content}
+                        }
+                    })
+                else:
+                    # Text content
+                    if m.content:
+                        parts.append({"text": m.content})
+                    
+                    # Tool Calls (if assistant/model message)
+                    if m.role == "assistant" and m.tool_calls:
+                        for tc in m.tool_calls:
+                            # tc is a dict or ToolCall object
+                            tc_func = tc.get("function", {}) if isinstance(tc, dict) else tc.function
+                            parts.append({
+                                "functionCall": {
+                                    "name": tc_func.get("name"),
+                                    "args": json.loads(tc_func.get("arguments", "{}")) if isinstance(tc_func.get("arguments"), str) else tc_func.get("arguments", {})
+                                }
+                            })
+
+                if contents and contents[-1]["role"] == role:
+                    contents[-1]["parts"].extend(parts)
+                else:
+                    contents.append({
+                        "role": role,
+                        "parts": parts
+                    })
+
+        # Ensure first message is 'user' (Gemini requirement)
+        if contents and contents[0]["role"] != "user":
+             contents.insert(0, {"role": "user", "parts": [{"text": "Initializing..."}]})
+
         payload = {"contents": contents}
         if system_instruction:
             payload["system_instruction"] = system_instruction
             
+        # 2. Add tools if any
+        if tools:
+            func_decls = []
+            for t in tools:
+                # Expecting OpenAI format: {"type": "function", "function": {name, description, parameters}}
+                if "function" in t:
+                    func_decls.append(t["function"])
+                elif "name" in t:
+                    func_decls.append(t)
+                    
+            if func_decls:
+                payload["tools"] = [{"functionDeclarations": func_decls}]
+
         return payload
 
-    def chat(self, messages: List[ProviderMessage]) -> LLMResponse:
+    def chat(self, messages: List[ProviderMessage], **kwargs) -> LLMResponse:
         url = self._prepare_url(stream=False)
-        payload = self._prepare_payload(messages)
+        payload = self._prepare_payload(messages, tools=kwargs.get("tools"))
         headers = self.headers.copy()
         
         # Remove Authorization header if present, as Key is in URL
@@ -72,16 +125,17 @@ class GeminiProvider(LLMProvider):
         except (KeyError, IndexError):
              return LLMResponse(content="Error parsing Gemini response", role="assistant")
 
-    def stream(self, messages: List[ProviderMessage]) -> Iterator[LLMStreamChunk]:
+    def stream(self, messages: List[ProviderMessage], **kwargs) -> Iterator[LLMStreamChunk]:
         url = self._prepare_url(stream=True)
-        payload = self._prepare_payload(messages)
+        payload = self._prepare_payload(messages, tools=kwargs.get("tools"))
         headers = self.headers.copy()
         if "Authorization" in headers:
              headers.pop("Authorization")
              
         # SSE format
         with requests.post(url, json=payload, headers=headers, stream=True) as response:
-            response.raise_for_status()
+            if not response.ok:
+                raise Exception(f"Gemini API Error: {response.status_code} - {response.text}")
             
             for line in response.iter_lines():
                 if line:
@@ -94,12 +148,32 @@ class GeminiProvider(LLMProvider):
                             candidate = data["candidates"][0]
                             content = candidate.get("content", {})
                             parts = content.get("parts", [])
-                            text = parts[0].get("text", "") if parts else ""
+                            
+                            text = ""
+                            tool_calls = []
+                            import uuid
+                            
+                            for p in parts:
+                                if "text" in p:
+                                    text += p["text"]
+                                if "functionCall" in p:
+                                    tc_uuid = str(uuid.uuid4())
+                                    fc = p["functionCall"]
+                                    # Gemini returns args as dict, we need JSON string for OpenAI format compat
+                                    tool_calls.append(ToolCall(
+                                        id=f"call_{tc_uuid}",
+                                        type="function",
+                                        function={
+                                            "name": fc["name"],
+                                            "arguments": json.dumps(fc.get("args", {}))
+                                        }
+                                    ))
                             
                             yield LLMStreamChunk(
                                 content=text,
                                 role="assistant",
-                                finish_reason=candidate.get("finishReason")
+                                finish_reason=candidate.get("finishReason"),
+                                tool_calls=tool_calls if tool_calls else None
                             )
-                        except:
+                        except Exception as e:
                             continue

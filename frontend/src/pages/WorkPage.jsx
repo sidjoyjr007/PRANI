@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import { Toast, ToastContainer } from "@/components/ui/toast"
 import { useDispatch, useSelector } from "react-redux"
 import { useParams, useNavigate } from "react-router-dom"
@@ -15,7 +15,6 @@ import {
   setCurrentConversationId,
   createConversation,
   fetchMessages,
-  sendMessage,
   deleteConversation,
   updateConversation
 } from "@/store/slices/conversationSlice"
@@ -26,7 +25,7 @@ export default function WorkPage() {
   const dispatch = useDispatch()
   const navigate = useNavigate()
   const { sessionId } = useParams()
-  const { streamMessage, isStreaming } = useAgentStream()
+  const { streamMessage, resumeStream, isStreaming } = useAgentStream()
 
   // -- Redux Data --
   const { items: agents } = useSelector((state) => state.agents)
@@ -37,9 +36,6 @@ export default function WorkPage() {
   // -- Local State for UI --
   const [inputValue, setInputValue] = useState("")
   const [selectedAgentId, setSelectedAgentId] = useState("")
-  // We keep messageActions local for now if we want to support UI-only actions, 
-  // but ideally this comes from message content (e.g. tool approval requests).
-  // For now, I'll strip the complex mock "streaming/action" logic to focus on core message flow.
   const [isScrolledToBottom, setIsScrolledToBottom] = useState(true)
 
   // Toast State
@@ -112,6 +108,11 @@ export default function WorkPage() {
     }
   }
 
+  const handleApprove = async (toolCalls) => {
+    if (!sessionId) return;
+    await resumeStream(sessionId, toolCalls);
+  }
+
   // Conversation Panel Handlers
   const handleSelectConversation = (id) => {
     navigate(`/work/${id}`)
@@ -141,19 +142,21 @@ export default function WorkPage() {
   const selectedAgent = agents.find(a => a.id === selectedAgentId)
 
   // Map Redux messages to ChatPanel format
-  // Backend stores { role: "user" | "assistant", content: ... }
-  // ChatPanel expects { text: ..., sender: "user" | "bot" }
   const uiMessages = messages.map(m => ({
-    text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content), // Handle potential JSON content
+    id: m.id,
+    text: m.text || (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)),
     sender: m.role === "user" ? "user" : "bot",
-    // id: m.id // ChatPanel doesn't key by ID yet, uses index. I should probably update ChatPanel later to use IDs.
+    thoughts: m.thoughts,
+    tool_calls: m.tool_calls,
+    approval_required: m.approval_required,
+    pending_tool_calls: m.pending_tool_calls,
+    error: m.error
   }))
 
   return (
     <Layout>
       <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
 
-        {/* Toast Notifications */}
         <ToastContainer position="top-center">
           {toasts.map((toast) => (
             <Toast
@@ -169,7 +172,7 @@ export default function WorkPage() {
         {/* Left Panel */}
         <ConversationsPanel
           conversations={selectedAgentId ? conversations.filter(c => c.agent_id === selectedAgentId) : []}
-          activeConversation={sessionId} // Use sessionId as the source of truth for UI active state
+          activeConversation={sessionId}
           onSelectConversation={handleSelectConversation}
           onNewConversation={handleNewConversation}
           onDeleteConversation={handleDeleteConversation}
@@ -180,18 +183,20 @@ export default function WorkPage() {
         {/* Center Panel */}
         <ChatPanel
           messages={uiMessages}
-          setMessages={() => { }} // Read-only from this prop perspective, handled by redux
+          setMessages={() => { }}
           inputValue={inputValue}
           setInputValue={setInputValue}
           handleSendMessage={handleSendMessage}
           selectedAgentId={selectedAgentId}
           setSelectedAgentId={setSelectedAgentId}
           agents={agents}
-          streamingIndex={null} // TODO: Restore streaming support with backend
-          messageActions={{}} // TODO: Restore actions
+          streamingIndex={null}
+          messageActions={{}}
           isScrolledToBottom={isScrolledToBottom}
           setIsScrolledToBottom={setIsScrolledToBottom}
           scrollToBottom={scrollToBottom}
+          onApprove={handleApprove}
+          isStreaming={isStreaming}
         />
 
         {/* Right Panel */}

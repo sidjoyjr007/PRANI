@@ -20,8 +20,19 @@ services:
       timeout: 5s
       retries: 5
 
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: prani_chroma
+    ports:
+      - "8100:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    networks:
+      - prani_network
+
 volumes:
   postgres_data:
+  chroma_data:
 
 networks:
   prani_network:

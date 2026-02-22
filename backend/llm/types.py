@@ -2,6 +2,11 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Literal, Union, Dict, Any, Iterator
 from datetime import datetime
 
+class ToolCall(BaseModel):
+    id: str
+    type: Literal["function"] = "function"
+    function: Dict[str, Any] # {name: "...", arguments: "..."}
+
 class LLMStreamChunk(BaseModel):
     """
     Standardized chunk for streaming responses.
@@ -9,12 +14,7 @@ class LLMStreamChunk(BaseModel):
     content: Optional[str] = None
     role: Optional[Literal["assistant"]] = None
     finish_reason: Optional[str] = None
-    tool_calls: Optional[List[Dict[str, Any]]] = None # Raw tool calls if supported
-    
-class ToolCall(BaseModel):
-    id: str
-    type: Literal["function"] = "function"
-    function: Dict[str, Any] # {name: "...", arguments: "..."}
+    tool_calls: Optional[List[ToolCall]] = None # Structured tool calls
 
 class ProviderMessage(BaseModel):
     """

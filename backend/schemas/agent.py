@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Any
 from uuid import UUID
 from datetime import datetime
@@ -12,6 +12,13 @@ class AgentBase(BaseModel):
     llm_id: Optional[UUID] = None
     human_in_loop: bool = False
     is_active: bool = True
+
+    @field_validator('capabilities', mode='before')
+    @classmethod
+    def parse_capabilities(cls, v: Any) -> List[str]:
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(',') if s.strip()]
+        return v
 
 class AgentCreate(AgentBase):
     pass

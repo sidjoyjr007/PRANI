@@ -60,6 +60,7 @@
   * {
     border-color: hsl(var(--border));
   }
+
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
@@ -67,6 +68,7 @@
 }
 
 @layer base {
+
   /* Typography */
   h1 {
     font-size: 2.25rem;
@@ -74,6 +76,7 @@
     font-weight: 700;
     letter-spacing: -0.02em;
   }
+
   @media (min-width: 768px) {
     h1 {
       font-size: 3rem;
@@ -87,6 +90,7 @@
     font-weight: 700;
     letter-spacing: -0.02em;
   }
+
   @media (min-width: 768px) {
     h2 {
       font-size: 2.25rem;
@@ -140,6 +144,7 @@
     text-underline-offset: 1rem;
     transition: color 0.2s ease;
   }
+
   a:hover {
     color: hsl(var(--primary) / 0.8);
     text-decoration: underline;
@@ -153,12 +158,14 @@
     padding-left: 1rem;
     padding-right: 1rem;
   }
+
   @media (min-width: 640px) {
     .container {
       padding-left: 1.5rem;
       padding-right: 1.5rem;
     }
   }
+
   @media (min-width: 1024px) {
     .container {
       padding-left: 2rem;
@@ -171,11 +178,13 @@
     grid-template-columns: 1fr;
     gap: 1rem;
   }
+
   @media (min-width: 640px) {
     .grid-responsive {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
+
   @media (min-width: 1024px) {
     .grid-responsive {
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -186,6 +195,7 @@
   .focus-ring {
     outline: none;
   }
+
   .focus-ring:focus {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
@@ -199,6 +209,7 @@ html {
 
 /* Disable animations for reduced motion */
 @media (prefers-reduced-motion: reduce) {
+
   *,
   *::before,
   *::after {
@@ -206,4 +217,36 @@ html {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Custom Scrollbar Styles */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* Scrollbar on hover only for specific elements */
+.hover-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0);
+}
+
+.hover-scrollbar:hover::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--muted-foreground) / 0.3);
+}
+
+.hover-scrollbar:hover::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground) / 0.5);
 }

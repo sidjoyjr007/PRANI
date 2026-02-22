@@ -4,6 +4,7 @@ from models.conversation import Conversation, Message
 from schemas.conversation import ConversationCreate, ConversationUpdate, MessageCreate
 from uuid import UUID
 from datetime import datetime
+from typing import List, Any
 
 class ConversationService:
     def __init__(self, db: Session):
@@ -15,6 +16,9 @@ class ConversationService:
 
     def get_conversation(self, conversation_id: UUID):
         return self.db.query(Conversation).filter(Conversation.id == conversation_id).first()
+
+    def get_message(self, message_id: UUID):
+        return self.db.query(Message).filter(Message.id == message_id).first()
 
     def create_conversation(self, conversation_data: ConversationCreate):
         conversation = Conversation(**conversation_data.model_dump())
@@ -45,7 +49,7 @@ class ConversationService:
             return True
         return False
 
-    def add_message(self, conversation_id: UUID, message_data: MessageCreate):
+    def add_message(self, conversation_id: UUID, message_data: MessageCreate, created_at: datetime = None):
         conversation = self.get_conversation(conversation_id)
         if not conversation:
             return None
@@ -55,6 +59,9 @@ class ConversationService:
             role=message_data.role,
             content=message_data.content
         )
+        if created_at:
+            message.created_at = created_at
+            
         self.db.add(message)
         
         # Update conversation.updated_at
@@ -66,3 +73,18 @@ class ConversationService:
 
     def get_messages(self, conversation_id: UUID):
         return self.db.query(Message).filter(Message.conversation_id == conversation_id).order_by(Message.created_at).all()
+
+    def delete_messages(self, message_ids: list[UUID]):
+        if not message_ids:
+            return
+        self.db.query(Message).filter(Message.id.in_(message_ids)).delete(synchronize_session=False)
+        self.db.commit()
+
+    def update_message(self, message_id: UUID, content: Any):
+        message = self.get_message(message_id)
+        if message:
+            message.content = content
+            self.db.commit()
+            self.db.refresh(message)
+            return message
+        return None

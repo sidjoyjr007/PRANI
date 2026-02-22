@@ -32,6 +32,34 @@ export const sendMessage = createAsyncThunk("conversations/sendMessage", async (
     return response.data
 })
 
+const transformMessage = (msg) => {
+    const role = msg.role;
+    const content = msg.content;
+    let text = "";
+    let thoughts = [];
+    let tool_calls = [];
+    let status = "";
+
+    if (typeof content === 'string') {
+        text = content;
+    } else if (content && typeof content === 'object') {
+        text = content.text || "";
+        thoughts = content.thoughts || [];
+        tool_calls = content.tool_calls || [];
+        status = content.status || "";
+    }
+
+    return {
+        ...msg,
+        sender: role === 'user' ? 'user' : 'bot',
+        text,
+        thoughts,
+        tool_calls,
+        status,
+        error: msg.error || null
+    };
+};
+
 const conversationSlice = createSlice({
     name: "conversations",
     initialState: {
@@ -51,23 +79,66 @@ const conversationSlice = createSlice({
         },
         addMessage: (state, action) => {
             // Optimistically add message
-            state.messages.push(action.payload)
+            state.messages.push(transformMessage(action.payload))
         },
-        updateStreamingMessage: (state, action) => {
-            // Payload: { content: string, role: string }
-            // Assumes the last message is the one being streamed if role matches, 
-            // or creates a new one if last message is from user.
-            const lastMsg = state.messages[state.messages.length - 1]
-            if (lastMsg && lastMsg.role === action.payload.role) {
-                // Append content
-                lastMsg.content += action.payload.content
-            } else {
-                // New message
-                state.messages.push({
-                    role: action.payload.role,
-                    content: action.payload.content,
-                    created_at: new Date().toISOString() // temporary
-                })
+        handleAgentEvent: (state, action) => {
+            const { type, content, metadata, id } = action.payload;
+            const messages = state.messages;
+            let lastMsg = messages[messages.length - 1];
+
+            // Ensure we have a working bot message
+            if (!lastMsg || lastMsg.sender !== 'bot') {
+                lastMsg = {
+                    sender: 'bot',
+                    text: '',
+                    thoughts: [],
+                    tool_calls: [],
+                    created_at: new Date().toISOString()
+                };
+                messages.push(lastMsg);
+            }
+
+            switch (type) {
+                case 'status':
+                    if (content) {
+                        lastMsg.status = content;
+                    }
+                    break;
+                case 'message':
+                    lastMsg.text += content;
+                    break;
+                case 'thought_start':
+                case 'thought':
+                    if (content) {
+                        lastMsg.thoughts = lastMsg.thoughts || [];
+                        lastMsg.thoughts.push(content);
+                    }
+                    break;
+                case 'tool_start':
+                    lastMsg.tool_calls = lastMsg.tool_calls || [];
+                    lastMsg.tool_calls.push({
+                        name: metadata.tool,
+                        args: metadata.args,
+                        status: 'running',
+                        output: null
+                    });
+                    break;
+                case 'tool_output':
+                    if (lastMsg.tool_calls && lastMsg.tool_calls.length > 0) {
+                        const toolCall = lastMsg.tool_calls[lastMsg.tool_calls.length - 1];
+                        toolCall.status = 'completed';
+                        toolCall.output = content;
+                    }
+                    break;
+                case 'approval_required':
+                    lastMsg.approval_required = true;
+                    lastMsg.pending_tool_calls = metadata.tool_calls;
+                    break;
+                case 'error':
+                    lastMsg.error = content;
+                    break;
+                default:
+                    break;
             }
         }
     },
@@ -112,18 +183,18 @@ const conversationSlice = createSlice({
             // Fetch Messages
             .addCase(fetchMessages.fulfilled, (state, action) => {
                 if (state.currentConversationId === action.payload.conversationId) {
-                    state.messages = action.payload.messages
+                    state.messages = action.payload.messages.map(transformMessage)
                 }
             })
 
             // Send Message
             .addCase(sendMessage.fulfilled, (state, action) => {
-                state.messages.push(action.payload)
-                // Update conversation list item updated_at? 
-                // We'd ideally need to re-fetch or optimistically update the list order
+                // Remove the optimistic message or replace it with the real one
+                // For simplicity, let's just push the transformed real one
+                state.messages.push(transformMessage(action.payload))
             })
     },
 })
 
-export const { setCurrentConversationId, clearMessages, addMessage, updateStreamingMessage } = conversationSlice.actions
+export const { setCurrentConversationId, clearMessages, addMessage, handleAgentEvent } = conversationSlice.actions
 export default conversationSlice.reducer
