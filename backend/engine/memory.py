@@ -20,10 +20,11 @@ class ContextManager:
     Manages the 'Active Context' window for the LLM using token awareness.
     """
     
-    def __init__(self, db: Session, session_id: UUID, agent: Agent):
+    def __init__(self, db: Session, session_id: UUID, agent: Agent, user_id: UUID):
         self.db = db
         self.session_id = session_id
         self.agent = agent
+        self.user_id = user_id
         self.conversation_service = ConversationService(db)
         
         # Token Configuration
@@ -61,7 +62,7 @@ class ContextManager:
             current_tokens += self._get_message_tokens(sys_msg)
 
         # 2. Retrieve All History
-        db_messages = self.conversation_service.get_messages(self.session_id)
+        db_messages = self.conversation_service.get_messages(self.session_id, user_id=self.user_id)
         if not db_messages:
             return context
 
@@ -153,7 +154,7 @@ class ContextManager:
             rich_content["status"] = status
 
         msg_data = MessageCreate(role=role, content=rich_content)
-        return self.conversation_service.add_message(self.session_id, msg_data)
+        return self.conversation_service.add_message(self.session_id, msg_data, user_id=self.user_id)
 
     async def compact_history(self, llm_provider: Any):
         """
@@ -162,7 +163,7 @@ class ContextManager:
         self.prune_tool_outputs()
 
         # Check total tokens
-        db_messages = self.conversation_service.get_messages(self.session_id)
+        db_messages = self.conversation_service.get_messages(self.session_id, user_id=self.user_id)
         total_tokens = sum(self._get_message_tokens(self._to_provider_msg(m)) for m in db_messages)
         
         if total_tokens < self.max_context_tokens * self.compaction_threshold_pct:
@@ -183,17 +184,20 @@ class ContextManager:
 
             # Injection: Clear break with context restoration
             restoration_text = f"# Context Restoration\n\n{summary}\n\nResume from where we left off."
+            # Note: add_message internal use already includes user_id
             self.add_message("system", restoration_text, metadata_type="context_restoration")
             
             # Identify messages to delete (all except goal and newest restoration)
+            # Re-fetch because we just added one
+            db_messages = self.conversation_service.get_messages(self.session_id, user_id=self.user_id)
             goal_msg = next((m for m in db_messages if m.role == "user"), None)
             ids_to_delete = [m.id for m in db_messages if m.role != "user" and (not isinstance(m.content, dict) or m.content.get("type") != "context_restoration")]
             
             # Keep newest restoration (the one we just added)
-            newest_ids = [m.id for m in self.conversation_service.get_messages(self.session_id)][-1:]
+            newest_ids = [m.id for m in db_messages][-1:]
             ids_to_delete = [mid for mid in ids_to_delete if mid not in newest_ids]
             
-            self.conversation_service.delete_messages(ids_to_delete)
+            self.conversation_service.delete_messages(ids_to_delete, user_id=self.user_id)
             print(f"Compaction successful. Deleted {len(ids_to_delete)} messages.")
             
         except Exception as e:
@@ -215,7 +219,7 @@ class ContextManager:
         """
         Aggressively prunes large tool outputs to save tokens.
         """
-        db_messages = self.conversation_service.get_messages(self.session_id)
+        db_messages = self.conversation_service.get_messages(self.session_id, user_id=self.user_id)
         for msg in db_messages:
             if msg.role == "tool" and not (isinstance(msg.content, dict) and msg.content.get("pruned")):
                 text = msg.content["text"] if isinstance(msg.content, dict) else str(msg.content)
@@ -228,5 +232,20 @@ class ContextManager:
                     content["text"] = new_text
                     content["pruned"] = True
                     
-                    self.conversation_service.update_message(msg.id, content)
+                    self.conversation_service.update_message(msg.id, content, user_id=self.user_id)
                     print(f"Pruned tool output for message {msg.id}")
+                    
+    def get_history_text(self, limit: int = 10) -> str:
+        """
+        Returns a plain text representation of recent history.
+        """
+        db_messages = self.conversation_service.get_messages(self.session_id, user_id=self.user_id)
+        recent = db_messages[-limit:]
+        
+        lines = []
+        for m in recent:
+            content = m.content
+            text = content.get("text", "") if isinstance(content, dict) else str(content)
+            lines.append(f"{m.role.upper()}: {text}")
+            
+        return "\n".join(lines)

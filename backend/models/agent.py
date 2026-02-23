@@ -25,9 +25,13 @@ class Agent(Base):
     # LLM Config
     llm_id = Column(UUID(as_uuid=True), ForeignKey("llms.id"), nullable=True)
     
+    # Ownership
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    
     # Settings
     human_in_loop = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
+    is_public = Column(Boolean, default=False)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())

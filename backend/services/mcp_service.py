@@ -1,8 +1,11 @@
-from sqlalchemy.orm import Session
-from uuid import UUID
-from typing import List, Optional, Dict, Any
 import json
 import logging
+import asyncio
+import httpx
+from typing import List, Optional, Dict, Any
+from uuid import UUID
+from urllib.parse import urljoin
+from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from models.mcp_server import MCPServer
@@ -39,13 +42,16 @@ class MCPService:
 
         # Trigger Tool Sync
         try:
-            await self.test_connection(
-                db=db,
-                url=db_mcp.url,
-                headers_json=db_mcp.headers,
-                env_vars=env_vars,
-                mcp_id=db_mcp.id
-            )
+            # We don't call test_connection here anymore to avoid redundant logic
+            # Instead we use the modular helpers to fetch and index
+            headers = self._resolve_connection_params(db, db_mcp.url, db_mcp.headers, env_vars, db_mcp.id)
+            async with httpx.AsyncClient(timeout=30.0, headers=headers) as client:
+                tools = await self._fetch_tools_sse(client, db_mcp.url)
+                if tools is None:
+                    tools = await self._fetch_tools_direct(client, db_mcp.url)
+                
+                if tools:
+                    self._index_mcp_tools(db_mcp.id, db_mcp.url, tools)
         except Exception as e:
             logger.error(f"Post-creation tool sync failed for {db_mcp.id}: {e}")
 
@@ -101,13 +107,15 @@ class MCPService:
                 secrets = db.query(MCPSecret).filter(MCPSecret.mcp_id == mcp_id).all()
                 current_env_vars = [{"key": s.name, "value": "********"} for s in secrets]
 
-            await self.test_connection(
-                db=db,
-                url=mcp.url,
-                headers_json=mcp.headers,
-                env_vars=current_env_vars,
-                mcp_id=mcp.id
-            )
+            headers = self._resolve_connection_params(db, mcp.url, mcp.headers, current_env_vars, mcp.id)
+            async with httpx.AsyncClient(timeout=30.0, headers=headers) as client:
+                tools = await self._fetch_tools_sse(client, mcp.url)
+                if tools is None:
+                    tools = await self._fetch_tools_direct(client, mcp.url)
+                
+                if tools:
+                    self._index_mcp_tools(mcp.id, mcp.url, tools)
+
         except Exception as e:
             logger.error(f"Post-update tool sync failed for {mcp.id}: {e}")
 
@@ -126,15 +134,8 @@ class MCPService:
             return True
         return False
         
-    async def test_connection(self, db: Session, url: str, headers_json: str, env_vars: List[dict], mcp_id: Optional[UUID] = None):
-        """
-        Test connection to MCP Server using proper full-duplex SSE + POST.
-        """
-        import httpx
-        import asyncio
-        from urllib.parse import urljoin
-
-        # --- 1. Resolve Secrets & Headers (Same as before) ---
+    def _resolve_connection_params(self, db: Session, url: str, headers_json: Any, env_vars: List[dict], mcp_id: Optional[UUID] = None) -> Dict[str, str]:
+        """Resolves secrets and processes headers for an MCP connection."""
         resolved_secrets = {}
         db_secrets = {}
         if mcp_id:
@@ -148,22 +149,15 @@ class MCPService:
         for env in env_vars:
             key = env["key"]
             value = env["value"] 
-            if value == "********" or value == "****************":
-                if key in db_secrets:
-                     resolved_secrets[key] = db_secrets[key]
-                else:
-                     resolved_secrets[key] = ""
+            if value in ("********", "****************"):
+                resolved_secrets[key] = db_secrets.get(key, "")
             else:
                 resolved_secrets[key] = value
-        # 2. Parse Headers
+
         headers = {}
         if headers_json:
             try:
-                if isinstance(headers_json, str):
-                    raw_headers = json.loads(headers_json)
-                else:
-                    raw_headers = headers_json # Already a dict
-                    
+                raw_headers = json.loads(headers_json) if isinstance(headers_json, str) else headers_json
                 if isinstance(raw_headers, dict):
                     for k, v in raw_headers.items():
                         val_str = str(v)
@@ -172,20 +166,14 @@ class MCPService:
                                 val_str = val_str.replace(f"{{{{env.{env_key}}}}}", env_val)
                         headers[k] = val_str
             except (json.JSONDecodeError, TypeError):
-                 # If headers fail to parse, just use empty, or default?
-                 # User said "send {} to backend", imply backend receives it.
-                 # If parsing fails, maybe warn but proceed with empty?
                  logger.warning(f"Failed to parse headers: {headers_json}")
-                 pass # headers remains {}
+        return headers
 
-        # Ensure Accept header is set for MCP compliance -> REMOVED global force
-        # We will set it per request instead.
-
-        # --- 2. Async State ---
+    async def _fetch_tools_sse(self, client: Any, url: str) -> Optional[List[dict]]:
+        """Attempt to fetch tools using the SSE handshake."""
         endpoint_future = asyncio.Future()
         rpc_futures: Dict[int, asyncio.Future] = {}
-        
-        # Reader Task Logic
+
         async def read_sse(response):
             try:
                 current_event = None
@@ -194,233 +182,118 @@ class MCPService:
                     if not line:
                         current_event = None
                         continue
-                    
                     if line.startswith("event:"):
                         current_event = line[6:].strip()
                     elif line.startswith("data:"):
                         data = line[5:].strip()
-                        
                         if current_event == "endpoint":
                             if not endpoint_future.done():
                                 endpoint_future.set_result(data)
-                        
                         elif current_event == "message":
                             try:
                                 msg = json.loads(data)
-                                # Check if it's a response to one of our requests
                                 if "id" in msg and msg["id"] in rpc_futures:
                                     fut = rpc_futures[msg["id"]]
-                                    if not fut.done():
-                                        fut.set_result(msg)
-                            except json.JSONDecodeError:
-                                pass # Ignore malformed data
+                                    if not fut.done(): fut.set_result(msg)
+                            except json.JSONDecodeError: pass
             except Exception as e:
-                # If reader crashes and we are waiting, cancel futures?
-                if not endpoint_future.done():
-                    endpoint_future.set_result(None) # Signal failure instead of exception
+                if not endpoint_future.done(): endpoint_future.set_result(None)
                 for fut in rpc_futures.values():
-                    if not fut.done():
-                        fut.set_exception(e)
+                    if not fut.done(): fut.set_exception(e)
 
-        # --- 3. Interaction Logic ---
         try:
-            timeout = httpx.Timeout(15.0, connect=5.0)
-            async with httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=True, verify=False) as client:
-                
-                # --- Attempt 1: SSE Handshake ---
-                fallback_needed = False
-                post_endpoint = None
-                reader_task = None
-                
+            async with client.stream("GET", url, headers={"Accept": "text/event-stream"}) as response:
+                if response.status_code != 200: return None
+                reader_task = asyncio.create_task(read_sse(response))
                 try:
-                    # Explicitly request SSE
-                    async with client.stream("GET", url, headers={"Accept": "text/event-stream"}) as response:
-                        if response.status_code != 200:
-                            fallback_needed = True
-                        else:
-                            # Start Reader
-                            reader_task = asyncio.create_task(read_sse(response))
-                            
-                            try:
-                                # Wait for endpoint
-                                post_endpoint = await asyncio.wait_for(endpoint_future, timeout=5.0)
-                                if not post_endpoint:
-                                    fallback_needed = True
-                                else:
-                                    if not post_endpoint.startswith("http"):
-                                        from urllib.parse import urljoin
-                                        post_endpoint = urljoin(url, post_endpoint)
-                                        
-                                    # --- Send Initialize ---
-                                    # NOTE: Added headers and params
-                                    rpc_futures[1] = asyncio.Future()
-                                    await client.post(post_endpoint, headers={"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}, json={
-                                        "jsonrpc": "2.0",
-                                        "method": "initialize",
-                                        "id": 1,
-                                        "params": {
-                                            "protocolVersion": "2024-11-05",
-                                            "capabilities": {},
-                                            "clientInfo": {"name": "Prani", "version": "0.1.0"}
-                                        }
-                                    })
-                                    # Wait for response via SSE
-                                    init_response = await asyncio.wait_for(rpc_futures[1], timeout=5.0)
-                                    
-                                    if "error" in init_response:
-                                         return {"success": False, "error": f"Initialization failed: {init_response['error']}"}
-                                    
-                                    server_info = init_response.get("result", {}).get("serverInfo", {})
-                                    
-                                    # --- Send Initialized ---
-                                    await client.post(post_endpoint, headers={"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}, json={
-                                        "jsonrpc": "2.0",
-                                        "method": "notifications/initialized"
-                                    })
-
-                                    # --- List Tools ---
-                                    rpc_futures[2] = asyncio.Future()
-                                    await client.post(post_endpoint, headers={"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}, json={
-                                        "jsonrpc": "2.0",
-                                        "method": "tools/list",
-                                        "id": 2,
-                                        "params": {}
-                                    })
-                                    tools_response = await asyncio.wait_for(rpc_futures[2], timeout=10.0)
-
-                                    if "error" in tools_response:
-                                         return {"success": False, "error": f"List tools failed: {tools_response['error']}"}
-                                    
-                                    tools = tools_response.get("result", {}).get("tools", [])
-                                    
-                                    # Index Tools automatically upon sync
-                                    if mcp_id and tools:
-                                        self._index_mcp_tools(mcp_id, url, tools)
-                                    
-                                    # Cleanup
-                                    reader_task.cancel()
-                                    try:
-                                        await reader_task
-                                    except asyncio.CancelledError:
-                                        pass
-                                    
-                                    return {
-                                        "success": True, 
-                                        "status": 200, 
-                                        "message": f"Connected to {server_info.get('name', 'MCP Server')}. Found {len(tools)} tools. (Mode: SSE)",
-                                        "serverInfo": server_info,
-                                        "tools": tools
-                                    }
-
-                            except asyncio.TimeoutError:
-                                fallback_needed = True
-                                if reader_task: reader_task.cancel()
-                            except Exception as e:
-                                logger.error(f"SSE interaction failed: {e}")
-                                fallback_needed = True
-                                if reader_task: reader_task.cancel()
-
-                except Exception as e:
-                    logger.error(f"SSE Connect failed: {e}")
-                    fallback_needed = True
-
-                # --- Attempt 2: Direct POST Fallback ---
-                if fallback_needed:
-                    logger.info(f"Using Direct POST Fallback for {url}")
+                    post_endpoint = await asyncio.wait_for(endpoint_future, timeout=5.0)
+                    if not post_endpoint: return None
+                    if not post_endpoint.startswith("http"):
+                        post_endpoint = urljoin(url, post_endpoint)
                     
-                    async def post_and_parse(url, payload):
-                        # Construct Headers
-                        req_headers = {
-                            "Accept": "application/json, text/event-stream", 
-                            "Content-Type": "application/json",
-                            "User-Agent": "Prani-MCP-Client/1.0"
-                        }
-                        
-                        msg = f"MCP Request: Posting to {url}\nHeaders: {req_headers}\nBody: {json.dumps(payload)}"
-                        logger.info(msg)
-                        print(msg) # Explicit console log as requested
-
-                        resp = await client.post(url, content=json.dumps(payload), headers=req_headers)
-                        
-                        if resp.is_error:
-                             logger.error(f"Post failed {resp.status_code}: {resp.text}")
-                             return {"error": f"HTTP Error {resp.status_code}: {resp.text[:200]}", "status": resp.status_code}
-                        
-                        # Handle Success with No Content (e.g. Notifications)
-                        if resp.status_code in (202, 204):
-                            return {}
-
-                        # Try standard JSON
-                        try:
-                            return resp.json()
-                        except json.JSONDecodeError:
-                            pass
-                        
-                        # Try parsing SSE-wrapped response
-                        text = resp.text
-                        data_line = None
-                        for line in text.splitlines():
-                            if line.startswith("data:"):
-                                data_line = line[5:].strip()
-                                break
-                        
-                        if data_line:
-                            try:
-                                return json.loads(data_line)
-                            except json.JSONDecodeError:
-                                pass
-                        
-                        return {"error": f"Invalid JSON/SSE response ({resp.status_code}): {resp.text[:200]}"}
-
-                    # Initialize
-                    init_res = await post_and_parse(url, {
-                        "jsonrpc": "2.0",
-                        "method": "initialize",
-                        "id": 1,
-                        "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "tester", "version": "1.0"}}
+                    rpc_futures[1] = asyncio.Future()
+                    await client.post(post_endpoint, headers={"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}, json={
+                        "jsonrpc": "2.0", "method": "initialize", "id": 1,
+                        "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "Prani", "version": "0.1.0"}}
                     })
-                    
-                    if "error" in init_res:
-                        return {"success": False, "error": init_res["error"]}
-                    
-                    server_info = init_res.get("result", {}).get("serverInfo", {})
+                    init_res = await asyncio.wait_for(rpc_futures[1], timeout=5.0)
+                    if "error" in init_res: return None
 
-                    # Initialized
-                    initialized_res = await post_and_parse(url, {
-                        "jsonrpc": "2.0", 
-                        "method": "notifications/initialized"
-                        # Omit params to avoid 400 error on some servers
-                    })
-                    if "error" in initialized_res:
-                        logger.warning(f"Initialized notification failed (non-critical): {initialized_res['error']}")
-
-                    # List Tools (Removed params)
-                    tools_res = await post_and_parse(url, {
-                        "jsonrpc": "2.0", 
-                        "method": "tools/list", 
-                        "id": 2
-                    })
+                    await client.post(post_endpoint, headers={"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}, json={"jsonrpc": "2.0", "method": "notifications/initialized"})
                     
-                    if "error" in tools_res and "code" not in tools_res:
-                         if isinstance(tools_res.get("error"), str):
-                             return {"success": False, "error": tools_res["error"]}
-                         else:
-                             return {"success": False, "error": f"List tools failed: {tools_res['error']}"}
+                    rpc_futures[2] = asyncio.Future()
+                    await client.post(post_endpoint, headers={"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}, json={"jsonrpc": "2.0", "method": "tools/list", "id": 2})
+                    tools_res = await asyncio.wait_for(rpc_futures[2], timeout=10.0)
+                    return tools_res.get("result", {}).get("tools", []) if "error" not in tools_res else None
+                finally:
+                    reader_task.cancel()
+                    try:
+                        await reader_task
+                    except asyncio.CancelledError:
+                        pass
+        except Exception as e:
+            logger.error(f"SSE Fetch failed: {e}")
+            return None
 
-                    tools = tools_res.get("result", {}).get("tools", [])
-                    
-                    # Index Tools automatically upon sync
-                    if mcp_id and tools:
-                        self._index_mcp_tools(mcp_id, url, tools)
-                    
-                    return {
-                        "success": True, 
-                        "status": 200, 
-                        "message": f"Connected to {server_info.get('name', 'MCP Server')}. Found {len(tools)} tools. (Mode: Direct POST+SSE)",
-                        "serverInfo": server_info,
-                        "tools": tools
-                    }
+    async def _fetch_tools_direct(self, client: Any, url: str) -> Optional[List[dict]]:
+        """Attempt to fetch tools using the Direct POST fallback."""
+        async def post_and_parse(payload):
+            req_headers = {
+                "Accept": "application/json, text/event-stream", 
+                "Content-Type": "application/json",
+                "User-Agent": "Prani-MCP-Client/1.0"
+            }
+            resp = await client.post(url, content=json.dumps(payload), headers=req_headers)
+            
+            if resp.is_error:
+                 logger.error(f"Post failed {resp.status_code}: {resp.text}")
+                 return {"error": f"HTTP Error {resp.status_code}: {resp.text[:200]}", "status": resp.status_code}
+            
+            if resp.status_code in (202, 204):
+                return {}
 
+            try: return resp.json()
+            except json.JSONDecodeError:
+                text = resp.text
+                data_line = next((line[5:].strip() for line in text.splitlines() if line.startswith("data:")), None)
+                if data_line:
+                    try: return json.loads(data_line)
+                    except: pass
+            return {"error": f"Invalid JSON/SSE response ({resp.status_code}): {resp.text[:200]}"}
+
+        try:
+            init_res = await post_and_parse({
+                "jsonrpc": "2.0", "method": "initialize", "id": 1,
+                "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "tester", "version": "1.0"}}
+            })
+            if "error" in init_res: return None
+            await post_and_parse({"jsonrpc": "2.0", "method": "notifications/initialized"})
+            tools_res = await post_and_parse({"jsonrpc": "2.0", "method": "tools/list", "id": 2})
+            return tools_res.get("result", {}).get("tools", []) if "error" not in tools_res else None
+        except Exception as e:
+            logger.error(f"Direct Fetch failed: {e}")
+            return None
+
+    async def test_connection(self, db: Session, url: str, headers_json: str, env_vars: List[dict], mcp_id: Optional[UUID] = None):
+        """Tests connection to MCP Server and returns validation status."""
+        try:
+            headers = self._resolve_connection_params(db, url, headers_json, env_vars, mcp_id)
+            async with httpx.AsyncClient(timeout=15.0, headers=headers, follow_redirects=True, verify=False) as client:
+                tools = await self._fetch_tools_sse(client, url)
+                mode = "SSE"
+                if tools is None:
+                    tools = await self._fetch_tools_direct(client, url)
+                    mode = "Direct POST"
+                
+                if tools is None:
+                    return {"success": False, "error": "Failed to negotiate connection or list tools."}
+                
+                return {
+                    "success": True, 
+                    "status": 200, 
+                    "message": f"Connected via {mode}. Found {len(tools)} tools.",
+                    "tools": tools
+                }
         except Exception as e:
             return {"success": False, "error": f"Connection failed: {str(e)}"}
 

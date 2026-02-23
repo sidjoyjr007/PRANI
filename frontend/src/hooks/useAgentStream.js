@@ -71,6 +71,7 @@ export const useAgentStream = () => {
                 headers: {
                     'Content-Type': 'application/json',
                 },
+                credentials: 'include',
                 body: JSON.stringify({
                     role: 'user',
                     content: content
@@ -98,6 +99,7 @@ export const useAgentStream = () => {
                 headers: {
                     'Content-Type': 'application/json',
                 },
+                credentials: 'include',
                 body: JSON.stringify({
                     approved_tool_calls: approvedToolCalls
                 })

@@ -9,12 +9,7 @@ class Conversation(Base):
     __tablename__ = "conversations"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    # user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True) # Todos: Add User Auth later if needed, currently nullable or omitted based on auth status. Plan said nullable/todo.
-    # I'll include it as nullable for future proofing if User model exists.
-    # Checking user.py content from step 3159, User model exists.
-    # user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True) 
-    # For now, I'll omit user_id strictly if auth isn't fully wired up in the plan, but the plan mentioned it.
-    # Let's stick to the plan: "user_id: UUID (FK, nullable/todo)". I'll add it nullable.
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True) 
     title = Column(String, nullable=False, default="New Conversation")
     agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id"), nullable=True)
     

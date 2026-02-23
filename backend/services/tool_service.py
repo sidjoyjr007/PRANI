@@ -61,6 +61,7 @@ class ToolService:
                     if field.get("required"): required.append(field["name"])
             
             schema = {"type": "object", "properties": properties, "required": required}
+            print(schema)
             tool_def = {
                 "id": str(tool.id),
                 "name": tool.name,

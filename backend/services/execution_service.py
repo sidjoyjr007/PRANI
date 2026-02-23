@@ -43,14 +43,14 @@ class ExecutionService:
                 resolved[s.name] = ""
         return resolved
 
-    async def run_agent(self, agent_id: UUID, session_id: UUID, user_content: str = None, approved_tool_calls: List[Dict] = None) -> Iterator[str]:
+    async def run_agent(self, agent_id: UUID, session_id: UUID, user_id: UUID, user_content: str = None, approved_tool_calls: List[Dict] = None) -> Iterator[str]:
         """
         Main execution entry point.
         Now orchestrates the AgenticLoop and yields SSE events.
         bSupports standard chat and HITL resume.
         """
         # 1. Fetch Agent & LLM
-        agent = self.agent_service.get_agent(self.db, agent_id)
+        agent = self.agent_service.get_agent(self.db, agent_id, user_id=user_id)
         if not agent:
             yield f"data: {json.dumps({'error': 'Agent not found'})}\n\n"
             return
@@ -69,7 +69,8 @@ class ExecutionService:
             # We do this synchronously before starting the loop
             self.conversation_service.add_message(
                 session_id, 
-                MessageCreate(role="user", content=user_content)
+                MessageCreate(role="user", content=user_content),
+                user_id=user_id
             )
         
         # 3. Resolve Secrets & Init Provider
@@ -88,7 +89,8 @@ class ExecutionService:
                 session_id=str(session_id),
                 db=self.db,
                 llm_provider=provider,
-                event_bus=self.event_bus
+                event_bus=self.event_bus,
+                user_id=user_id
             )
             print("[run_agent] AgenticLoop instantiated successfully.")
             

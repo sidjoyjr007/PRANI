@@ -35,14 +35,16 @@ class AgenticLoop:
         session_id: str,
         db: Session,
         llm_provider, # Protocol/Interface for LLMProvider
-        event_bus: EventBus
+        event_bus: EventBus,
+        user_id: uuid.UUID
     ):
         self.agent = agent
         self.session_id = session_id
         self.db = db
+        self.user_id = user_id
         self.llm = llm_provider
         self.bus = event_bus
-        self.memory = ContextManager(db, session_id, agent)
+        self.memory = ContextManager(db, uuid.UUID(session_id), agent, user_id)
         self.tool_registry = ToolRegistry(db)
         self.executor = DockerExecutor()
         self.intent_parser = IntentParser(llm_provider)
@@ -72,7 +74,8 @@ class AgenticLoop:
             # Usually, there will only be one set of secrets per tool in this simplified version.
             
             secrets = self.db.query(UserToolSecret).filter(
-                UserToolSecret.tool_id == uuid.UUID(tool_id)
+                UserToolSecret.tool_id == uuid.UUID(tool_id),
+                UserToolSecret.user_id == self.user_id
             ).all()
             
             resolved = {}
@@ -174,47 +177,58 @@ class AgenticLoop:
                 current_subtask_desc = current_task.description if current_task else "Final Review"
                 
                 # --- 3a. Subtask-Driven Tool Retrieval (JIT Discovery) ---
-                yield self.bus.create_event(self.session_id, AgentEventType.STATUS, content="Discovering Tools")
-                assigned_tools = self.tool_registry.get_assigned_tools(self.agent)
+                # 1. Unified Dynamic Tool Retrieval based on Subtask
+                current_subtask_desc = current_task.description if current_task else user_input # Assuming 'query' refers to user_input
                 
-                # Use current subtask description instead of raw user input for retrieval
-                search_query = current_subtask_desc[:200]
-                jit_tools = self.tool_registry.search_tools(search_query, agent=self.agent, limit=5)
+                # Fetch only relevant tools from the vector DB (Custom and MCP)
+                # Limit increased to 10 for better coverage of dynamic tools
+                tool_recs = self.tool_registry.search_tools(query=current_subtask_desc, agent=self.agent, limit=10)
                 
-                seen_names = set(t.get("name") for t in assigned_tools if t.get("name"))
-                tool_recs = list(assigned_tools)
-                for t in jit_tools:
-                    if t.get("name") not in seen_names: tool_recs.append(t)
-                
-                tool_defs = []
+                # 2. Strict De-duplication by Name
+                unique_tools = []
+                seen_names = set()
                 for t in tool_recs:
-                    if t.get("schema") and t.get("name"):
-                        tool_defs.append({
-                            "type": "function",
-                            "function": {
-                                "name": t["name"],
-                                "description": t.get("description", ""),
-                                "parameters": t["schema"]
-                            }
-                        })
+                    t_name = t.get("name")
+                    if t_name and t_name not in seen_names:
+                        unique_tools.append(t)
+                        seen_names.add(t_name)
+                
+                # Reset tool definition list
+                tool_defs = []
+                for t in unique_tools:
+                    tool_defs.append({
+                        "type": "function",
+                        "function": {
+                            "name": t["name"],
+                            "description": t.get("description", ""),
+                            "parameters": t.get("schema", {})
+                        }
+                    })
                 
                 # Inject Refined System Prompt
-                tools_desc = "\n".join([f"- {t['function']['name']}: {t['function']['description']}" for t in tool_defs])
+                tools_desc_list = []
+                for t in tool_defs:
+                    t_func = t["function"]
+                    # Format a concise but complete technical description for the text part
+                    schema_short = json.dumps(t_func.get("parameters", {}), indent=2)
+                    tools_desc_list.append(f"- {t_func['name']}:\n  Description: {t_func.get('description', '')}\n  Schema: {schema_short}")
                 
-                # Fetch recent session history for context injection (last 10 messages)
-                history_msg = self.memory.conversation_service.get_messages(self.session_id)
-                session_history = "\n".join([
-                    f"{m.role.upper()}: {m.content['text'] if isinstance(m.content, dict) else m.content}" 
-                    for m in history_msg[-10:]
-                ])
-
+                tools_desc = "\n".join(tools_desc_list)
+                
+                # Fetch recent session history for context injection
+                session_history = self.memory.get_history_text(limit=10)
+                
                 system_prompt = get_action_system_prompt(
-                    agent_role=self.agent.description or "Autonomous Agent", 
+                    agent_role=self.agent.description or "Autonomous Agent",
                     tools_desc=tools_desc, 
                     status_report=status_report,
                     current_subtask=current_subtask_desc,
                     session_history=session_history
                 )
+
+                print("\n\n\n\n")
+                print(system_prompt)
+                print("\n\n\n\n")
                 
                 # If we have a pending refinement from a failed tool call, add it to the context
                 if self.pending_tool_refinement:

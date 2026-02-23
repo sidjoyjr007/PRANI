@@ -144,10 +144,11 @@ class RetrievalSystem:
         except Exception as e:
             logger.error(f"Failed to delete server tools from Chroma: {e}")
 
-    def query_tools(self, query: str, limit: int = 5, allowed_ids: List[str] = None, allowed_server_ids: List[str] = None) -> List[Dict[str, Any]]:
+    def query_tools(self, query: str, limit: int = 5, allowed_ids: List[str] = None, allowed_server_ids: List[str] = None, threshold: float = 1.7) -> List[Dict[str, Any]]:
         """
         Semantic search for tools.
         Returns full definition objects reconstructed from metadata/db.
+        Adds a relevance threshold check on distances.
         """
         self._ensure_connected()
         if not self.collection:
@@ -166,19 +167,27 @@ class RetrievalSystem:
         elif server_filter:
             where_filter = server_filter
 
+        # Request distances as well
         results = self.collection.query(
             query_texts=[query],
             n_results=limit,
-            where=where_filter
+            where=where_filter,
+            include=["documents", "metadatas", "distances"]
         )
         
-        # Parse results
+        # Parse results with relevance filtering
         found_tools = []
         if results['ids']:
             ids = results['ids'][0]
             metas = results['metadatas'][0]
+            distances = results['distances'][0] if 'distances' in results and results['distances'] else [0.0] * len(ids)
             
             for i, tool_id in enumerate(ids):
+                # Filter by distance (lower is closer/more relevant)
+                if distances[i] > threshold:
+                    logger.debug(f"Skipping tool {metas[i].get('name')} due to relevance threshold: {distances[i]} > {threshold}")
+                    continue
+
                 meta = metas[i]
                 
                 # Reconstruct generic tool definition
@@ -187,8 +196,9 @@ class RetrievalSystem:
                     "name": meta.get('name'),
                     "source": meta.get('source'),
                     "schema": json.loads(meta.get('schema_json', '{}')),
-                    "description": meta.get('description', ''), # Fallback if not in meta though it's in text
-                    "metadata": meta # Pass through raw meta containing server_id etc
+                    "description": meta.get('description', ''),
+                    "metadata": meta,
+                    "distance": distances[i]
                 }
                 found_tools.append(tool_def)
                 

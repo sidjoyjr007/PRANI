@@ -32,18 +32,16 @@ class ToolRegistry:
 
     def get_assigned_tools(self, agent) -> List[Dict[str, Any]]:
         """
-        Retrieves all explicitly assigned tools for an agent directly from ChromaDB.
+        Fetches tools explicitly assigned to the agent.
         """
-        allowlist = self.get_agent_allowlist(agent)
+        # We no longer eagerly load all tools from assigned MCP servers.
+        # We only keep the explicitly linked tools by ID.
+        allowed_ids = [str(tid) for tid in agent.tool_ids] if agent.tool_ids else []
         
-        # If no tools or servers assigned, return early
-        if not allowlist["allowed_ids"] and not allowlist["allowed_server_ids"]:
+        if not allowed_ids:
             return []
             
-        return self.retrieval.get_tools_by_filter(
-            allowed_ids=allowlist["allowed_ids"],
-            allowed_server_ids=allowlist["allowed_server_ids"]
-        )
+        return self.retrieval.get_tools_by_filter(allowed_ids=allowed_ids)
 
     def search_tools(self, query: str, agent, limit: int = 5) -> List[Dict[str, Any]]:
         """
