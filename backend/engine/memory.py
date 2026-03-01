@@ -108,6 +108,16 @@ class ContextManager:
         context.extend(reversed(recent_context))
         return context
 
+    def get_goal_text(self) -> str:
+        """
+        Retrieves the original user request (the first user message).
+        """
+        db_messages = self.conversation_service.get_messages(self.session_id, user_id=self.user_id)
+        if not db_messages: return ""
+        goal_msg = next((m for m in db_messages if m.role == "user"), None)
+        if not goal_msg: return ""
+        return goal_msg.content if isinstance(goal_msg.content, str) else str(goal_msg.content)
+
     def _to_provider_msg(self, db_msg: Message) -> ProviderMessage:
         content = db_msg.content
         text_or_parts = ""
@@ -129,11 +139,12 @@ class ContextManager:
         return ProviderMessage(
             role=db_msg.role, 
             content=text_or_parts, 
+            name=content.get("name") if isinstance(content, dict) else None,
             tool_calls=tool_calls, 
             tool_call_id=tool_call_id
         )
 
-    def add_message(self, role: str, content: Any, tool_calls: list = None, tool_call_id: str = None, metadata_type: str = None, thoughts: list = None, status: str = None) -> Message:
+    def add_message(self, role: str, content: Any, tool_calls: list = None, tool_call_id: str = None, name: str = None, metadata_type: str = None, thoughts: list = None, status: str = None) -> Message:
         if isinstance(content, list):
             rich_content = {"parts": content}
             # Fallback text for logs/simple views
@@ -148,6 +159,8 @@ class ContextManager:
             rich_content["tool_calls"] = serialized
         if tool_call_id:
             rich_content["tool_call_id"] = tool_call_id
+        if name:
+            rich_content["name"] = name
         if thoughts:
             rich_content["thoughts"] = thoughts
         if status:
@@ -160,11 +173,14 @@ class ContextManager:
         """
         Performs structural compaction if tokens exceed threshold.
         """
+        print(f"[DEBUG] ContextManager.compact_history: started")
         self.prune_tool_outputs()
 
         # Check total tokens
         db_messages = self.conversation_service.get_messages(self.session_id, user_id=self.user_id)
+        print(f"[DEBUG] ContextManager.compact_history: counting tokens for {len(db_messages)} messages")
         total_tokens = sum(self._get_message_tokens(self._to_provider_msg(m)) for m in db_messages)
+        print(f"[DEBUG] ContextManager.compact_history: total_tokens={total_tokens}, threshold={int(self.max_context_tokens * self.compaction_threshold_pct)}")
         
         if total_tokens < self.max_context_tokens * self.compaction_threshold_pct:
             return
@@ -205,14 +221,22 @@ class ContextManager:
     async def _call_llm_sync(self, llm, messages) -> str:
         import asyncio
         import concurrent.futures
+        print(f"[DEBUG] ContextManager._call_llm_sync: starting LLM stream")
         def collect():
             text = ""
-            for chunk in llm.stream(messages):
-                if hasattr(chunk, 'content') and chunk.content: text += chunk.content
-                elif isinstance(chunk, str): text += chunk
-            return text
+            try:
+                for chunk in llm.stream(messages):
+                    if hasattr(chunk, 'content') and chunk.content: text += chunk.content
+                    elif isinstance(chunk, str): text += chunk
+                return text
+            except Exception as e:
+                print(f"[DEBUG] ContextManager._call_llm_sync error: {e}")
+                return ""
+        
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(concurrent.futures.ThreadPoolExecutor(max_workers=1), collect)
+        res = await loop.run_in_executor(concurrent.futures.ThreadPoolExecutor(max_workers=1), collect)
+        print(f"[DEBUG] ContextManager._call_llm_sync: complete, received {len(res)} chars")
+        return res
 
     def prune_tool_outputs(self):
         """

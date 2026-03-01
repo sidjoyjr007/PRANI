@@ -60,11 +60,8 @@ export const useAgentStream = (sessionId) => {
 
                         for (const line of lines) {
                             if (line.startsWith('data: ')) {
-                                const dataStr = line.slice(6);
-                                if (dataStr.trim() === '[DONE]') {
-                                    setIsStreaming(false);
-                                    break;
-                                }
+                                const dataStr = line.slice(6).trim();
+                                if (!dataStr) continue;
 
                                 try {
                                     const data = JSON.parse(dataStr);
@@ -215,6 +212,7 @@ export const useAgentStream = (sessionId) => {
         abortStream,
         connectStream,
         disconnectStream,
-        isStreaming
+        isStreaming,
+        setIsStreaming
     };
 };

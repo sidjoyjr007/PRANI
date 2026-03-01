@@ -28,12 +28,17 @@ export const fetchMessages = createAsyncThunk("conversations/fetchMessages", asy
 })
 
 export const fetchPlan = createAsyncThunk("conversations/fetchPlan", async (conversationId) => {
-    const response = await apiClient.get(`/conversations/${conversationId}/plan`)
-    return { conversationId, plan: response.data.plan }
+    const response = await apiClient.get(`/conversations/${conversationId}/state`)
+    return { conversationId, plan: response.data.plan, agent_state: response.data.agent_state }
 })
 
 export const sendMessage = createAsyncThunk("conversations/sendMessage", async ({ conversationId, role, content }) => {
     const response = await apiClient.post(`/conversations/${conversationId}/messages`, { role, content })
+    return response.data
+})
+
+export const abortExecution = createAsyncThunk("conversations/abort", async (conversationId) => {
+    const response = await apiClient.post(`/conversations/${conversationId}/abort`)
     return response.data
 })
 
@@ -50,7 +55,17 @@ const transformMessage = (msg) => {
     } else if (content && typeof content === 'object') {
         text = content.text || "";
         thoughts = content.thoughts || [];
-        tool_calls = content.tool_calls || [];
+        // Refresh Resilience: If tool calls exist in history but have no status, they are 'completed'
+        tool_calls = (content.tool_calls || []).map(tc => {
+            const tcName = tc.name || (tc.function ? tc.function.name : "unknown");
+            const tcArgs = tc.args || (tc.function ? tc.function.arguments : "{}");
+            return {
+                ...tc,
+                name: tcName,
+                args: tcArgs,
+                status: tc.status || 'completed'
+            };
+        });
         status = content.status || "";
     }
 
@@ -61,6 +76,7 @@ const transformMessage = (msg) => {
         thoughts,
         tool_calls,
         status,
+        run_id: msg.run_id || msg.metadata?.run_id || null,
         error: msg.error || null
     };
 };
@@ -71,6 +87,7 @@ const conversationSlice = createSlice({
         list: [],
         messages: [],
         currentPlan: null,
+        agentState: "IDLE",
         currentConversationId: null,
         loading: false,
         error: null,
@@ -80,6 +97,7 @@ const conversationSlice = createSlice({
             state.currentConversationId = action.payload
             state.messages = []
             state.currentPlan = null
+            state.agentState = "IDLE"
         },
         clearMessages: (state) => {
             state.messages = []
@@ -89,20 +107,36 @@ const conversationSlice = createSlice({
             state.messages.push(transformMessage(action.payload))
         },
         handleAgentEvent: (state, action) => {
-            const { type, content, metadata, id } = action.payload;
+            const { type, content, metadata, id, run_id } = action.payload;
             const messages = state.messages;
             let lastMsg = messages[messages.length - 1];
 
-            // Ensure we have a working bot message
-            if (!lastMsg || lastMsg.sender !== 'bot') {
+            // --- Turn Separation / Merging Logic ---
+            // We create a NEW bot message ONLY if:
+            // 1. There is no last message.
+            // 2. The last message is from the user.
+            // 3. The incoming event has a DIFFERENT run_id than the last bot message.
+            //    This is CRITICAL for separate approval phases in back-to-back tool calls.
+
+            const isBotToBotSameRun = lastMsg && lastMsg.sender === 'bot' && (!run_id || lastMsg.run_id === run_id);
+            const isNewTurn = !lastMsg || lastMsg.sender !== 'bot' || !isBotToBotSameRun;
+
+            if (isNewTurn) {
                 lastMsg = {
+                    id: id || Date.now().toString(),
                     sender: 'bot',
                     text: '',
                     thoughts: [],
                     tool_calls: [],
+                    run_id: run_id,
                     created_at: new Date().toISOString()
                 };
                 messages.push(lastMsg);
+            }
+
+            // Always sync the run_id if provided
+            if (run_id && !lastMsg.run_id) {
+                lastMsg.run_id = run_id;
             }
 
             switch (type) {
@@ -112,29 +146,72 @@ const conversationSlice = createSlice({
                     }
                     break;
                 case 'message':
-                    lastMsg.text += content;
+                    if (content) {
+                        // Clear transient status immediately
+                        lastMsg.status = "";
+
+                        // Content Interceptor: Final safety check for JSON leaks in the frontend
+                        if (content.trim().startsWith('{') || content.trim().startsWith('[')) {
+                            lastMsg.text = "";
+                            lastMsg.thoughts.push(`[System Trace] Blocked JSON leak: ${content.substring(0, 50)}...`);
+                        } else {
+                            lastMsg.text = content.trim();
+                        }
+                    }
+                    break;
+                case 'message_chunk':
+                    // Chunks are additive, but we strip mirror artifacts
+                    if (!content.includes('"tool_calls"') && !content.includes('{"')) {
+                        lastMsg.text += content;
+                        // Clear transient status once we start streaming real content
+                        lastMsg.status = "";
+                    }
                     break;
                 case 'thought_start':
+                    lastMsg.thoughts = lastMsg.thoughts || [];
+                    lastMsg.thoughts.push(content || "");
+                    break;
                 case 'thought':
                     if (content) {
                         lastMsg.thoughts = lastMsg.thoughts || [];
-                        lastMsg.thoughts.push(content);
+                        // If the last thought is what we just received, don't double-push
+                        if (lastMsg.thoughts.length > 0 && lastMsg.thoughts[lastMsg.thoughts.length - 1] === content) {
+                            // already synced via chunks
+                        } else {
+                            lastMsg.thoughts.push(content);
+                        }
+                    }
+                    break;
+                case 'thought_chunk':
+                    if (content) {
+                        lastMsg.thoughts = lastMsg.thoughts || [];
+                        if (lastMsg.thoughts.length === 0) {
+                            lastMsg.thoughts.push(content);
+                        } else {
+                            lastMsg.thoughts[lastMsg.thoughts.length - 1] += content;
+                        }
                     }
                     break;
                 case 'tool_start':
                     lastMsg.tool_calls = lastMsg.tool_calls || [];
                     lastMsg.tool_calls.push({
                         name: metadata.tool,
-                        args: metadata.args,
+                        args: metadata.args || "{}",
                         status: 'running',
                         output: null
                     });
                     break;
                 case 'tool_output':
                     if (lastMsg.tool_calls && lastMsg.tool_calls.length > 0) {
-                        const toolCall = lastMsg.tool_calls[lastMsg.tool_calls.length - 1];
-                        toolCall.status = 'completed';
-                        toolCall.output = content;
+                        // Find the corresponding tool call by name (most recent if multiple)
+                        const toolCall = [...lastMsg.tool_calls].reverse().find(tc => tc.name === metadata.tool);
+                        if (toolCall) {
+                            toolCall.status = 'completed';
+                            toolCall.output = content;
+                        }
+                    } else if (lastMsg && !lastMsg.tool_calls) {
+                        // Emergency fallback for out-of-order events
+                        lastMsg.tool_calls = [{ name: metadata.tool, status: 'completed', output: content }];
                     }
                     break;
                 case 'approval_required':
@@ -153,7 +230,21 @@ const conversationSlice = createSlice({
                 case 'plan':
                     if (metadata && metadata.plan) {
                         state.currentPlan = metadata.plan;
+
+                        // Mission Control: Update current status message with progress
+                        const plan = metadata.plan;
+                        if (plan.subtasks && plan.execution_order) {
+                            const subtasks = plan.execution_order.map(id => plan.subtasks[id]).filter(Boolean);
+                            const completed = subtasks.filter(s => s.status === 'completed' || s.status === 'success' || s.status === 'COMPLETED').length;
+                            if (subtasks.length > 0) {
+                                lastMsg.status = `Executing step ${Math.min(completed + 1, subtasks.length)} of ${subtasks.length}`;
+                            }
+                        }
                     }
+                    break;
+                case 'loop_complete':
+                    // Clear any lingering status (Thinking, Working, etc.)
+                    lastMsg.status = "";
                     break;
                 default:
                     break;
@@ -212,10 +303,19 @@ const conversationSlice = createSlice({
                 state.messages.push(transformMessage(action.payload))
             })
 
-            // Fetch Plan
+            // Fetch Plan / State
             .addCase(fetchPlan.fulfilled, (state, action) => {
                 if (state.currentConversationId === action.payload.conversationId) {
                     state.currentPlan = action.payload.plan;
+                    state.agentState = action.payload.agent_state;
+
+                    // Optimistically set message state if awaiting approval
+                    if (action.payload.agent_state === "AWAITING_APPROVAL" && state.messages.length > 0) {
+                        const last = state.messages[state.messages.length - 1];
+                        if (last.sender === 'bot') {
+                            last.approval_required = true;
+                        }
+                    }
                 }
             })
     },

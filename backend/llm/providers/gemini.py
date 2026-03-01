@@ -39,12 +39,11 @@ class GeminiProvider(LLMProvider):
                 # Handle Tool/Function specialized parts
                 if role == "function":
                     # Gemini expects 'functionResponse' part
-                    # We need the name of the tool, stored in tool_call_id or passed along
-                    # If we don't have it, we might need a fallback or check history
-                    # Assuming m.tool_call_id (which we now store) contains the name or ID
+                    # We prioritize m.name (tool name) over tool_call_id
+                    tool_name = m.name or (m.tool_call_id.split("___")[0] if m.tool_call_id and "___" in m.tool_call_id else (m.tool_call_id or "unknown_tool"))
                     parts.append({
                         "functionResponse": {
-                            "name": m.tool_call_id or "unknown_tool",
+                            "name": tool_name,
                             "response": {"result": m.content}
                         }
                     })
@@ -85,7 +84,6 @@ class GeminiProvider(LLMProvider):
         if tools:
             func_decls = []
             for t in tools:
-                # Expecting OpenAI format: {"type": "function", "function": {name, description, parameters}}
                 if "function" in t:
                     func_decls.append(t["function"])
                 elif "name" in t:
@@ -101,18 +99,19 @@ class GeminiProvider(LLMProvider):
         payload = self._prepare_payload(messages, tools=kwargs.get("tools"))
         headers = self.headers.copy()
         
-        # Remove Authorization header if present, as Key is in URL
         if "Authorization" in headers:
             headers.pop("Authorization")
             
-        response = requests.post(url, json=payload, headers=headers)
-        response.raise_for_status()
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=60)
+            response.raise_for_status()
+        except requests.exceptions.Timeout:
+            raise Exception("Gemini API request timed out after 60 seconds.")
+        except Exception as e:
+            raise Exception(f"Gemini API request failed: {e}")
+            
         data = response.json()
-
-        print("llm data", data)
         
-        # Parse Gemini Response
-        # candidates[0].content.parts[0].text
         try:
             candidate = data["candidates"][0]
             content_part = candidate.get("content", {}).get("parts", [{}])[0]
@@ -135,47 +134,51 @@ class GeminiProvider(LLMProvider):
              headers.pop("Authorization")
              
         # SSE format
-        with requests.post(url, json=payload, headers=headers, stream=True) as response:
-            if not response.ok:
-                raise Exception(f"Gemini API Error: {response.status_code} - {response.text}")
-            
-            for line in response.iter_lines():
-                if line:
-                    line = line.decode("utf-8")
-                    if line.startswith("data: "):
-                        data_str = line[6:]
-                        try:
-                            # Gemini SSE returns full object with incremental parts
-                            data = json.loads(data_str)
-                            candidate = data["candidates"][0]
-                            content = candidate.get("content", {})
-                            parts = content.get("parts", [])
-                            
-                            text = ""
-                            tool_calls = []
-                            import uuid
-                            
-                            for p in parts:
-                                if "text" in p:
-                                    text += p["text"]
-                                if "functionCall" in p:
-                                    tc_uuid = str(uuid.uuid4())
-                                    fc = p["functionCall"]
-                                    # Gemini returns args as dict, we need JSON string for OpenAI format compat
-                                    tool_calls.append(ToolCall(
-                                        id=f"call_{tc_uuid}",
-                                        type="function",
-                                        function={
-                                            "name": fc["name"],
-                                            "arguments": json.dumps(fc.get("args", {}))
-                                        }
-                                    ))
-                            
-                            yield LLMStreamChunk(
-                                content=text,
-                                role="assistant",
-                                finish_reason=candidate.get("finishReason"),
-                                tool_calls=tool_calls if tool_calls else None
-                            )
-                        except Exception as e:
-                            continue
+        try:
+            with requests.post(url, json=payload, headers=headers, stream=True, timeout=(10, 60)) as response:
+                if not response.ok:
+                    raise Exception(f"Gemini API Error: {response.status_code} - {response.text}")
+                
+                for line in response.iter_lines():
+                    if line:
+                        line = line.decode("utf-8")
+                        if line.startswith("data: "):
+                            data_str = line[6:]
+                            try:
+                                data = json.loads(data_str)
+                                candidate = data["candidates"][0]
+                                content = candidate.get("content", {})
+                                parts = content.get("parts", [])
+                                
+                                text = ""
+                                tool_calls = []
+                                import uuid
+                                
+                                for p in parts:
+                                    if "text" in p:
+                                        text += p["text"]
+                                    if "functionCall" in p:
+                                        tc_uuid = str(uuid.uuid4())
+                                        fc = p["functionCall"]
+                                        tool_call_id = f"{fc['name']}___{tc_uuid}"
+                                        tool_calls.append(ToolCall(
+                                            id=tool_call_id,
+                                            type="function",
+                                            function={
+                                                "name": fc["name"],
+                                                "arguments": json.dumps(fc.get("args", {}))
+                                            }
+                                        ))
+                                
+                                yield LLMStreamChunk(
+                                    content=text,
+                                    role="assistant",
+                                    finish_reason=candidate.get("finishReason"),
+                                    tool_calls=tool_calls if tool_calls else None
+                                )
+                            except Exception:
+                                continue
+        except requests.exceptions.Timeout:
+            raise Exception("Gemini streaming request timed out.")
+        except Exception as e:
+            raise Exception(f"Gemini streaming failed: {e}")

@@ -62,7 +62,12 @@ export default function WorkPage() {
       if (currentConversationId !== sessionId) {
         dispatch(setCurrentConversationId(sessionId))
         dispatch(fetchMessages(sessionId))
-        dispatch(fetchPlan(sessionId))
+        dispatch(fetchPlan(sessionId)).unwrap().then((data) => {
+          // Restore streaming state if the agent is active
+          if (data && ["THINKING", "TOOL_EXECUTION", "SUMMARIZING", "PLANNING"].includes(data.agent_state)) {
+            setIsStreaming(true);
+          }
+        });
       }
 
       // Connect to the real-time event stream

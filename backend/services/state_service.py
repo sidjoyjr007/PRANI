@@ -58,3 +58,29 @@ class StateService:
             logger.debug(f"Cleared plan state from Redis for session {session_id}")
         except Exception as e:
             logger.error(f"Error clearing plan from Redis for session {session_id}: {e}")
+
+    def _get_state_key(self, session_id: str) -> str:
+        return f"prani:agent_state:{session_id}"
+
+    def save_agent_state(self, session_id: str, state: str, expire_seconds: int = 7200):
+        if not self.redis_client: return
+        try:
+            self.redis_client.setex(name=self._get_state_key(session_id), time=expire_seconds, value=state)
+        except Exception as e:
+            logger.error(f"Error saving agent state to Redis: {e}")
+
+    def load_agent_state(self, session_id: str) -> Optional[str]:
+        if not self.redis_client: return None
+        try:
+            val = self.redis_client.get(self._get_state_key(session_id))
+            return val.decode("utf-8") if val else None
+        except Exception as e:
+            logger.error(f"Error loading agent state from Redis: {e}")
+            return None
+
+    def clear_agent_state(self, session_id: str):
+        if not self.redis_client: return
+        try:
+            self.redis_client.delete(self._get_state_key(session_id))
+        except Exception as e:
+            logger.error(f"Error clearing agent state from Redis: {e}")

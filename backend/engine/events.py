@@ -13,6 +13,7 @@ class AgentEventType(str, Enum):
     # Thought Process
     THOUGHT_START = "thought_start"
     THOUGHT = "thought"
+    THOUGHT_CHUNK = "thought_chunk"
     THOUGHT_END = "thought_end"
     
     # Tool Execution
@@ -25,6 +26,7 @@ class AgentEventType(str, Enum):
     
     # Content
     MESSAGE = "message"
+    MESSAGE_CHUNK = "message_chunk"
     STATUS = "status"
     PLAN = "plan"
     
@@ -67,6 +69,8 @@ class EventBus:
             channel = f"session:{event.session_id}"
             # Serialize the event to JSON
             payload = event.model_dump_json()
+            # Trace log
+            print(f"[EVENT] Emitting {event.type} to {channel} (run_id={event.run_id})")
             # Publish to Redis
             await self.redis_client.publish(channel, payload)
         except Exception as e:
@@ -89,17 +93,6 @@ class EventBus:
                     data = message['data'].decode('utf-8')
                     # We expect data to be valid JSON, yielded as SSE 'data'
                     yield f"data: {data}\n\n"
-                    
-                    # Optionally, if we parse it to see if it's DONE/ERROR
-                    try:
-                        parsed = json.loads(data)
-                        if parsed.get('type') == AgentEventType.LOOP_COMPLETE.value or \
-                           parsed.get('type') == AgentEventType.ERROR.value:
-                            # Send final [DONE] marker to close SSE cleanly
-                            yield f"data: [DONE]\n\n"
-                            break  # Exit the loop and close the subscription
-                    except json.JSONDecodeError:
-                        pass
         finally:
             await pubsub.unsubscribe(channel)
             await pubsub.close()
@@ -109,11 +102,13 @@ class EventBus:
         session_id: str, 
         event_type: AgentEventType, 
         content: str = "", 
-        metadata: Dict[str, Any] = None
+        metadata: Dict[str, Any] = None,
+        run_id: Optional[str] = None
     ) -> AgentEvent:
         return AgentEvent(
             session_id=str(session_id),
             type=event_type,
             content=content,
-            metadata=metadata or {}
+            metadata=metadata or {},
+            run_id=run_id
         )

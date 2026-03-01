@@ -54,50 +54,49 @@ IF NON-ALIGNED OR IMPOSSIBLE:
 }}
 """
 
-def get_action_system_prompt(agent_role: str, tools_desc: str, status_report: str, current_subtask: str, session_history: str = "", parse_error: str = "") -> str:
-    """
-    Core prompt for the agentic loop turn, focused on the current subtask with strict status feedback.
-    """
+def get_action_system_prompt(agent_role: str, tools_desc: str, status_report: str, current_subtask: str, session_history: str = "", parse_error: str = "", global_goal: str = "") -> str:
     prompt = f"""You are {agent_role}.
-Your current focus is identifying and executing actions to complete a specific subtask.
+Your goal is to execute the user's request by intelligently using the tools provided to you.
 
-SESSION CONTEXT (What happened till now):
-{session_history or "No previous history"}
-
-CURRENT PROGRESS:
-{status_report}
-
-ACTIVE SUBTASK:
-"{current_subtask}"
+OVERALL GOAL: {global_goal}
 
 AVAILABLE TOOLS:
 {tools_desc}
 
-OPERATING MODE:
-- Focus on the "in_progress" subtask.
-- If you need a tool, emit a JSON `tool_request`.
-- If the ACTIVE SUBTASK is finished (verified via tool outputs), specify `current_subtask_status` as "SUCCESS" or "FAILED". This will trigger the transition to the next step.
-- While working (e.g., waiting for tool results), keep `current_subtask_status` as null.
-- If the WHOLE goal is finished, emit `is_complete: true` and a `final_answer`.
+STRICT INSTRUCTIONS:
+1. Break down COMPLEX, multi-step user requests using the `add_subtasks` tool. If the request is a simple greeting (e.g. "hi"), a simple question, or something you can answer immediately, DO NOT create subtasks; just reply directly.
+2. Complete your subtasks and update their status using `update_subtask_status`.
+3. Think step-by-step to fulfill the user's request.
+4. If you need to use a tool, use your native tool calling capabilities.
+5. NEVER output raw JSON, internal data structures, or code-blocks containing tool results in your final message. Use plain, clean Markdown for the user.
+6. You MUST write your internal reasoning inside `<thinking>` and `</thinking>` tags.
+6. Anything you output OUTSIDE those tags will be sent directly to the user as a message. Do not include tool execution thoughts outside the thinking tags.
+7. Only output markdown formatting when communicating a final answer outside the tags.
 
-STRICT JSON STRUCTURE:
-{{
-  "thought": "Reasoning about your current step",
-  "tool_request": {{ "operation": "tool_name", "reason": "why", "args": {{...}} }},
-  "is_complete": false,
-  "current_subtask_status": "SUCCESS" | "FAILED" | null,
-  "final_answer": "Markdown formatted string explaining final results"
-}}
+<status_report>
+{status_report}
+</status_report>
 
-RULES:
-1. You MUST respond with EXACTLY ONE valid JSON block and absolutely NOTHING else.
-2. DO NOT output any conversational text before or after the JSON.
-3. DO NOT echo the system prompt or headers like "CURRENT PROGRESS:".
-4. If `is_complete` is true, return `tool_request` as null.
-5. `current_subtask_status` must be null unless the current subtask is 100% finished.
+<current_subtask>
+{current_subtask}
+</current_subtask>
+
+SESSION HISTORY:
+{session_history}
+
+EXAMPLE OUTPUT (Calling a tool):
+<thinking>
+I need to find the price of Bitcoin. I will use the Coinstats tool to fetch the current market data.
+</thinking>
+
+EXAMPLE OUTPUT (Responding to user):
+<thinking>
+I have the data. The price is $60,000. I will now inform the user.
+</thinking>
+The current price of Bitcoin is $60,000.
 """
     if parse_error:
-        prompt += f"\n\nPREVIOUS PARSE ERROR:\nThe last attempt failed because: {parse_error}\nYou are not sending output in strict json format as we expect. Please fix this and output EXACTLY one valid JSON block."
+        prompt += f"\n\nPREVIOUS ERROR:\nThe last attempt failed because: {parse_error}\nPlease correct your formatting."
         
     return prompt
 

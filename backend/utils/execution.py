@@ -7,6 +7,7 @@ import tempfile
 import os
 import shutil
 import docker
+import requests
 import traceback
 from typing import Dict, Any, List
 
@@ -203,23 +204,54 @@ except Exception as e:
         # 5. Prepare Container Execution
         pip_cmd = ""
         if dependencies:
+            print(f"[DEBUG] execute_python_tool: installing dependencies: {dependencies}")
             deps_str = " ".join(dependencies)
             # Use -q for quiet but catch errors
             pip_cmd = f"pip install -q {deps_str} && "
             
         cmd = f"{pip_cmd}python runner.py"
         
-        # 6. Run Container
-        container_output = client.containers.run(
+        # 6. Run Container with Timeout
+        print(f"[DEBUG] execute_python_tool: starting docker run")
+        # Initialize client with a 10s daemon connection timeout
+        client = docker.from_env(timeout=10)
+        
+        # Start container detached so we can wait with a timeout
+        container = client.containers.run(
             "python:3.11-slim",
             command=f"/bin/sh -c \"{cmd}\"",
             volumes={temp_dir: {'bind': '/app', 'mode': 'rw'}},
             working_dir="/app",
             environment=secrets,
-            remove=True,
+            detach=True,
             stdout=True,
             stderr=True,
         )
+        
+        try:
+            print(f"[DEBUG] execute_python_tool: waiting for container (60s limit)")
+            # Wait for container to exit with timeout
+            # wait() returns a dict with 'StatusCode'
+            exit_info = container.wait(timeout=60)
+            exit_code = exit_info.get("StatusCode", 0)
+            
+            # Fetch logs
+            container_output = container.logs()
+            print(f"[DEBUG] execute_python_tool: run complete, exit_code={exit_code}")
+        except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError) as e:
+            # If wait() times out, kill and remove the container
+            print(f"[DEBUG] execute_python_tool: container timed out, killing...")
+            try:
+                container.kill()
+            except:
+                pass
+            return {"success": False, "error": "Execution Timeout: The tool execution exceeded the 60-second limit and was terminated."}
+        finally:
+            # Always clean up
+            try:
+                container.remove(force=True)
+            except:
+                pass
         
         # 7. Parse Output
         output = container_output.decode("utf-8")
@@ -251,6 +283,10 @@ except Exception as e:
         return {"success": False, "error": f"Container error: {raw or str(e)}"}
     except docker.errors.ImageNotFound:
         return {"success": False, "error": "Docker image 'python:3.11-slim' not found. Please pull it first."}
+    except requests.exceptions.ReadTimeout:
+        return {"success": False, "error": "Execution Timeout: The tool execution exceeded the 60-second limit and was terminated."}
+    except requests.exceptions.ConnectionError:
+        return {"success": False, "error": "Docker Connection Error: Could not communicate with the Docker daemon."}
     except Exception as e:
         return {"success": False, "error": f"Execution Error: {str(e)}"}
     finally:

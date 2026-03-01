@@ -13,6 +13,22 @@ import remarkGfm from "remark-gfm"
 
 // ─── Markdown Renderer ───────────────────────────────────────────────────────
 function MarkdownContent({ content, theme }) {
+    const scrubbedContent = typeof content === 'string'
+        ? content
+            .replace(/<thinking>[\s\S]*?<\/thinking>/g, '')
+            .replace(/```json[\s\S]*?```/g, '')
+            .replace(/\{[\s\S]*?"tool_calls"[\s\S]*?\}/g, '')
+            .replace(/\{[\s\S]*?"text"[\s\S]*?\}/g, '')
+            .replace(/[\{\}\[\]\"\:,\\]/g, (match) => {
+                // Highly aggressive remnant removal: 
+                // if it's just punctuation remnants, nuke it
+                return '';
+            })
+            .trim()
+        : content;
+
+    if (!scrubbedContent) return null;
+
     return (
         <ReactMarkdown
             remarkPlugins={[remarkGfm]}
@@ -109,53 +125,61 @@ function MarkdownContent({ content, theme }) {
                 ),
             }}
         >
-            {content}
+            {scrubbedContent}
         </ReactMarkdown>
     )
 }
 
 // ─── Thinking / Reasoning Block ───────────────────────────────────────────────
 function ThinkingBlock({ thoughts, theme }) {
-    const [isOpen, setIsOpen] = useState(false)
-    if (!thoughts || thoughts.length === 0) return null
+    const [isOpen, setIsOpen] = useState(false);
+    const hasMeaningfulThoughts = thoughts.some(t => t.trim().length > 0 && t !== "Thinking...");
+    if (!hasMeaningfulThoughts) return null
 
     return (
-        <div style={{ marginBottom: "8px" }}>
-            <button
-                onClick={() => setIsOpen(o => !o)}
+        <div style={{
+            marginTop: "4px",
+            marginBottom: "6px",
+            borderRadius: "6px",
+            overflow: "hidden",
+            border: `1px solid ${theme.colors.neutral[700]}`,
+            backgroundColor: theme.colors.neutral[900] || "rgba(15,15,20,0.6)",
+        }}>
+            <div
+                onClick={() => setIsOpen(!isOpen)}
                 style={{
+                    padding: "6px 10px",
                     display: "flex",
                     alignItems: "center",
                     gap: "6px",
-                    background: "none",
-                    border: "none",
                     cursor: "pointer",
-                    padding: "4px 8px",
-                    color: theme.colors.muted_foreground,
-                    fontSize: "0.78em",
-                    fontStyle: "italic",
-                    transition: "all 0.15s",
-                    backgroundColor: theme.colors.neutral[800],
-                    borderRadius: "4px",
+                    userSelect: "none"
                 }}
             >
-                {isOpen ? <ChevronDownIcon size={13} /> : <ChevronRight size={13} />}
-                <span>Agent Reasoning</span>
-            </button>
+                {isOpen
+                    ? <ChevronDownIcon size={12} style={{ color: theme.colors.neutral[400] }} />
+                    : <ChevronRight size={12} style={{ color: theme.colors.neutral[400] }} />
+                }
+                <span style={{
+                    fontSize: "0.72em",
+                    fontWeight: 600,
+                    color: theme.colors.neutral[400],
+                    textTransform: "uppercase",
+                    letterSpacing: "0.08em"
+                }}>
+                    Agent Reasoning
+                </span>
+            </div>
             {isOpen && (
                 <div style={{
-                    marginTop: "6px",
-                    borderLeft: `2px solid ${theme.colors.primary[500]}`,
-                    paddingLeft: "12px",
-                    color: theme.colors.muted_foreground,
-                    fontSize: "0.82em",
-                    fontStyle: "italic",
-                    lineHeight: 1.6,
-                    backgroundColor: "rgba(0,0,0,0.1)",
                     padding: "8px 12px",
-                    borderRadius: "0 4px 4px 0",
+                    color: theme.colors.neutral[300],
+                    fontSize: "0.82em",
+                    lineHeight: 1.65,
+                    fontStyle: "italic",
+                    borderTop: `1px solid ${theme.colors.neutral[800]}`,
                 }}>
-                    {thoughts.map((t, i) => <div key={i} style={{ marginBottom: "6px" }}>{t}</div>)}
+                    {thoughts.map((t, i) => <div key={i} style={{ marginBottom: "4px" }}>{t}</div>)}
                 </div>
             )}
         </div>
@@ -163,26 +187,26 @@ function ThinkingBlock({ thoughts, theme }) {
 }
 
 function StatusIndicator({ status, theme }) {
-    if (!status) return null
+    if (!status || status.trim().length === 0) return null
 
     return (
         <div style={{
             display: "inline-flex",
             alignItems: "center",
             gap: "8px",
-            padding: "4px 10px",
-            backgroundColor: theme.colors.neutral[800],
+            padding: "4px 12px",
+            backgroundColor: "rgba(59, 130, 246, 0.18)",
             borderRadius: "16px",
-            fontSize: "0.75em",
-            color: theme.colors.primary[300],
-            marginBottom: "10px",
-            border: `1px solid ${theme.colors.neutral[700]}`,
+            fontSize: "0.8em",
+            color: "#93c5fd",
+            marginBottom: "4px",
+            border: `1px solid rgba(59, 130, 246, 0.45)`,
         }}>
             <div style={{
                 width: "6px",
                 height: "6px",
                 borderRadius: "50%",
-                backgroundColor: theme.colors.primary[400],
+                backgroundColor: "#60a5fa",
                 animation: "pulse 1.5s infinite"
             }} />
             <span style={{ fontWeight: 500 }}>{status}</span>
@@ -190,106 +214,40 @@ function StatusIndicator({ status, theme }) {
     )
 }
 
-// ─── Tool Call Card ───────────────────────────────────────────────────────────
+// ─── Tool Call Card (V3: Clean minimal style) ───────────────────────────────
 function ToolCallCard({ tool, theme }) {
-    const [isOpen, setIsOpen] = useState(false)
-    const statusColor = tool.status === "completed"
-        ? theme.colors.success?.DEFAULT || "#22c55e"
-        : tool.status === "error"
-            ? theme.colors.destructive || "#ef4444"
-            : theme.colors.muted_foreground
+    const isCompleted = tool.status === 'completed';
+    const isRunning = tool.status === 'running';
+    const isError = tool.status === 'error';
 
-    const statusDot = tool.status === "completed" ? "●" : tool.status === "error" ? "✗" : "○"
+    const iconColor = isCompleted
+        ? "#4ade80"
+        : isError
+            ? "#f87171"
+            : theme.colors.primary[400] || "#60a5fa";
 
     return (
         <div style={{
-            border: `1px solid ${theme.colors.neutral[700]}`,
-            borderRadius: "8px",
-            overflow: "hidden",
+            display: "flex",
+            alignItems: "center",
+            gap: "7px",
+            padding: "2px 0",
             fontSize: "0.82em",
-            backgroundColor: theme.colors.neutral[900],
-            marginBottom: "4px",
+            marginBottom: "0px",
+            userSelect: "none",
+            color: theme.colors.neutral[400],
         }}>
-            <button
-                onClick={() => setIsOpen(o => !o)}
-                style={{
-                    width: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "7px 12px",
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    color: theme.colors.foreground,
-                    gap: "8px",
-                }}
-            >
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <Terminal size={12} style={{ color: theme.colors.primary[400] }} />
-                    <span style={{ fontFamily: "monospace", color: theme.colors.primary[300], fontWeight: 600 }}>
-                        {tool.name}
-                    </span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <span style={{ color: statusColor, fontSize: "0.9em" }}>{statusDot} {tool.status || "pending"}</span>
-                    {isOpen ? <ChevronDownIcon size={12} /> : <ChevronRight size={12} />}
-                </div>
-            </button>
-
-            {isOpen && (
-                <div style={{ borderTop: `1px solid ${theme.colors.neutral[700]}`, padding: "10px 12px" }}>
-                    {/* Args */}
-                    <div style={{ marginBottom: "8px" }}>
-                        <div style={{ color: theme.colors.muted_foreground, fontSize: "0.9em", marginBottom: "4px" }}>
-                            Input
-                        </div>
-                        <pre style={{
-                            backgroundColor: theme.colors.neutral[800],
-                            borderRadius: "6px",
-                            padding: "8px",
-                            overflowX: "auto",
-                            margin: 0,
-                            color: theme.colors.neutral[200],
-                            fontFamily: "monospace",
-                            fontSize: "0.88em",
-                            whiteSpace: "pre-wrap",
-                            wordBreak: "break-all"
-                        }}>
-                            {(() => {
-                                try {
-                                    const a = typeof tool.args === "string" ? JSON.parse(tool.args) : tool.args
-                                    return JSON.stringify(a, null, 2)
-                                } catch { return String(tool.args || "{}") }
-                            })()}
-                        </pre>
-                    </div>
-                    {/* Output */}
-                    {tool.output && (
-                        <div>
-                            <div style={{ color: theme.colors.muted_foreground, fontSize: "0.9em", marginBottom: "4px" }}>
-                                Output
-                            </div>
-                            <pre style={{
-                                backgroundColor: theme.colors.neutral[800],
-                                borderRadius: "6px",
-                                padding: "8px",
-                                overflowX: "auto",
-                                margin: 0,
-                                color: theme.colors.neutral[200],
-                                fontFamily: "monospace",
-                                fontSize: "0.88em",
-                                whiteSpace: "pre-wrap",
-                                maxHeight: "200px",
-                                overflow: "auto",
-                                wordBreak: "break-all"
-                            }}>
-                                {typeof tool.output === "string" ? tool.output : JSON.stringify(tool.output, null, 2)}
-                            </pre>
-                        </div>
-                    )}
-                </div>
+            {isCompleted ? (
+                <Check size={13} style={{ color: iconColor, flexShrink: 0 }} />
+            ) : isError ? (
+                <AlertTriangle size={13} style={{ color: iconColor, flexShrink: 0 }} />
+            ) : (
+                <Clock size={13} style={{ color: iconColor, flexShrink: 0, animation: "pulse 1.5s infinite" }} />
             )}
+            <span style={{ fontWeight: 500, color: theme.colors.neutral[300] }}>{tool.name}</span>
+            <span style={{ color: theme.colors.neutral[600], fontSize: "0.88em" }}>
+                {isRunning ? "running" : isCompleted ? "done" : "error"}
+            </span>
         </div>
     )
 }
@@ -436,35 +394,52 @@ function ApprovalBadge({ decision, theme }) {
 }
 
 // ─── Message Row ──────────────────────────────────────────────────────────────
-function MessageRow({ msg, onApprove, onReject, approvalDecisions, theme }) {
+function MessageRow({ msg, showLabel, onApprove, onReject, approvalDecisions, theme }) {
     const isUser = msg.sender === "user"
     const decision = approvalDecisions[msg.id]
+
+    // Internal Tool Hijacking: Filter out subtask-management tools from the UI Log
+    const visibleToolCalls = (msg.tool_calls || []).filter(t =>
+        !['add_subtasks', 'update_subtask_status'].includes(t.name)
+    );
+
+    // Ghost Div Protection: Only render bubble if it contains valid alphanumeric content
+    const scrubbed = !isUser ? (msg.text || "").replace(/[\{\}\[\]\"\:,\\]/g, '').trim() : (msg.text || "").trim();
+    const hasTextContent = scrubbed.length > 0 && (isUser || /[a-zA-Z0-9]/.test(scrubbed));
+
+    // Total visibility check: If NO visible elements exist, kill the whole row
+    const hasMeaningfulThoughts = (msg.thoughts || []).some(t => t.trim().length > 0 && t !== "Thinking...");
+    const hasVisibleContent = showLabel || visibleToolCalls.length > 0 || hasMeaningfulThoughts || (msg.status && msg.status.trim()) || hasTextContent || msg.error || msg.approval_required;
+
+    if (!hasVisibleContent) return null;
 
     return (
         <div style={{
             display: "flex",
             flexDirection: "column",
             gap: "2px",
-            maxWidth: isUser ? "75%" : "90%",
-            alignSelf: isUser ? "flex-end" : "flex-start",
+            maxWidth: isUser ? "75%" : "100%",
+            alignSelf: isUser ? "flex-end" : "flex-start", // Reverted user to right
+            marginBottom: showLabel ? "6px" : "0", // Slightly more space if label exists
         }}>
-            {/* Sender label for bot */}
-            {!isUser && (
+            {/* Sender label for bot (only right align logic removed for user) */}
+            {!isUser && showLabel && (
                 <div style={{
                     display: "flex",
                     alignItems: "center",
                     gap: "6px",
-                    marginBottom: "4px",
+                    marginBottom: "2px",
                 }}>
                     <div style={{
                         width: "20px", height: "20px",
                         borderRadius: "50%",
-                        backgroundColor: theme.colors.neutral[700],
+                        backgroundColor: theme.colors.neutral[800],
                         display: "flex", alignItems: "center", justifyContent: "center",
+                        border: `1px solid ${theme.colors.neutral[700]}`
                     }}>
-                        <Cpu size={11} style={{ color: theme.colors.neutral[300] }} />
+                        <Bot size={12} style={{ color: theme.colors.primary[400] }} />
                     </div>
-                    <span style={{ fontSize: "0.75em", color: theme.colors.muted_foreground, fontWeight: 500 }}>
+                    <span style={{ fontSize: "0.72em", fontWeight: 700, color: theme.colors.foreground, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                         Prani
                     </span>
                 </div>
@@ -479,59 +454,75 @@ function MessageRow({ msg, onApprove, onReject, approvalDecisions, theme }) {
             )}
 
             {/* Tool Calls */}
-            {!isUser && msg.tool_calls?.length > 0 && (
+            {!isUser && visibleToolCalls.length > 0 && (
                 <div style={{ marginBottom: "6px" }}>
-                    {msg.tool_calls.map((t, i) => <ToolCallCard key={i} tool={t} theme={theme} />)}
+                    {visibleToolCalls.map((t, i) => <ToolCallCard key={i} tool={t} theme={theme} />)}
                 </div>
             )}
 
             {/* Main message */}
-            {(msg.text || msg.error) && (
-                <div style={{ display: "flex", alignItems: "flex-end", gap: "10px", flexDirection: isUser ? "row-reverse" : "row" }}>
-                    {/* User avatar on the right */}
-                    {isUser && (
-                        <div style={{
-                            width: "36px", height: "36px", borderRadius: "50%",
-                            backgroundColor: theme.colors.primary[600],
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            flexShrink: 0,
-                        }}>
-                            <User size={18} style={{ color: theme.colors.white }} />
-                        </div>
-                    )}
+            {(() => {
+                const text = msg.text || "";
+                const isUser = msg.sender === 'user';
+                const scrubbed = !isUser ? text.replace(/[\{\}\[\]\"\:,\\]/g, '').trim() : text.trim();
+
+                // Ghost Div Protection: Only render bubble if it contains valid alphanumeric content
+                const hasContent = scrubbed.length > 0 && (isUser || /[a-zA-Z0-9]/.test(scrubbed));
+                if (!hasContent && !msg.error) return null;
+
+                return (
                     <div style={{
-                        backgroundColor: isUser ? theme.colors.primary[600] : "transparent",
-                        border: isUser ? `${theme.borderWidth.sm} solid ${theme.colors.primary[700]}` : "none",
-                        color: isUser ? theme.colors.white : theme.colors.foreground,
-                        padding: isUser ? `${theme.spacing[3]} ${theme.spacing[4]}` : "1px 0",
-                        borderRadius: theme.borderRadius.lg,
-                        wordBreak: "break-word",
-                        overflowWrap: "anywhere",
-                        lineHeight: 1.65,
-                        boxShadow: isUser ? theme.shadows.lg : "none",
-                        transition: `all ${theme.transitions.normal}`,
-                        fontSize: "0.9em",
-                        maxWidth: isUser ? "75%" : "100%",
+                        display: "flex",
+                        alignItems: "flex-end",
+                        gap: "10px",
+                        flexDirection: isUser ? "row-reverse" : "row", // User on right again
+                        marginTop: !showLabel && !isUser ? "6px" : "0" // Small gap for unlabelled bot messages
                     }}>
-                        {isUser ? (
-                            <span style={{ whiteSpace: "pre-wrap" }}>{msg.text}</span>
-                        ) : (
-                            msg.text ? <MarkdownContent content={msg.text} theme={theme} /> : null
-                        )}
-                        {msg.error && (
+                        {/* User avatar on the right */}
+                        {isUser && (
                             <div style={{
-                                marginTop: msg.text ? "8px" : "0", padding: "6px 10px",
-                                backgroundColor: "rgba(239,68,68,0.08)",
-                                border: `1px solid ${theme.colors.destructive}`,
-                                borderRadius: "6px",
-                                color: theme.colors.destructive, fontSize: "0.85em",
+                                width: "36px", height: "36px", borderRadius: "50%",
+                                backgroundColor: theme.colors.primary[600],
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                flexShrink: 0,
                             }}>
-                                {msg.error}
+                                <User size={18} style={{ color: theme.colors.white }} />
                             </div>
                         )}
+                        <div style={{
+                            backgroundColor: isUser ? theme.colors.primary[600] : "rgba(255, 255, 255, 0.02)",
+                            border: "none",
+                            color: isUser ? "#ffffff" : theme.colors.foreground,
+                            padding: isUser ? `10px 16px` : "6px 0px",
+                            borderRadius: isUser ? "16px 16px 4px 16px" : "0",
+                            wordBreak: "break-word",
+                            overflowWrap: "anywhere",
+                            lineHeight: 1.6,
+                            boxShadow: "none",
+                            transition: `all ${theme.transitions.normal}`,
+                            fontSize: "0.93em",
+                            maxWidth: "100%",
+                        }}>
+                            {isUser ? (
+                                <span style={{ whiteSpace: "pre-wrap" }}>{msg.text}</span>
+                            ) : (
+                                msg.text ? <MarkdownContent content={msg.text} theme={theme} /> : null
+                            )}
+                            {msg.error && (
+                                <div style={{
+                                    marginTop: (hasContent || isUser) ? "8px" : "0", padding: "6px 10px",
+                                    backgroundColor: "rgba(239,68,68,0.08)",
+                                    border: `1px solid ${theme.colors.destructive}`,
+                                    borderRadius: "6px",
+                                    color: theme.colors.destructive, fontSize: "0.85em",
+                                }}>
+                                    {msg.error}
+                                </div>
+                            )}
+                        </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {/* Approval */}
             {!isUser && msg.approval_required && (
@@ -603,7 +594,6 @@ export default function ChatPanel({
     onAbort,
     isStreaming,
 }) {
-    console.log("ChatPanel Render - currentPlan:", currentPlan)
     const theme = useTheme()
     const messagesEndRef = useRef(null)
     const messagesContainerRef = useRef(null)
@@ -645,8 +635,8 @@ export default function ChatPanel({
             height: "100%",
             overflow: "hidden",
         }}>
-            {/* Plan Area - Only show while streaming */}
-            {isStreaming && (() => {
+            {/* Plan Area - Persistent Mission Control */}
+            {(() => {
                 let safeSubtasks = [];
                 if (currentPlan) {
                     const planObj = currentPlan.plan || currentPlan;
@@ -661,14 +651,22 @@ export default function ChatPanel({
 
                 if (safeSubtasks.length === 0) return null;
 
+                const isComplete = safeSubtasks.every(s => String(s.status).toLowerCase() === 'completed' || String(s.status).toLowerCase() === 'success');
+                const isFailed = safeSubtasks.some(s => String(s.status).toLowerCase() === 'failed');
+
+                // AUTO-HIDE: Remove plan panel once things are done or failed
+                if (isComplete || isFailed) return null;
+
+                const activeTaskCount = safeSubtasks.filter(s => String(s.status).toLowerCase() === 'completed').length;
+
                 return (
                     <div style={{
                         margin: "20px 40px 0 40px",
                         padding: "16px 20px",
                         backgroundColor: theme.colors.neutral[900],
                         borderRadius: "12px",
-                        border: `1px solid ${theme.colors.neutral[800]}`,
-                        boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+                        border: `1px solid ${isFailed ? theme.colors.destructive : theme.colors.neutral[800]}`,
+                        boxShadow: isFailed ? `0 0 20px rgba(239, 68, 68, 0.1)` : "0 8px 24px rgba(0,0,0,0.15)",
                         maxHeight: isPlanExpanded ? "40%" : "auto",
                         overflowY: isPlanExpanded ? "auto" : "hidden",
                         flexShrink: 0,
@@ -687,15 +685,18 @@ export default function ChatPanel({
                             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                                 <div style={{
                                     width: "28px", height: "28px", borderRadius: "8px",
-                                    backgroundColor: theme.colors.primary[900], color: theme.colors.primary[400],
+                                    backgroundColor: isFailed ? "rgba(239, 68, 68, 0.1)" : theme.colors.primary[900],
+                                    color: isFailed ? theme.colors.destructive : theme.colors.primary[400],
                                     display: "flex", alignItems: "center", justifyContent: "center"
                                 }}>
-                                    <Check size={16} strokeWidth={2.5} />
+                                    {isFailed ? <X size={16} strokeWidth={2.5} /> : <Check size={16} strokeWidth={2.5} />}
                                 </div>
                                 <div>
-                                    <div style={{ fontSize: "0.9em", fontWeight: 600, color: theme.colors.neutral[200], letterSpacing: "0.02em" }}>Execution Plan</div>
+                                    <div style={{ fontSize: "0.9em", fontWeight: 600, color: theme.colors.neutral[200], letterSpacing: "0.02em" }}>
+                                        {isFailed ? "Execution Failed" : "Execution Plan"}
+                                    </div>
                                     <div style={{ fontSize: "0.75em", color: theme.colors.muted_foreground, marginTop: "2px" }}>
-                                        {safeSubtasks.filter(s => s.status === 'COMPLETED' || s.status === 'SUCCESS').length} of {safeSubtasks.length} steps completed
+                                        {activeTaskCount} of {safeSubtasks.length} steps completed
                                     </div>
                                 </div>
                             </div>
@@ -715,9 +716,11 @@ export default function ChatPanel({
                         {isPlanExpanded && (
                             <div style={{ display: "flex", flexDirection: "column", gap: "2px", marginTop: "16px", marginLeft: "4px" }}>
                                 {safeSubtasks.map((st, i) => {
-                                    const isDone = st.status === "COMPLETED" || st.status === "SUCCESS";
-                                    const isActive = st.status === "IN_PROGRESS";
-                                    const isPending = st.status === "PENDING";
+                                    const status = String(st.status).toLowerCase();
+                                    const isDone = status === "completed" || status === "success";
+                                    const isActive = status === "in_progress";
+                                    const isFailed = status === "failed";
+                                    const isPending = status === "pending";
 
                                     return (
                                         <div key={st.id || i} style={{
@@ -728,31 +731,33 @@ export default function ChatPanel({
                                             borderRadius: "8px",
                                             transition: "all 0.2s ease",
                                             opacity: isPending ? 0.5 : 1,
+                                            borderLeft: isActive ? `2px solid ${theme.colors.primary[500]}` : "none"
                                         }}>
                                             <div style={{
                                                 display: "flex", alignItems: "center", justifyContent: "center",
                                                 width: "20px", height: "20px", borderRadius: "50%",
                                                 backgroundColor: isDone ? (theme.colors.success?.DEFAULT || "#22c55e") :
-                                                    isActive ? theme.colors.primary[500] : theme.colors.neutral[800],
-                                                border: (!isDone && !isActive) ? `1px solid ${theme.colors.neutral[600]}` : "none",
+                                                    isFailed ? (theme.colors.destructive || "#ef4444") :
+                                                        isActive ? theme.colors.primary[500] : theme.colors.neutral[800],
+                                                border: (!isDone && !isActive && !isFailed) ? `1px solid ${theme.colors.neutral[600]}` : "none",
                                                 color: theme.colors.white,
                                                 flexShrink: 0,
-                                                marginTop: "1px",
-                                                boxShadow: isActive ? `0 0 0 3px ${theme.colors.primary[900]}` : "none"
+                                                marginTop: "2px",
+                                                boxShadow: isActive ? `0 0 10px ${theme.colors.primary[900]}` : "none"
                                             }}>
                                                 {isDone && <Check size={12} strokeWidth={3} />}
+                                                {isFailed && <X size={12} strokeWidth={3} />}
                                                 {isActive && <div style={{ width: "6px", height: "6px", backgroundColor: "white", borderRadius: "50%", animation: "pulse 1.5s infinite" }} />}
                                             </div>
                                             <div style={{ display: "flex", flexDirection: "column" }}>
                                                 <span style={{
                                                     textDecoration: isDone ? "line-through" : "none",
-                                                    color: isDone ? theme.colors.neutral[400] : (isActive ? theme.colors.neutral[100] : theme.colors.neutral[300]),
-                                                    fontWeight: isActive ? 500 : 400,
-                                                    lineHeight: "1.4"
-                                                }}>{st.description}</span>
-                                                {isActive && st.result && (
-                                                    <span style={{ fontSize: "0.9em", color: theme.colors.primary[400], marginTop: "4px" }}>Executing...</span>
-                                                )}
+                                                    color: isDone ? theme.colors.neutral[400] : (isFailed ? theme.colors.destructive : (isActive ? theme.colors.neutral[100] : theme.colors.neutral[300])),
+                                                    fontWeight: (isActive || isFailed) ? 600 : 400
+                                                }}>
+                                                    {st.description}
+                                                </span>
+                                                {st.error && <span style={{ fontSize: "0.85em", color: theme.colors.destructive, marginTop: "4px" }}>{st.error}</span>}
                                             </div>
                                         </div>
                                     )
@@ -775,36 +780,44 @@ export default function ChatPanel({
                     padding: "24px 40px",
                     display: "flex",
                     flexDirection: "column",
-                    gap: "20px",
+                    gap: "8px", // Aggressively squashed whitespace
                 }}
             >
                 {messages.length === 0 ? (
                     <EmptyState theme={theme} />
                 ) : (
-                    messages.map((msg, idx) => (
-                        <MessageRow
-                            key={msg.id || idx}
-                            msg={msg}
-                            theme={theme}
-                            onApprove={handleApproveMsg}
-                            onReject={handleRejectMsg}
-                            approvalDecisions={approvalDecisions}
-                        />
-                    ))
+                    messages.map((msg, idx) => {
+                        const prevMsg = messages[idx - 1];
+                        // Consolidated Label Logic: Only show "Prani" if sender changed or run changed
+                        const showLabel = !prevMsg || prevMsg.sender !== msg.sender || (prevMsg.run_id !== msg.run_id && msg.run_id);
+
+                        return (
+                            <MessageRow
+                                key={msg.id || idx}
+                                msg={msg}
+                                showLabel={showLabel}
+                                theme={theme}
+                                onApprove={handleApproveMsg}
+                                onReject={handleRejectMsg}
+                                approvalDecisions={approvalDecisions}
+                            />
+                        );
+                    })
                 )}
 
                 {/* Streaming indicator */}
                 {isStreaming && (
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px", alignSelf: "flex-start" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", alignSelf: "flex-start", marginBottom: "12px" }}>
                         <div style={{
                             width: "24px", height: "24px", borderRadius: "50%",
-                            backgroundColor: theme.colors.neutral[700],
+                            backgroundColor: theme.colors.neutral[800],
                             display: "flex", alignItems: "center", justifyContent: "center",
+                            border: `1px solid ${theme.colors.neutral[700]}`
                         }}>
-                            <Cpu size={13} style={{ color: theme.colors.neutral[300] }} />
+                            <Cpu size={13} style={{ color: theme.colors.primary[400] }} />
                         </div>
-                        <span style={{ fontSize: "0.85em", color: theme.colors.muted_foreground, fontStyle: "italic", marginLeft: "4px" }}>
-                            Understanding user query
+                        <span style={{ fontSize: "0.85em", color: theme.colors.muted_foreground, fontStyle: "italic", fontWeight: 500 }}>
+                            {messages[messages.length - 1]?.status || "Thinking..."}
                         </span>
                         <div style={{ display: "flex", gap: "3px", alignItems: "center", marginLeft: "2px" }}>
                             {[0, 1, 2].map(i => (
@@ -824,27 +837,31 @@ export default function ChatPanel({
             </div>
 
             {/* Scroll Button */}
-            {!isScrolledToBottom && messages.length > 0 && (
-                <Button
-                    onClick={scrollToBottom}
-                    variant="primary"
-                    size="sm"
-                    style={{
-                        position: "absolute",
-                        bottom: theme.spacing[6],
-                        left: "50%",
-                        transform: "translateX(-50%)",
-                        borderRadius: "50%",
-                        width: "40px", height: "40px",
-                        padding: 0,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        boxShadow: theme.shadows.lg,
-                        zIndex: 10,
-                    }}
-                >
-                    <ChevronDown size={20} />
-                </Button>
-            )}
+            {
+                !isScrolledToBottom && messages.length > 0 && (
+                    <Button
+                        onClick={scrollToBottom}
+                        variant="primary"
+                        size="sm"
+                        style={{
+                            position: "absolute",
+                            bottom: "130px", // Higher elevation to clear the input box
+                            left: "50%",
+                            transform: "translateX(-50%)",
+                            borderRadius: "50%",
+                            width: "36px", height: "36px",
+                            padding: 0,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+                            zIndex: 60,
+                            backgroundColor: theme.colors.primary[600],
+                            border: `1px solid ${theme.colors.primary[500]}`,
+                        }}
+                    >
+                        <ChevronDown size={20} />
+                    </Button>
+                )
+            }
 
             {/* Input Area */}
             <div style={{ padding: `0 ${theme.spacing[6]} ${theme.spacing[6]}` }}>
@@ -883,7 +900,7 @@ export default function ChatPanel({
                         }}
                         disabled={isStreaming}
                         rows={2}
-                        placeholder={isStreaming ? "Agent is working..." : "Write a message..."}
+                        placeholder={isStreaming ? (currentPlan?.status || "Agent is working...") : "Write a message..."}
                         style={{
                             padding: `${theme.spacing[4]} ${theme.spacing[5]}`,
                             backgroundColor: "transparent",
@@ -990,6 +1007,6 @@ export default function ChatPanel({
           50% { opacity: 1; transform: scale(1.2); }
         }
       `}</style>
-        </div>
+        </div >
     )
 }

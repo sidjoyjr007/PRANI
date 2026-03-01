@@ -23,8 +23,8 @@ class Settings(BaseSettings):
     # SMTP Configuration
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587
-    smtp_user: str = "your-email@gmail.com"
-    smtp_password: str = "your-app-password"
+    smtp_user: str = "siddesh976@gmail.com"
+    smtp_password: str = "fzwi hqlp jobz vpew"
     sender_email: str = "noreply@prani.com"
     sender_name: str = "Prani"
     

@@ -73,6 +73,8 @@ class ExecutionService:
         # We create a new local DB session for the background task to prevent thread sharing issues
         db = SessionLocal()
         
+        print(f"[DEBUG] ExecutionService: run_agent_background started. session_id={session_id}, is_resume={bool(approved_tool_calls)}")
+        
         try:
             # 1. Fetch Agent & LLM
             agent = self.agent_service.get_agent(db, agent_id, user_id=user_id)
@@ -117,6 +119,12 @@ class ExecutionService:
             if user_content and not approved_tool_calls:
                 state_service.clear_plan(str(session_id))
                 subtask_state = None
+                # Explicitly notify frontend to clear the plan UI
+                await self.event_bus.emit(self.event_bus.create_event(
+                    str(session_id), 
+                    AgentEventType.PLAN, 
+                    metadata={"plan": {"subtasks": {}, "execution_order": []}}
+                ))
             else:
                 # If it's a resume (or no new text), try to load state
                 subtask_state = state_service.load_plan(str(session_id))

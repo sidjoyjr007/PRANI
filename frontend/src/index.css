@@ -61,6 +61,15 @@
     border-color: hsl(var(--border));
   }
 
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
