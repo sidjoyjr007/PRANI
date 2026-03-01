@@ -108,12 +108,14 @@ class GeminiProvider(LLMProvider):
         response = requests.post(url, json=payload, headers=headers)
         response.raise_for_status()
         data = response.json()
+
+        print("llm data", data)
         
         # Parse Gemini Response
         # candidates[0].content.parts[0].text
         try:
             candidate = data["candidates"][0]
-            content_part = candidate["content"]["parts"][0]
+            content_part = candidate.get("content", {}).get("parts", [{}])[0]
             text = content_part.get("text", "")
             finish_reason = candidate.get("finishReason")
             
@@ -122,8 +124,8 @@ class GeminiProvider(LLMProvider):
                 role="assistant",
                 finish_reason=finish_reason
             )
-        except (KeyError, IndexError):
-             return LLMResponse(content="Error parsing Gemini response", role="assistant")
+        except (KeyError, IndexError) as e:
+             return LLMResponse(content=f"Error parsing Gemini response: {e}", role="assistant")
 
     def stream(self, messages: List[ProviderMessage], **kwargs) -> Iterator[LLMStreamChunk]:
         url = self._prepare_url(stream=True)

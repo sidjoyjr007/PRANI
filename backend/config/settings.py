@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     # ChromaDB Vector Store
     chroma_url: str = "http://localhost:8100"
     
+    # Redis State Cache
+    redis_url: str = "redis://localhost:6379/0"
+    
     @field_validator("allowed_origins", mode="before")
     @classmethod
     def parse_allowed_origins(cls, v):

@@ -30,6 +30,14 @@ services:
     networks:
       - prani_network
 
+  redis:
+    image: redis:alpine
+    container_name: prani_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - prani_network
+
 volumes:
   postgres_data:
   chroma_data:

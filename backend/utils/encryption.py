@@ -7,7 +7,6 @@ from config.settings import settings
 _key = settings.encryption_key
 if not _key:
     # Fallback for dev - prints warning
-    print("WARNING: ENCRYPTION_KEY not set in settings. Generating temporary key. Secrets will be lost on restart.")
     _key = Fernet.generate_key().decode()
 
 def get_cipher_suite():

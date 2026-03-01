@@ -89,19 +89,22 @@ class ToolRegistry:
     def get_tool_by_name(self, tool_name: str, agent) -> Optional[Dict[str, Any]]:
         """
         Fetches a tool by name, ensuring the agent is allowed to use it.
-        Performs exact name matching as per user requirement (no normalization).
+        Handles possible 'default_api:' or 'default_api.' prefixes defensively.
         """
-        # 1. Check Assigned Tools (Fast path)
+        clean_name = tool_name.replace("default_api:", "").replace("default_api.", "")
+        
+        # 1. Check Assigned Tools
         assigned = self.get_assigned_tools(agent)
         for t in assigned:
-            if t.get("name") == tool_name:
+            t_name = t.get("name", "").replace("default_api:", "").replace("default_api.", "")
+            if t_name == clean_name:
                 return t
         
         # 2. Check Vector Search results
-        # We search with the tool name as the query
-        results = self.search_tools(query=tool_name, agent=agent, limit=10)
+        results = self.search_tools(query=clean_name, agent=agent, limit=10)
         for t in results:
-            if t.get("name") == tool_name:
+            t_name = t.get("name", "").replace("default_api:", "")
+            if t_name == clean_name:
                 return t
                 
         return None

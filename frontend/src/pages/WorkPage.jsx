@@ -16,7 +16,8 @@ import {
   createConversation,
   fetchMessages,
   deleteConversation,
-  updateConversation
+  updateConversation,
+  fetchPlan
 } from "@/store/slices/conversationSlice"
 
 import { useAgentStream } from "@/hooks/useAgentStream"
@@ -25,13 +26,13 @@ export default function WorkPage() {
   const dispatch = useDispatch()
   const navigate = useNavigate()
   const { sessionId } = useParams()
-  const { streamMessage, resumeStream, isStreaming } = useAgentStream()
+  const { streamMessage, resumeStream, abortStream, connectStream, disconnectStream, isStreaming } = useAgentStream(sessionId)
 
   // -- Redux Data --
   const { items: agents } = useSelector((state) => state.agents)
   const { items: tools } = useSelector((state) => state.tools)
   const { items: llms } = useSelector((state) => state.llms)
-  const { list: conversations, messages, currentConversationId } = useSelector((state) => state.conversations)
+  const { list: conversations, messages, currentConversationId, currentPlan } = useSelector((state) => state.conversations)
 
   // -- Local State for UI --
   const [inputValue, setInputValue] = useState("")
@@ -61,7 +62,11 @@ export default function WorkPage() {
       if (currentConversationId !== sessionId) {
         dispatch(setCurrentConversationId(sessionId))
         dispatch(fetchMessages(sessionId))
+        dispatch(fetchPlan(sessionId))
       }
+
+      // Connect to the real-time event stream
+      connectStream(sessionId)
 
       // Update selected agent based on conversation history if available
       const conv = conversations.find(c => c.id === sessionId)
@@ -70,8 +75,11 @@ export default function WorkPage() {
       }
     } else {
       dispatch(setCurrentConversationId(null))
+      disconnectStream()
     }
-  }, [sessionId, dispatch, conversations, currentConversationId])
+
+    return () => disconnectStream()
+  }, [sessionId, dispatch, conversations, currentConversationId, connectStream, disconnectStream])
 
   // -- Handlers --
   const scrollToBottom = () => {
@@ -96,6 +104,10 @@ export default function WorkPage() {
           title: content.slice(0, 30) + (content.length > 30 ? "..." : ""), // Simple title generation
           agent_id: selectedAgentId
         })).unwrap()
+
+        // Wait for the event stream to connect BEFORE streaming the message
+        // to prevent race conditions where events are missed.
+        await connectStream(newConv.id)
 
         navigate(`/work/${newConv.id}`)
         // Stream message to the new conversation
@@ -183,6 +195,7 @@ export default function WorkPage() {
         {/* Center Panel */}
         <ChatPanel
           messages={uiMessages}
+          currentPlan={currentPlan}
           setMessages={() => { }}
           inputValue={inputValue}
           setInputValue={setInputValue}
@@ -196,6 +209,7 @@ export default function WorkPage() {
           setIsScrolledToBottom={setIsScrolledToBottom}
           scrollToBottom={scrollToBottom}
           onApprove={handleApprove}
+          onAbort={() => abortStream(sessionId)}
           isStreaming={isStreaming}
         />
 

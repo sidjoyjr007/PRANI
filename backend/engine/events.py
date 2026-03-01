@@ -26,6 +26,7 @@ class AgentEventType(str, Enum):
     # Content
     MESSAGE = "message"
     STATUS = "status"
+    PLAN = "plan"
     
 class AgentEvent(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -41,24 +42,67 @@ class AgentEvent(BaseModel):
     class Config:
         use_enum_values = True
 
+import json
+import redis.asyncio as redis
+import logging
+from config.settings import settings
+
+logger = logging.getLogger(__name__)
+
 class EventBus:
     """
-    Simple in-memory event bus for the agent loop.
-    In production, this could be replaced by Redis/Kafka, but for now 
-    it just yields events to the SSE generator.
+    Redis-backed event bus.
+    In the agent loop, events will be published to `session:{session_id}`.
+    Clients can subscribe to this channel using the async `subscribe()` method.
     """
     def __init__(self):
-        self._subscribers = []
+        # Create a single connection pool for the bus instance (or could be global)
+        self.redis_client = redis.from_url(settings.redis_url)
 
-    def emit(self, event: AgentEvent):
+    async def emit(self, event: AgentEvent):
         """
-        Since we are using Python generators for SSE, we don't 'store' events 
-        but rather returns them to be yielded by the caller.
+        Asynchronously publish the AgentEvent JSON payload to the corresponding Redis channel.
+        """
+        try:
+            channel = f"session:{event.session_id}"
+            # Serialize the event to JSON
+            payload = event.model_dump_json()
+            # Publish to Redis
+            await self.redis_client.publish(channel, payload)
+        except Exception as e:
+            logger.error(f"Failed to publish event to Redis: {e}")
+            
+    async def subscribe(self, session_id: str):
+        """
+        Creates a new Redis PubSub object and subscribes to the session's channel.
+        Yields events as they arrive.
+        """
+        pubsub = self.redis_client.pubsub()
+        channel = f"session:{session_id}"
+        await pubsub.subscribe(channel)
         
-        However, for decoupling, the AgenticLoop will take an 'event_handler' callback.
-        """
-        # This is a placeholder for more complex pub/sub if needed later.
-        pass
+        try:
+            async for message in pubsub.listen():
+                # pubsub.listen() also yields subscribe/unsubscribe lifecycle messages
+                if message['type'] == 'message':
+                    # The actual payload is in the 'data' field (bytes)
+                    data = message['data'].decode('utf-8')
+                    # We expect data to be valid JSON, yielded as SSE 'data'
+                    yield f"data: {data}\n\n"
+                    
+                    # Optionally, if we parse it to see if it's DONE/ERROR
+                    try:
+                        parsed = json.loads(data)
+                        if parsed.get('type') == AgentEventType.LOOP_COMPLETE.value or \
+                           parsed.get('type') == AgentEventType.ERROR.value:
+                            # Send final [DONE] marker to close SSE cleanly
+                            yield f"data: [DONE]\n\n"
+                            break  # Exit the loop and close the subscription
+                    except json.JSONDecodeError:
+                        pass
+        finally:
+            await pubsub.unsubscribe(channel)
+            await pubsub.close()
     
     @staticmethod
     def create_event(

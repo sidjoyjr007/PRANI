@@ -6,8 +6,8 @@ from config.settings import settings
 # Database setup
 engine = create_engine(
     settings.database_url,
-    echo=settings.debug,
-    pool_pre_ping=True,  # Verify connections before using
+    echo=False,
+    pool_pre_ping=True,
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

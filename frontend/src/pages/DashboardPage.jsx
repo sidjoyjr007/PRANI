@@ -22,7 +22,7 @@ export default function DashboardPage() {
       <Container>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: theme.spacing[8] }}>
           <PageHeader title="Dashboard" subtitle="Welcome back!" />
-          <Button 
+          <Button
             onClick={handleLogout}
             disabled={isLoading}
             variant="destructive"
@@ -36,7 +36,7 @@ export default function DashboardPage() {
         <Card variant="default" style={{ marginBottom: theme.spacing[8] }}>
           <CardContent style={{ padding: theme.spacing[8] }}>
             <h2 style={{ fontSize: theme.typography.fontSize.xl, fontWeight: theme.typography.fontWeight.semibold, margin: `0 0 ${theme.spacing[4]} 0`, color: theme.colors.foreground }}>Account Information</h2>
-            
+
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: theme.spacing[8] }}>
               <div>
                 <p style={{ fontSize: theme.typography.fontSize.sm, color: theme.colors.muted_foreground, margin: 0 }}>Name</p>
@@ -58,7 +58,7 @@ export default function DashboardPage() {
         <Card variant="default">
           <CardContent style={{ padding: theme.spacing[8] }}>
             <h2 style={{ fontSize: theme.typography.fontSize.xl, fontWeight: theme.typography.fontWeight.semibold, margin: `0 0 ${theme.spacing[4]} 0`, color: theme.colors.foreground }}>Quick Actions</h2>
-            
+
             <div style={{ display: "flex", gap: theme.spacing[4], flexWrap: "wrap" }}>
               <Button variant="primary" size="md">
                 Edit Profile

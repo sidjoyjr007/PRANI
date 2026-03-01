@@ -54,12 +54,8 @@ def delete_conversation(conversation_id: UUID, db: Session = Depends(get_db), cu
 from fastapi.responses import StreamingResponse
 from services.execution_service import ExecutionService
 
-@router.post("/{conversation_id}/messages", response_model=None)
+@router.post("/{conversation_id}/messages", response_model=MessageResponse)
 async def add_message(conversation_id: UUID, message: MessageCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """
-    Adds a user message and streams the agent's response.
-    Returns a StreamingResponse (Server-Sent Events).
-    """
     conversation_service = ConversationService(db)
     # Verify conversation exists first
     conversation = conversation_service.get_conversation(conversation_id, user_id=current_user.id)
@@ -70,21 +66,39 @@ async def add_message(conversation_id: UUID, message: MessageCreate, db: Session
     if not conversation.agent_id:
         # Fallback: Just save user message
         created_message = conversation_service.add_message(conversation_id, message)
-        # Mock stream or return JSON? 
-        # For consistency with frontend expecting stream, we might want to mock a stream 
-        # or handle this case in frontend. 
-        # For now, let's just return the message as JSON if no agent (client handles 200 JSON vs Stream).
-        # Actually, best to enforce Agent for now or stream a "No agent selected" message.
         return created_message
 
+    # Save the user message to the database first
+    created_message = conversation_service.add_message(conversation_id, message)
+
     execution_service = ExecutionService(db)
-    
-    # Create generator
-    # We pass user content string. Handle rich content parsing if needed.
+
     user_content = message.content if isinstance(message.content, str) else str(message.content)
 
+    # Launch agent loop in the background
+    import asyncio
+    asyncio.create_task(
+        execution_service.run_agent_background(
+            conversation.agent_id, 
+            conversation_id, 
+            user_id=current_user.id, 
+            user_content=user_content
+        )
+    )
+
+    return created_message
+
+from engine.events import EventBus
+
+@router.get("/{conversation_id}/events")
+async def stream_conversation_events(conversation_id: UUID, current_user: User = Depends(get_current_user)):
+    """
+    Subscribe to agent execution events for this conversation via Redis Pub/Sub.
+    Returns a Server-Sent Events (SSE) stream.
+    """
+    event_bus = EventBus()
     return StreamingResponse(
-        execution_service.run_agent(conversation.agent_id, conversation_id, user_id=current_user.id, user_content=user_content),
+        event_bus.subscribe(str(conversation_id)),
         media_type="text/event-stream"
     )
 
@@ -98,14 +112,20 @@ def get_messages(conversation_id: UUID, db: Session = Depends(get_db), current_u
         
     return service.get_messages(conversation_id, user_id=current_user.id)
 
+from services.state_service import StateService
+
+@router.get("/{conversation_id}/plan")
+def get_conversation_plan(conversation_id: UUID, current_user: User = Depends(get_current_user)):
+    state_service = StateService()
+    plan = state_service.load_plan(str(conversation_id))
+    if not plan:
+        return {"plan": None}
+    return {"plan": plan}
+
 from schemas.execution import ApprovalRequest
 
-@router.post("/{conversation_id}/resume", response_model=None)
+@router.post("/{conversation_id}/resume", response_model=dict)
 async def resume_execution(conversation_id: UUID, request: ApprovalRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """
-    Resumes execution for a paused conversation (HITL).
-    Accepts approved tool calls and continues the agent loop.
-    """
     conversation_service = ConversationService(db)
     conversation = conversation_service.get_conversation(conversation_id, user_id=current_user.id)
     if not conversation:
@@ -116,13 +136,41 @@ async def resume_execution(conversation_id: UUID, request: ApprovalRequest, db: 
 
     execution_service = ExecutionService(db)
     
-    return StreamingResponse(
-        execution_service.run_agent(
+    import asyncio
+    asyncio.create_task(
+        execution_service.run_agent_background(
             agent_id=conversation.agent_id, 
             session_id=conversation_id, 
             user_id=current_user.id,
             user_content=None, 
             approved_tool_calls=request.approved_tool_calls
-        ),
-        media_type="text/event-stream"
+        )
     )
+    
+    return {"status": "resumed"}
+
+@router.post("/{conversation_id}/abort", response_model=dict)
+def abort_execution(conversation_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """
+    Aborts an active agent execution loop for the given conversation.
+    """
+    conversation_service = ConversationService(db)
+    conversation = conversation_service.get_conversation(conversation_id, user_id=current_user.id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    execution_service = ExecutionService(db)
+    success = execution_service.abort_agent(conversation_id)
+    
+    if success:
+        from engine.events import EventBus, AgentEventType
+        import asyncio
+        event_bus = EventBus()
+        asyncio.create_task(
+            event_bus.emit(event_bus.create_event(str(conversation_id), AgentEventType.ERROR, content="Agent execution aborted by user."))
+        )
+        return {"status": "aborted"}
+    else:
+        # It's fine if there wasn't an active task, we just tell the client
+        return {"status": "no_active_task"}
+

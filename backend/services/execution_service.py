@@ -19,15 +19,28 @@ from utils.encryption import decrypt_value
 
 from engine.loop import AgenticLoop
 from engine.events import EventBus, AgentEventType
+from services.state_service import StateService
 
 logger = logging.getLogger(__name__)
 
 class ExecutionService:
+    _active_tasks: Dict[UUID, asyncio.Task] = {}
+
     def __init__(self, db: Session):
         self.db = db
         self.agent_service = AgentService
         self.conversation_service = ConversationService(db)
         self.event_bus = EventBus()
+
+    def abort_agent(self, session_id: UUID) -> bool:
+        """
+        Cancels an active background agent execution loop.
+        """
+        task = self._active_tasks.get(session_id)
+        if task and not task.done():
+            task.cancel()
+            return True
+        return False
 
     def _resolve_secrets(self, llm_id: UUID) -> Dict[str, str]:
         """
@@ -43,84 +56,103 @@ class ExecutionService:
                 resolved[s.name] = ""
         return resolved
 
-    async def run_agent(self, agent_id: UUID, session_id: UUID, user_id: UUID, user_content: str = None, approved_tool_calls: List[Dict] = None) -> Iterator[str]:
+    async def run_agent_background(
+        self, 
+        agent_id: UUID, 
+        session_id: UUID, 
+        user_id: UUID, 
+        user_content: str = None, 
+        approved_tool_calls: List[Dict] = None
+    ) -> None:
         """
-        Main execution entry point.
-        Now orchestrates the AgenticLoop and yields SSE events.
-        bSupports standard chat and HITL resume.
+        Main execution entry point, running as a background task.
+        Executes the AgenticLoop. The loop will asynchronously publish events via EventBus.
         """
-        # 1. Fetch Agent & LLM
-        agent = self.agent_service.get_agent(self.db, agent_id, user_id=user_id)
-        if not agent:
-            yield f"data: {json.dumps({'error': 'Agent not found'})}\n\n"
-            return
-
-        if not agent.llm_id:
-            yield f"data: {json.dumps({'error': 'Agent has no LLM configured'})}\n\n"
-            return
-            
-        llm_config = self.db.query(LLM).filter(LLM.id == agent.llm_id).first()
-        if not llm_config:
-            yield f"data: {json.dumps({'error': 'LLM configuration not found'})}\n\n"
-            return
-
-        # 2. Save User Message to DB (Only if new content)
-        if user_content:
-            # We do this synchronously before starting the loop
-            self.conversation_service.add_message(
-                session_id, 
-                MessageCreate(role="user", content=user_content),
-                user_id=user_id
-            )
+        from config.database import SessionLocal
         
-        # 3. Resolve Secrets & Init Provider
-        secrets = self._resolve_secrets(llm_config.id)
+        # We create a new local DB session for the background task to prevent thread sharing issues
+        db = SessionLocal()
+        
         try:
-            provider = LLMFactory.create_provider(llm_config, secrets)
-        except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
-            return
+            # 1. Fetch Agent & LLM
+            agent = self.agent_service.get_agent(db, agent_id, user_id=user_id)
+            if not agent:
+                await self.event_bus.emit(self.event_bus.create_event(str(session_id), AgentEventType.ERROR, content="Agent not found"))
+                return
 
-        try:
-            print("[run_agent] Starting agent loop instantiation.")
+            if not agent.llm_id:
+                await self.event_bus.emit(self.event_bus.create_event(str(session_id), AgentEventType.ERROR, content="Agent has no LLM configured"))
+                return
+                
+            llm_config = db.query(LLM).filter(LLM.id == agent.llm_id).first()
+            if not llm_config:
+                await self.event_bus.emit(self.event_bus.create_event(str(session_id), AgentEventType.ERROR, content="LLM configuration not found"))
+                return
+
+            # 2. Resolve Secrets & Init Provider
+            # For background tasks, we must fetch fresh secrets on the new session
+            # However, since UserToolSecret resolves lazily inside the loop, the loop needs the new DB session.
+            
+            # Use original db for resolve_secrets since _resolve_secrets uses self.db
+            # Wait, let's inject the new DB session
+            secrets = db.query(LLMSecret).filter(LLMSecret.llm_id == llm_config.id).all()
+            resolved_secrets = {}
+            for s in secrets:
+                try:
+                    resolved_secrets[s.name] = decrypt_value(s.encrypted_value)
+                except Exception as e:
+                    logger.error(f"Failed to decrypt secret {s.name}: {e}")
+                    resolved_secrets[s.name] = ""
+                    
+            try:
+                provider = LLMFactory.create_provider(llm_config, resolved_secrets)
+            except Exception as e:
+                await self.event_bus.emit(self.event_bus.create_event(str(session_id), AgentEventType.ERROR, content=str(e)))
+                return
+
+            state_service = StateService()
+                
+            # 3. Handle Subtask State
+            # If there's new user_content (a new request), clear any old state to start fresh
+            if user_content and not approved_tool_calls:
+                state_service.clear_plan(str(session_id))
+                subtask_state = None
+            else:
+                # If it's a resume (or no new text), try to load state
+                subtask_state = state_service.load_plan(str(session_id))
+
             # 4. Instantiate Engine
             loop = AgenticLoop(
                 agent=agent,
                 session_id=str(session_id),
-                db=self.db,
+                db=db, # Pass the new background DB session
                 llm_provider=provider,
                 event_bus=self.event_bus,
-                user_id=user_id
+                user_id=user_id,
+                subtask_state=subtask_state
             )
-            print("[run_agent] AgenticLoop instantiated successfully.")
             
-            # 5. Run Loop and Stream Events
-            print(f"[run_agent] Starting async for loop over AgenticLoop.run() with user content: '{user_content}'")
-            
+            # Store the current running task for cancellation
+            current_task = asyncio.current_task()
+            if current_task:
+                self.__class__._active_tasks[session_id] = current_task
+
+            # 5. Run Loop
             # Use empty string if no user content (e.g. resume flow)
             input_text = user_content or ""
             
-            count = 0
-            async for event in loop.run(user_input=input_text, approved_tool_calls=approved_tool_calls):
-                count += 1
-                print(f"[run_agent] Received event #{count}: {event.type}")
+            await loop.run(user_input=input_text, approved_tool_calls=approved_tool_calls)
                 
-                from fastapi.encoders import jsonable_encoder
-                
-                # Convert AgentEvent to frontend-friendly JSON
-                # Using jsonable_encoder to handle nested Pydantic models like ToolCall
-                payload = jsonable_encoder(event)
-                
-                # Yield the structured event
-                yield f"data: {json.dumps(payload)}\n\n"
-
-            print("[run_agent] Loop finished successfully.")
-            # End of stream
-            yield f"data: [DONE]\n\n"
-            
+        except asyncio.CancelledError:
+            logger.info(f"Agent execution for session {session_id} was successfully canceled.")
+            # Important: CancelledError should be allowed to bubble if needed by asyncio, 
+            # but usually in background tasks it's safe to just catch and log it so it exits cleanly.
         except Exception as e:
             logger.error(f"Execution Error: {e}")
-            print(f"[run_agent] Caught Exception: {e}")
             import traceback
             traceback.print_exc()
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            await self.event_bus.emit(self.event_bus.create_event(str(session_id), AgentEventType.ERROR, content=str(e)))
+        finally:
+            if session_id in self.__class__._active_tasks:
+                del self.__class__._active_tasks[session_id]
+            db.close()

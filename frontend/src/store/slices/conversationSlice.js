@@ -27,6 +27,11 @@ export const fetchMessages = createAsyncThunk("conversations/fetchMessages", asy
     return { conversationId, messages: response.data }
 })
 
+export const fetchPlan = createAsyncThunk("conversations/fetchPlan", async (conversationId) => {
+    const response = await apiClient.get(`/conversations/${conversationId}/plan`)
+    return { conversationId, plan: response.data.plan }
+})
+
 export const sendMessage = createAsyncThunk("conversations/sendMessage", async ({ conversationId, role, content }) => {
     const response = await apiClient.post(`/conversations/${conversationId}/messages`, { role, content })
     return response.data
@@ -65,6 +70,7 @@ const conversationSlice = createSlice({
     initialState: {
         list: [],
         messages: [],
+        currentPlan: null,
         currentConversationId: null,
         loading: false,
         error: null,
@@ -73,6 +79,7 @@ const conversationSlice = createSlice({
         setCurrentConversationId: (state, action) => {
             state.currentConversationId = action.payload
             state.messages = []
+            state.currentPlan = null
         },
         clearMessages: (state) => {
             state.messages = []
@@ -136,6 +143,17 @@ const conversationSlice = createSlice({
                     break;
                 case 'error':
                     lastMsg.error = content;
+                    lastMsg.status = 'Aborted/Error';
+                    // clear any transient progress
+                    if (!lastMsg.text) {
+                        lastMsg.thoughts = [];
+                        lastMsg.tool_calls = [];
+                    }
+                    break;
+                case 'plan':
+                    if (metadata && metadata.plan) {
+                        state.currentPlan = metadata.plan;
+                    }
                     break;
                 default:
                     break;
@@ -192,6 +210,13 @@ const conversationSlice = createSlice({
                 // Remove the optimistic message or replace it with the real one
                 // For simplicity, let's just push the transformed real one
                 state.messages.push(transformMessage(action.payload))
+            })
+
+            // Fetch Plan
+            .addCase(fetchPlan.fulfilled, (state, action) => {
+                if (state.currentConversationId === action.payload.conversationId) {
+                    state.currentPlan = action.payload.plan;
+                }
             })
     },
 })

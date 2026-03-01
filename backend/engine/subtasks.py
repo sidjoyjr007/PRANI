@@ -51,7 +51,8 @@ class SubtaskManager:
     def get_current_task(self) -> Optional[Subtask]:
         for subtask_id in self.execution_order:
             subtask = self.subtasks[subtask_id]
-            if subtask.status in [SubtaskStatus.PENDING, SubtaskStatus.IN_PROGRESS]:
+            # If a task is FAILED, we keep it as current so the agent can retry or re-plan.
+            if subtask.status in [SubtaskStatus.PENDING, SubtaskStatus.IN_PROGRESS, SubtaskStatus.FAILED]:
                 return subtask
         return None
 
@@ -82,8 +83,7 @@ class SubtaskManager:
         report = "Execution Status:\n"
         for subtask_id in self.execution_order:
             subtask = self.subtasks[subtask_id]
-            status_icon = "✓" if subtask.status == SubtaskStatus.COMPLETED else "✗" if subtask.status == SubtaskStatus.FAILED else "○"
-            report += f"{status_icon} {subtask.description} ({subtask.status.value})\n"
+            report += f"- {subtask.description} ({subtask.status.value})\n"
         return report
 
     def to_dict(self) -> Dict:
@@ -91,3 +91,21 @@ class SubtaskManager:
             "subtasks": {k: v.to_dict() for k, v in self.subtasks.items()},
             "execution_order": self.execution_order
         }
+
+    @classmethod
+    def from_dict(cls, data: Dict) -> 'SubtaskManager':
+        manager = cls()
+        manager.execution_order = data.get("execution_order", [])
+        
+        for k, v in data.get("subtasks", {}).items():
+            subtask = Subtask(
+                id=v["id"],
+                description=v["description"],
+                status=SubtaskStatus(v["status"]),
+                dependencies=v.get("dependencies", []),
+                result=v.get("result"),
+                error=v.get("error")
+            )
+            manager.add_subtask(subtask)
+            
+        return manager

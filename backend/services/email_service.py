@@ -32,7 +32,6 @@ class EmailService:
             
             return True
         except Exception as e:
-            print(f"Error sending email: {str(e)}")
             return False
     
     @staticmethod

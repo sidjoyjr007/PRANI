@@ -45,7 +45,6 @@ async def signup(user_data: UserCreate, db: Session = Depends(get_db)):
         email_sent = True
         message = "User created successfully. Please check your email to verify your account."
     except Exception as e:
-        print(f"Email sending failed: {str(e)}")
         message = "User created successfully. Please use the verify-email-dev endpoint to verify your email."
     
     return {
@@ -227,7 +226,6 @@ async def send_verification_email(
             "message": "Verification email sent successfully",
         }
     except Exception as e:
-        print(f"Email sending failed: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to send verification email",

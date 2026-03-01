@@ -198,10 +198,9 @@ class ContextManager:
             ids_to_delete = [mid for mid in ids_to_delete if mid not in newest_ids]
             
             self.conversation_service.delete_messages(ids_to_delete, user_id=self.user_id)
-            print(f"Compaction successful. Deleted {len(ids_to_delete)} messages.")
             
         except Exception as e:
-            print(f"Compaction failed: {e}")
+            pass
 
     async def _call_llm_sync(self, llm, messages) -> str:
         import asyncio
@@ -233,7 +232,6 @@ class ContextManager:
                     content["pruned"] = True
                     
                     self.conversation_service.update_message(msg.id, content, user_id=self.user_id)
-                    print(f"Pruned tool output for message {msg.id}")
                     
     def get_history_text(self, limit: int = 10) -> str:
         """

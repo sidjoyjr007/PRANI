@@ -486,7 +486,7 @@ function MessageRow({ msg, onApprove, onReject, approvalDecisions, theme }) {
             )}
 
             {/* Main message */}
-            {msg.text && (
+            {(msg.text || msg.error) && (
                 <div style={{ display: "flex", alignItems: "flex-end", gap: "10px", flexDirection: isUser ? "row-reverse" : "row" }}>
                     {/* User avatar on the right */}
                     {isUser && (
@@ -516,11 +516,11 @@ function MessageRow({ msg, onApprove, onReject, approvalDecisions, theme }) {
                         {isUser ? (
                             <span style={{ whiteSpace: "pre-wrap" }}>{msg.text}</span>
                         ) : (
-                            <MarkdownContent content={msg.text} theme={theme} />
+                            msg.text ? <MarkdownContent content={msg.text} theme={theme} /> : null
                         )}
                         {msg.error && (
                             <div style={{
-                                marginTop: "8px", padding: "6px 10px",
+                                marginTop: msg.text ? "8px" : "0", padding: "6px 10px",
                                 backgroundColor: "rgba(239,68,68,0.08)",
                                 border: `1px solid ${theme.colors.destructive}`,
                                 borderRadius: "6px",
@@ -587,6 +587,7 @@ function EmptyState({ theme }) {
 // ─── Main ChatPanel ───────────────────────────────────────────────────────────
 export default function ChatPanel({
     messages,
+    currentPlan,
     setMessages,
     inputValue,
     setInputValue,
@@ -599,13 +600,17 @@ export default function ChatPanel({
     setIsScrolledToBottom,
     scrollToBottom,
     onApprove,
+    onAbort,
     isStreaming,
 }) {
+    console.log("ChatPanel Render - currentPlan:", currentPlan)
     const theme = useTheme()
     const messagesEndRef = useRef(null)
     const messagesContainerRef = useRef(null)
     const [approvalDecisions, setApprovalDecisions] = useState({})
     const [isFocused, setIsFocused] = useState(false)
+
+    const [isPlanExpanded, setIsPlanExpanded] = useState(true)
 
     // Auto-scroll
     useEffect(() => {
@@ -640,6 +645,124 @@ export default function ChatPanel({
             height: "100%",
             overflow: "hidden",
         }}>
+            {/* Plan Area - Only show while streaming */}
+            {isStreaming && (() => {
+                let safeSubtasks = [];
+                if (currentPlan) {
+                    const planObj = currentPlan.plan || currentPlan;
+                    if (planObj.subtasks && planObj.execution_order && Array.isArray(planObj.execution_order)) {
+                        safeSubtasks = planObj.execution_order.map(id => planObj.subtasks[id]).filter(Boolean);
+                    } else if (Array.isArray(planObj.subtasks)) {
+                        safeSubtasks = planObj.subtasks;
+                    } else if (planObj.subtasks && typeof planObj.subtasks === 'object') {
+                        safeSubtasks = Object.values(planObj.subtasks);
+                    }
+                }
+
+                if (safeSubtasks.length === 0) return null;
+
+                return (
+                    <div style={{
+                        margin: "20px 40px 0 40px",
+                        padding: "16px 20px",
+                        backgroundColor: theme.colors.neutral[900],
+                        borderRadius: "12px",
+                        border: `1px solid ${theme.colors.neutral[800]}`,
+                        boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+                        maxHeight: isPlanExpanded ? "40%" : "auto",
+                        overflowY: isPlanExpanded ? "auto" : "hidden",
+                        flexShrink: 0,
+                        transition: "all 0.3s ease",
+                        zIndex: 10
+                    }} className="hover-scrollbar">
+                        <div
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                cursor: "pointer",
+                                userSelect: "none"
+                            }}
+                            onClick={() => setIsPlanExpanded(!isPlanExpanded)}
+                        >
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <div style={{
+                                    width: "28px", height: "28px", borderRadius: "8px",
+                                    backgroundColor: theme.colors.primary[900], color: theme.colors.primary[400],
+                                    display: "flex", alignItems: "center", justifyContent: "center"
+                                }}>
+                                    <Check size={16} strokeWidth={2.5} />
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: "0.9em", fontWeight: 600, color: theme.colors.neutral[200], letterSpacing: "0.02em" }}>Execution Plan</div>
+                                    <div style={{ fontSize: "0.75em", color: theme.colors.muted_foreground, marginTop: "2px" }}>
+                                        {safeSubtasks.filter(s => s.status === 'COMPLETED' || s.status === 'SUCCESS').length} of {safeSubtasks.length} steps completed
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style={{
+                                marginLeft: "auto",
+                                width: "28px", height: "28px", borderRadius: "50%",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                backgroundColor: isPlanExpanded ? theme.colors.neutral[800] : "transparent",
+                                color: isPlanExpanded ? theme.colors.foreground : theme.colors.muted_foreground,
+                                transition: "all 0.2s"
+                            }}>
+                                {isPlanExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                            </div>
+                        </div>
+
+                        {isPlanExpanded && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: "2px", marginTop: "16px", marginLeft: "4px" }}>
+                                {safeSubtasks.map((st, i) => {
+                                    const isDone = st.status === "COMPLETED" || st.status === "SUCCESS";
+                                    const isActive = st.status === "IN_PROGRESS";
+                                    const isPending = st.status === "PENDING";
+
+                                    return (
+                                        <div key={st.id || i} style={{
+                                            display: "flex", alignItems: "flex-start", gap: "14px",
+                                            fontSize: "0.85em", color: theme.colors.foreground,
+                                            padding: "10px 12px",
+                                            backgroundColor: isActive ? theme.colors.neutral[800] : "transparent",
+                                            borderRadius: "8px",
+                                            transition: "all 0.2s ease",
+                                            opacity: isPending ? 0.5 : 1,
+                                        }}>
+                                            <div style={{
+                                                display: "flex", alignItems: "center", justifyContent: "center",
+                                                width: "20px", height: "20px", borderRadius: "50%",
+                                                backgroundColor: isDone ? (theme.colors.success?.DEFAULT || "#22c55e") :
+                                                    isActive ? theme.colors.primary[500] : theme.colors.neutral[800],
+                                                border: (!isDone && !isActive) ? `1px solid ${theme.colors.neutral[600]}` : "none",
+                                                color: theme.colors.white,
+                                                flexShrink: 0,
+                                                marginTop: "1px",
+                                                boxShadow: isActive ? `0 0 0 3px ${theme.colors.primary[900]}` : "none"
+                                            }}>
+                                                {isDone && <Check size={12} strokeWidth={3} />}
+                                                {isActive && <div style={{ width: "6px", height: "6px", backgroundColor: "white", borderRadius: "50%", animation: "pulse 1.5s infinite" }} />}
+                                            </div>
+                                            <div style={{ display: "flex", flexDirection: "column" }}>
+                                                <span style={{
+                                                    textDecoration: isDone ? "line-through" : "none",
+                                                    color: isDone ? theme.colors.neutral[400] : (isActive ? theme.colors.neutral[100] : theme.colors.neutral[300]),
+                                                    fontWeight: isActive ? 500 : 400,
+                                                    lineHeight: "1.4"
+                                                }}>{st.description}</span>
+                                                {isActive && st.result && (
+                                                    <span style={{ fontSize: "0.9em", color: theme.colors.primary[400], marginTop: "4px" }}>Executing...</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        )}
+                    </div>
+                );
+            })()}
+
             {/* Messages Area */}
             <div
                 ref={messagesContainerRef}
@@ -672,18 +795,21 @@ export default function ChatPanel({
 
                 {/* Streaming indicator */}
                 {isStreaming && (
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px", alignSelf: "flex-start" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", alignSelf: "flex-start" }}>
                         <div style={{
-                            width: "20px", height: "20px", borderRadius: "50%",
+                            width: "24px", height: "24px", borderRadius: "50%",
                             backgroundColor: theme.colors.neutral[700],
                             display: "flex", alignItems: "center", justifyContent: "center",
                         }}>
-                            <Cpu size={11} style={{ color: theme.colors.neutral[300] }} />
+                            <Cpu size={13} style={{ color: theme.colors.neutral[300] }} />
                         </div>
-                        <div style={{ display: "flex", gap: "3px", alignItems: "center" }}>
+                        <span style={{ fontSize: "0.85em", color: theme.colors.muted_foreground, fontStyle: "italic", marginLeft: "4px" }}>
+                            Understanding user query
+                        </span>
+                        <div style={{ display: "flex", gap: "3px", alignItems: "center", marginLeft: "2px" }}>
                             {[0, 1, 2].map(i => (
                                 <span key={i} style={{
-                                    width: "5px", height: "5px", borderRadius: "50%",
+                                    width: "4px", height: "4px", borderRadius: "50%",
                                     backgroundColor: theme.colors.primary[400],
                                     animation: "pulse 1.2s ease-in-out infinite",
                                     animationDelay: `${i * 0.2}s`,
@@ -746,7 +872,6 @@ export default function ChatPanel({
                     }}
                     tabIndex={0}
                 >
-                    {/* Textarea — starts 2 rows, grows to 6 rows then scrolls */}
                     <textarea
                         value={inputValue}
                         onChange={e => setInputValue(e.target.value)}
@@ -756,12 +881,13 @@ export default function ChatPanel({
                                 handleSendMessage()
                             }
                         }}
+                        disabled={isStreaming}
                         rows={2}
-                        placeholder="Write a message..."
+                        placeholder={isStreaming ? "Agent is working..." : "Write a message..."}
                         style={{
                             padding: `${theme.spacing[4]} ${theme.spacing[5]}`,
                             backgroundColor: "transparent",
-                            color: theme.colors.foreground,
+                            color: isStreaming ? theme.colors.neutral[500] : theme.colors.foreground,
                             resize: "none",
                             border: "none",
                             outline: "none",
@@ -769,6 +895,7 @@ export default function ChatPanel({
                             fontSize: theme.typography.fontSize.sm,
                             overflowY: "auto",
                             lineHeight: "1.6",
+                            opacity: isStreaming ? 0.6 : 1,
                         }}
                         onInput={e => {
                             const textarea = e.target
@@ -814,23 +941,44 @@ export default function ChatPanel({
                             </Combobox>
                         </div>
 
-                        {/* Send Button */}
-                        <Button
-                            onClick={handleSendMessage}
-                            variant="primary"
-                            size="md"
-                            style={{
-                                flexShrink: 0,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                width: "40px",
-                                height: "40px",
-                                padding: 0,
-                            }}
-                        >
-                            <Send size={16} />
-                        </Button>
+                        {/* Send / Stop Button */}
+                        {isStreaming ? (
+                            <Button
+                                onClick={onAbort}
+                                variant="destructive"
+                                size="md"
+                                style={{
+                                    flexShrink: 0,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    width: "40px",
+                                    height: "40px",
+                                    padding: 0,
+                                    backgroundColor: theme.colors.destructive,
+                                }}
+                            >
+                                <X size={16} />
+                            </Button>
+                        ) : (
+                            <Button
+                                onClick={handleSendMessage}
+                                disabled={!inputValue.trim() || !selectedAgentId}
+                                variant="primary"
+                                size="md"
+                                style={{
+                                    flexShrink: 0,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    width: "40px",
+                                    height: "40px",
+                                    padding: 0,
+                                }}
+                            >
+                                <Send size={16} />
+                            </Button>
+                        )}
                     </div>
                 </div>
             </div>

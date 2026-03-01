@@ -46,16 +46,13 @@ class RetrievalSystem:
                 host = clean_url
                 port = 8100
             
-            print(f"[ChromaDB] Connecting to {host}:{port}...")
             logger.info(f"Connecting to ChromaDB at {host}:{port}...")
             # Pass ssl=False and a short timeout to prevent hangs
             self.client = chromadb.HttpClient(host=host, port=port, ssl=False, settings=Settings(anonymized_telemetry=False))
             self.collection = self.client.get_or_create_collection(name=self.collection_name)
-            print(f"[ChromaDB] Connected! Collection: {self.collection_name}")
             logger.info(f"Connected to ChromaDB at {self.chroma_url}, Collection: {self.collection_name}")
             
         except Exception as e:
-            print(f"[ChromaDB] Failed to connect: {e}. Retrieval disabled.")
             logger.error(f"Failed to connect to ChromaDB: {e}. Retrieval will be disabled.")
             self.client = None
 
@@ -144,7 +141,7 @@ class RetrievalSystem:
         except Exception as e:
             logger.error(f"Failed to delete server tools from Chroma: {e}")
 
-    def query_tools(self, query: str, limit: int = 5, allowed_ids: List[str] = None, allowed_server_ids: List[str] = None, threshold: float = 1.7) -> List[Dict[str, Any]]:
+    def query_tools(self, query: str, limit: int = 5, allowed_ids: List[str] = None, allowed_server_ids: List[str] = None, threshold: float = 1.8) -> List[Dict[str, Any]]:
         """
         Semantic search for tools.
         Returns full definition objects reconstructed from metadata/db.
