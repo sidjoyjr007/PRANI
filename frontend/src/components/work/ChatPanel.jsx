@@ -36,19 +36,28 @@ function MarkdownContent({ content, theme }) {
                 p: ({ children }) => (
                     <p style={{ margin: "0 0 8px 0", lineHeight: 1.65, color: theme.colors.foreground }}>{children}</p>
                 ),
-                code: ({ inline, className, children }) => {
-                    if (inline) {
+                code: ({ node, inline, className, children, ...props }) => {
+                    // Newer react-markdown doesn't reliably set `inline`.
+                    // Detect: block code always has a language-* class or multiline content.
+                    const isBlock = className?.startsWith("language-") ||
+                        String(children).includes("\n")
+                    if (!isBlock) {
+                        // Inline code — compact chip style
                         return (
                             <code style={{
-                                backgroundColor: theme.colors.neutral[800],
-                                color: theme.colors.primary[300],
-                                padding: "2px 6px",
+                                backgroundColor: "rgba(99,102,241,0.12)",
+                                color: theme.colors.primary[400],
+                                padding: "1px 6px",
                                 borderRadius: "4px",
                                 fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
                                 fontSize: "0.85em",
+                                fontWeight: 500,
+                                border: `1px solid rgba(99,102,241,0.2)`,
+                                whiteSpace: "nowrap",
                             }}>{children}</code>
                         )
                     }
+                    // Block code — full pre block
                     return (
                         <pre style={{
                             backgroundColor: theme.colors.neutral[900],

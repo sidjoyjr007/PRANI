@@ -99,13 +99,13 @@ class MCPService:
 
         # Trigger Tool Sync
         try:
-            # Re-fetch secrets if needed
-            current_env_vars = []
+            # When env_vars not in update, resolve secrets directly from DB (not masked strings)
             if env_vars is not None:
                 current_env_vars = env_vars
             else:
+                # Decrypt and pass real values for re-indexing (not masked "********")
                 secrets = db.query(MCPSecret).filter(MCPSecret.mcp_id == mcp_id).all()
-                current_env_vars = [{"key": s.name, "value": "********"} for s in secrets]
+                current_env_vars = [{"key": s.name, "value": decrypt_value(s.encrypted_value)} for s in secrets]
 
             headers = self._resolve_connection_params(db, mcp.url, mcp.headers, current_env_vars, mcp.id)
             async with httpx.AsyncClient(timeout=30.0, headers=headers) as client:
@@ -236,40 +236,116 @@ class MCPService:
             return None
 
     async def _fetch_tools_direct(self, client: Any, url: str) -> Optional[List[dict]]:
-        """Attempt to fetch tools using the Direct POST fallback."""
-        async def post_and_parse(payload):
+        """Attempt to fetch tools using the Streamable HTTP / Direct POST transport.
+        
+        Handles the MCP Streamable HTTP Transport which requires:
+        1. POST initialize → capture Mcp-Session-Id response header
+        2. All subsequent requests include that session ID
+        """
+        session_id: Optional[str] = None
+
+        def _parse_response(resp) -> dict:
+            """Parse a response body — tries JSON first, then SSE data lines."""
+            try:
+                return resp.json()
+            except Exception:
+                pass
+            text = resp.text
+            for line in text.splitlines():
+                if line.startswith("data:"):
+                    data_str = line[5:].strip()
+                    if not data_str or data_str == "[DONE]":
+                        continue
+                    try:
+                        return json.loads(data_str)
+                    except json.JSONDecodeError:
+                        pass
+            return {"error": f"Unreadable response ({resp.status_code}): {resp.text[:200]}"}
+
+        async def post_rpc(payload) -> dict:
             req_headers = {
-                "Accept": "application/json, text/event-stream", 
+                "Accept": "application/json, text/event-stream",
                 "Content-Type": "application/json",
                 "User-Agent": "Prani-MCP-Client/1.0"
             }
-            resp = await client.post(url, content=json.dumps(payload), headers=req_headers)
-            
-            if resp.is_error:
-                 logger.error(f"Post failed {resp.status_code}: {resp.text}")
-                 return {"error": f"HTTP Error {resp.status_code}: {resp.text[:200]}", "status": resp.status_code}
-            
-            if resp.status_code in (202, 204):
-                return {}
+            # Include session ID in all requests after initialize
+            if session_id:
+                req_headers["Mcp-Session-Id"] = session_id
 
-            try: return resp.json()
-            except json.JSONDecodeError:
-                text = resp.text
-                data_line = next((line[5:].strip() for line in text.splitlines() if line.startswith("data:")), None)
-                if data_line:
-                    try: return json.loads(data_line)
-                    except: pass
-            return {"error": f"Invalid JSON/SSE response ({resp.status_code}): {resp.text[:200]}"}
+            resp = await client.post(url, content=json.dumps(payload), headers=req_headers)
+
+            if resp.status_code in (202, 204):
+                return {"__accepted": True}
+            if resp.is_error:
+                logger.error(f"MCP POST {resp.status_code}: {resp.text[:300]}")
+                return {"error": f"HTTP {resp.status_code}: {resp.text[:300]}"}
+            return _parse_response(resp), resp
 
         try:
-            init_res = await post_and_parse({
+            # Step 1: initialize — capture session ID from response header
+            req_headers = {
+                "Accept": "application/json, text/event-stream",
+                "Content-Type": "application/json",
+                "User-Agent": "Prani-MCP-Client/1.0"
+            }
+            init_resp = await client.post(url, content=json.dumps({
                 "jsonrpc": "2.0", "method": "initialize", "id": 1,
-                "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "tester", "version": "1.0"}}
-            })
-            if "error" in init_res: return None
-            await post_and_parse({"jsonrpc": "2.0", "method": "notifications/initialized"})
-            tools_res = await post_and_parse({"jsonrpc": "2.0", "method": "tools/list", "id": 2})
-            return tools_res.get("result", {}).get("tools", []) if "error" not in tools_res else None
+                "params": {"protocolVersion": "2024-11-05", "capabilities": {},
+                           "clientInfo": {"name": "Prani", "version": "1.0"}}
+            }), headers=req_headers)
+
+            if init_resp.is_error:
+                logger.error(f"Initialize failed HTTP {init_resp.status_code}: {init_resp.text[:300]}")
+                return None
+
+            # Capture session ID (Streamable HTTP Transport requirement)
+            session_id = (
+                init_resp.headers.get("Mcp-Session-Id") or
+                init_resp.headers.get("mcp-session-id")
+            )
+            if session_id:
+                logger.info(f"MCP session established: {session_id}")
+
+            init_body = _parse_response(init_resp)
+            if "error" in init_body and "result" not in init_body:
+                logger.error(f"Initialize body error: {init_body['error']}")
+                return None
+
+            # Step 2: notifications/initialized (fire-and-forget, no response needed)
+            notif_headers = {
+                "Accept": "application/json, text/event-stream",
+                "Content-Type": "application/json",
+                "User-Agent": "Prani-MCP-Client/1.0"
+            }
+            if session_id:
+                notif_headers["Mcp-Session-Id"] = session_id
+            await client.post(url, content=json.dumps(
+                {"jsonrpc": "2.0", "method": "notifications/initialized"}
+            ), headers=notif_headers)
+
+            # Step 3: tools/list — include session ID
+            list_headers = {
+                "Accept": "application/json, text/event-stream",
+                "Content-Type": "application/json",
+                "User-Agent": "Prani-MCP-Client/1.0"
+            }
+            if session_id:
+                list_headers["Mcp-Session-Id"] = session_id
+            tools_resp = await client.post(url, content=json.dumps(
+                {"jsonrpc": "2.0", "method": "tools/list", "id": 2}
+            ), headers=list_headers)
+
+            if tools_resp.is_error:
+                logger.error(f"tools/list HTTP {tools_resp.status_code}: {tools_resp.text[:300]}")
+                return None
+
+            tools_body = _parse_response(tools_resp)
+            if "error" in tools_body and "result" not in tools_body:
+                logger.error(f"tools/list error: {tools_body['error']}")
+                return None
+
+            return tools_body.get("result", {}).get("tools", [])
+
         except Exception as e:
             logger.error(f"Direct Fetch failed: {e}")
             return None
@@ -278,15 +354,24 @@ class MCPService:
         """Tests connection to MCP Server and returns validation status."""
         try:
             headers = self._resolve_connection_params(db, url, headers_json, env_vars, mcp_id)
-            async with httpx.AsyncClient(timeout=15.0, headers=headers, follow_redirects=True, verify=False) as client:
+            async with httpx.AsyncClient(timeout=20.0, headers=headers, follow_redirects=True, verify=False) as client:
+                # Try SSE protocol first
                 tools = await self._fetch_tools_sse(client, url)
                 mode = "SSE"
+                
+                # Fallback to Direct POST
                 if tools is None:
                     tools = await self._fetch_tools_direct(client, url)
                     mode = "Direct POST"
                 
                 if tools is None:
-                    return {"success": False, "error": "Failed to negotiate connection or list tools."}
+                    # Try a simple connectivity check to show a more helpful error
+                    try:
+                        probe = await client.get(url, timeout=5.0)
+                        status_hint = f"Server responded with HTTP {probe.status_code} — check the URL or that it speaks MCP JSON-RPC."
+                    except Exception as probe_err:
+                        status_hint = f"Cannot reach server: {probe_err}"
+                    return {"success": False, "error": f"Failed to negotiate MCP connection. {status_hint}"}
                 
                 return {
                     "success": True, 
@@ -364,66 +449,90 @@ class MCPService:
 
     async def call_mcp_tool(self, db: Session, mcp_id: UUID, tool_name: str, arguments: dict) -> dict:
         """
-        Executes a tool on a remote MCP server using Direct POST logic.
+        Executes a tool on a remote MCP server using Streamable HTTP Transport.
+        Properly handles Mcp-Session-Id for stateful sessions.
         """
         server = db.query(MCPServer).filter(MCPServer.id == mcp_id).first()
         if not server:
             return {"success": False, "error": f"MCP Server {mcp_id} not found."}
-            
+
         url = server.url
-        headers_dict = server.headers or {}
-        
-        # Resolve secrets
+        base_headers = {
+            "Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json",
+            "User-Agent": "Prani-MCP-Client/1.0"
+        }
+        # Resolve and merge server headers/secrets
         secrets = db.query(MCPSecret).filter(MCPSecret.mcp_id == mcp_id).all()
         for s in secrets:
-            headers_dict[s.name] = decrypt_value(s.encrypted_value)
-            
-        import httpx
-        timeout = httpx.Timeout(60.0, connect=10.0)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            async def post_and_parse(url_to_call, payload):
-                req_headers = {
-                    "Accept": "application/json, text/event-stream", 
-                    "Content-Type": "application/json",
-                    "User-Agent": "Prani-MCP-Client/1.0"
-                }
-                req_headers.update(headers_dict)
-                logger.info(f"MCP Call Payload to {url_to_call}: {json.dumps(payload)}")
-                resp = await client.post(url_to_call, content=json.dumps(payload), headers=req_headers)
-                
-                if resp.is_error:
-                     return {"error": f"HTTP Error {resp.status_code}: {resp.text[:200]}"}
-                     
-                try: return resp.json()
-                except json.JSONDecodeError:
-                    text = resp.text
-                    data_line = next((line[5:].strip() for line in text.splitlines() if line.startswith("data:")), None)
-                    if data_line:
-                        try: return json.loads(data_line)
-                        except: pass
-                return {"error": f"Invalid response: {resp.text[:200]}"}
+            base_headers[s.name] = decrypt_value(s.encrypted_value)
+        if server.headers:
+            raw = server.headers if isinstance(server.headers, dict) else json.loads(server.headers)
+            base_headers.update(raw)
 
-            # Initialization sequence
-            init_res = await post_and_parse(url, {
+        def _parse(resp):
+            try:
+                return resp.json()
+            except Exception:
+                pass
+            for line in resp.text.splitlines():
+                if line.startswith("data:"):
+                    data_str = line[5:].strip()
+                    if data_str and data_str != "[DONE]":
+                        try:
+                            return json.loads(data_str)
+                        except Exception:
+                            pass
+            return {"error": f"Unreadable response ({resp.status_code}): {resp.text[:200]}"}
+
+        timeout = httpx.Timeout(60.0, connect=10.0)
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, verify=False) as client:
+
+            # Step 1: initialize — capture session ID
+            init_resp = await client.post(url, content=json.dumps({
                 "jsonrpc": "2.0", "method": "initialize", "id": 1,
-                "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "prani", "version": "1.0"}}
-            })
-            if "error" in init_res: 
-                return {"success": False, "error": init_res["error"]}
+                "params": {"protocolVersion": "2024-11-05", "capabilities": {},
+                           "clientInfo": {"name": "Prani", "version": "1.0"}}
+            }), headers=base_headers)
+
+            if init_resp.is_error:
+                return {"success": False, "error": f"MCP initialize failed: HTTP {init_resp.status_code}"}
+
+            session_id = (
+                init_resp.headers.get("Mcp-Session-Id") or
+                init_resp.headers.get("mcp-session-id")
+            )
             
-            # Notifications/Initialized
-            await post_and_parse(url, {"jsonrpc": "2.0", "method": "notifications/initialized"})
-            
-            # Call Actual Tool
-            call_res = await post_and_parse(url, {
+            session_headers = {**base_headers}
+            if session_id:
+                session_headers["Mcp-Session-Id"] = session_id
+                logger.info(f"MCP tool call session: {session_id}")
+
+            init_body = _parse(init_resp)
+            if "error" in init_body and "result" not in init_body:
+                return {"success": False, "error": f"MCP initialize error: {init_body['error']}"}
+
+            # Step 2: notifications/initialized
+            await client.post(url, content=json.dumps(
+                {"jsonrpc": "2.0", "method": "notifications/initialized"}
+            ), headers=session_headers)
+
+            # Step 3: tools/call
+            logger.info(f"MCP tools/call → {url} | tool={tool_name} args={arguments}")
+            call_resp = await client.post(url, content=json.dumps({
                 "jsonrpc": "2.0", "method": "tools/call", "id": 2,
                 "params": {"name": tool_name, "arguments": arguments}
-            })
-            
-            if "error" in call_res and "code" not in call_res:
-                return {"success": False, "error": call_res.get("error")}
-                
-            return {"success": True, "result": call_res.get("result", {})}
+            }), headers=session_headers)
+
+            if call_resp.is_error:
+                return {"success": False, "error": f"HTTP {call_resp.status_code}: {call_resp.text[:300]}"}
+
+            call_body = _parse(call_resp)
+            if "error" in call_body and "result" not in call_body:
+                return {"success": False, "error": call_body.get("error")}
+
+            return {"success": True, "result": call_body.get("result", {})}
+
 
     def format_mcp(self, mcp: MCPServer):
         response_env = []

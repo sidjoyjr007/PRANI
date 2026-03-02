@@ -24,7 +24,9 @@ export default function CardGrid({ items = [], renderCard, columns = 3, gap = 8 
       gap: theme.spacing[gap],
     }}>
       {items.map((item, index) => (
-        <div key={item.id || index}>
+        // The inner div ensures the card fills the grid cell, allowing the card itself to take 100% height.
+        // The actual card component (rendered by renderCard) should apply height: "100%" to its root element.
+        <div key={item.id || index} style={{ display: "flex", flexDirection: "column", height: "100%" }}>
           {renderCard(item)}
         </div>
       ))}

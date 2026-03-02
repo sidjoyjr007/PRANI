@@ -47,15 +47,16 @@ const getCardStyles = (variant, theme) => {
   return styles[variant] || styles.default
 }
 
-const Card = React.forwardRef(({ 
-  className, 
+const Card = React.forwardRef(({
+  className,
   variant = "default",
   hoverable = true,
-  ...props 
+  style: callerStyle,
+  ...props
 }, ref) => {
   const theme = useTheme()
   const styles = getCardStyles(variant, theme)
-  
+
   return (
     <div
       ref={ref}
@@ -67,6 +68,7 @@ const Card = React.forwardRef(({
         cursor: hoverable ? "pointer" : "default",
         position: "relative",
         overflow: "visible",
+        ...callerStyle,  // Caller styles override base (allows height: 100%, display: flex, etc.)
       }}
       className={cn(className)}
       onMouseEnter={hoverable ? (e) => {

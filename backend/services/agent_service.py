@@ -67,7 +67,7 @@ class AgentService:
                 raise Exception("One or more tool IDs are invalid or not owned by you.")
 
         if "mcp_server_ids" in agent_data and agent_data["mcp_server_ids"]:
-            mcp_ids = [UUID(mid) if isinstance(mid, str) else mid for tid in agent_data["mcp_server_ids"]]
+            mcp_ids = [UUID(mid) if isinstance(mid, str) else mid for mid in agent_data["mcp_server_ids"]]
             # Note: MCPServers don't have is_public currently. Only owner_id.
             count = db.query(MCPServer).filter(
                 MCPServer.id.in_(mcp_ids),

@@ -83,6 +83,7 @@ class RetrievalSystem:
             meta = t.get('metadata', {}).copy()
             meta['tool_id'] = str(t.get('id')) 
             meta['name'] = t.get('name')
+            meta['description'] = t.get('description', '')  # Store description for reconstruction
             meta['source'] = t.get('source', 'unknown')
             
             # Chroma metadata must be simpler types

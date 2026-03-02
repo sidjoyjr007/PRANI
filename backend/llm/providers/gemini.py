@@ -5,6 +5,9 @@ from ..base import LLMProvider, ProviderMessage, LLMResponse, LLMStreamChunk
 from ..types import ToolCall
 
 class GeminiProvider(LLMProvider):
+    # Gemini only supports an OpenAPI 3.0 subset for function declarations
+    _schema_allowed_keys = {"type", "description", "properties", "required", "enum", "items", "nullable", "format"}
+
     def __init__(self, model: str, headers: Dict[str, Any], config: Dict[str, Any]):
         super().__init__(model, headers, config)
         self.api_key = config.get("GEMINI_API_KEY") or config.get("GOOGLE_API_KEY") or config.get("API_KEY")
@@ -20,6 +23,36 @@ class GeminiProvider(LLMProvider):
         if role == "system": return "user"
         if role == "tool": return "function"
         return "user"
+
+    # Fields Gemini's function declaration parameters actually support (OpenAPI 3.0 subset)
+    _GEMINI_SCHEMA_KEYS = {"type", "description", "properties", "required", "enum", "items", "nullable", "format"}
+
+    def _sanitize_schema(self, schema: Any) -> Any:
+        """Keep only Gemini-supported schema fields. Handles anyOf/oneOf by picking the first concrete type."""
+        if not isinstance(schema, dict):
+            return schema
+
+        # Flatten anyOf/oneOf to first non-null concrete option
+        for union_key in ("anyOf", "oneOf"):
+            if union_key in schema:
+                options = [o for o in schema[union_key] if o.get("type") != "null"]
+                schema = {**schema, **(options[0] if options else {})}
+                schema.pop(union_key, None)
+                break
+
+        result = {}
+        for k, v in schema.items():
+            if k not in self._GEMINI_SCHEMA_KEYS:
+                continue
+            if k == "properties" and isinstance(v, dict):
+                result[k] = {pk: self._sanitize_schema(pv) for pk, pv in v.items()}
+            elif k == "items" and isinstance(v, dict):
+                result[k] = self._sanitize_schema(v)
+            elif isinstance(v, list):
+                result[k] = [self._sanitize_schema(i) if isinstance(i, dict) else i for i in v]
+            else:
+                result[k] = v
+        return result
 
     def _prepare_payload(self, messages: List[ProviderMessage], tools: List[Dict] = None):
         contents = []
@@ -80,15 +113,14 @@ class GeminiProvider(LLMProvider):
         if system_instruction:
             payload["system_instruction"] = system_instruction
             
-        # 2. Add tools if any
+        # 2. Add tools — sanitize schemas using provider's allowed keys
         if tools:
             func_decls = []
             for t in tools:
-                if "function" in t:
-                    func_decls.append(t["function"])
-                elif "name" in t:
-                    func_decls.append(t)
-                    
+                decl = t.get("function", t) if "function" in t else t
+                if "parameters" in decl:
+                    decl = {**decl, "parameters": self.sanitize_tool_schema(decl["parameters"])}
+                func_decls.append(decl)
             if func_decls:
                 payload["tools"] = [{"functionDeclarations": func_decls}]
 
