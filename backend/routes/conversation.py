@@ -76,14 +76,12 @@ async def add_message(conversation_id: UUID, message: MessageCreate, db: Session
     user_content = message.content if isinstance(message.content, str) else str(message.content)
 
     # Launch agent loop in the background
-    import asyncio
-    asyncio.create_task(
-        execution_service.run_agent_background(
-            conversation.agent_id, 
-            conversation_id, 
-            user_id=current_user.id, 
-            user_content=user_content
-        )
+    # Launch agent loop in the background, keeping a strong reference
+    execution_service.launch_agent(
+        agent_id=conversation.agent_id, 
+        session_id=conversation_id, 
+        user_id=current_user.id, 
+        user_content=user_content
     )
 
     return created_message
@@ -150,15 +148,13 @@ async def resume_execution(conversation_id: UUID, request: ApprovalRequest, db: 
 
     execution_service = ExecutionService(db)
     
-    import asyncio
-    asyncio.create_task(
-        execution_service.run_agent_background(
-            agent_id=conversation.agent_id, 
-            session_id=conversation_id, 
-            user_id=current_user.id,
-            user_content=None, 
-            approved_tool_calls=request.approved_tool_calls
-        )
+    # Launch agent loop in the background, keeping a strong reference
+    execution_service.launch_agent(
+        agent_id=conversation.agent_id, 
+        session_id=conversation_id, 
+        user_id=current_user.id,
+        user_content=None, 
+        approved_tool_calls=request.approved_tool_calls
     )
     
     return {"status": "resumed"}

@@ -130,7 +130,8 @@ class EventBus:
         source = _SOURCE_MAP.get(event_type_str, "Agent")
 
         # Truncate noisy chunk events to keep the log clean
-        if event_type_str in (AgentEventType.THOUGHT_CHUNK, AgentEventType.MESSAGE_CHUNK):
+        # Use .value to correctly compare with raw string produced by pydantic enum serialization
+        if event_type_str in (AgentEventType.THOUGHT_CHUNK.value, AgentEventType.MESSAGE_CHUNK.value):
             return  # Skip streaming chunks — only log final thought/message events
 
         # Run DB write in a thread executor so we don't block the async loop

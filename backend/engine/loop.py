@@ -87,9 +87,9 @@ class AgenticLoop:
                     # Refresh report after status change
                     status_report = self.subtask_manager.get_status_report()
 
-                tool_defs, system_prompt = self._get_tools_and_prompt(user_input, status_report, current_task)
+                tool_defs, system_prompt = await asyncio.to_thread(self._get_tools_and_prompt, user_input, status_report, current_task)
                 
-                context = self.memory.get_active_context()
+                context = await asyncio.to_thread(self.memory.get_active_context)
                 self._enrich_context(context, system_prompt)
 
                 print("\n" + "="*60)
@@ -291,7 +291,7 @@ class AgenticLoop:
 
         for attempt in range(max_retries):
             # Update system prompt with the parse_error context if there is one
-            tool_defs, system_prompt = self._get_tools_and_prompt(user_input, status_report, current_task, parse_error=parse_error)
+            tool_defs, system_prompt = await asyncio.to_thread(self._get_tools_and_prompt, user_input, status_report, current_task, parse_error)
             self._enrich_context(context, system_prompt)
             
             # Set initial transient status
@@ -530,7 +530,7 @@ class AgenticLoop:
                 continue
 
             print(f"[DEBUG] _execute_tool_calls: executing {t_name}")
-            tool_rec = self.tool_registry.get_tool_by_name(t_name, self.agent)
+            tool_rec = await asyncio.to_thread(self.tool_registry.get_tool_by_name, t_name, self.agent)
             
             if not is_internal_only:
                 # 0. Mission Control Status: Provide immediate feedback to the UI
@@ -646,9 +646,7 @@ class AgenticLoop:
         return data
 
     async def _call_llm_stream(self, messages: List[ProviderMessage], tools: List[Dict] = None) -> AsyncIterator[Any]:
-        import concurrent.futures
         loop = asyncio.get_running_loop()
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         queue = asyncio.Queue()
         
         def run_stream():
@@ -661,7 +659,7 @@ class AgenticLoop:
             finally:
                 asyncio.run_coroutine_threadsafe(queue.put(None), loop)
                 
-        loop.run_in_executor(executor, run_stream)
+        loop.run_in_executor(None, run_stream)
         
         while True:
             item = await queue.get()

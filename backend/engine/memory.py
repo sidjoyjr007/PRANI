@@ -234,7 +234,7 @@ class ContextManager:
                 return ""
         
         loop = asyncio.get_running_loop()
-        res = await loop.run_in_executor(concurrent.futures.ThreadPoolExecutor(max_workers=1), collect)
+        res = await loop.run_in_executor(None, collect)
         print(f"[DEBUG] ContextManager._call_llm_sync: complete, received {len(res)} chars")
         return res
 

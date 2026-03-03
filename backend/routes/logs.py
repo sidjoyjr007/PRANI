@@ -29,7 +29,8 @@ def _serialize_log(log: AgentLog) -> dict:
 @router.get("/session/{session_id}")
 def get_session_logs(
     session_id: UUID,
-    limit: int = Query(default=500, le=2000),
+    limit: int = Query(default=100, le=2000),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -51,6 +52,7 @@ def get_session_logs(
         .filter(AgentLog.session_id == session_id)
         .order_by(AgentLog.created_at.desc())   # Latest first
         .limit(limit)
+        .offset(offset)
         .all()
     )
     return [_serialize_log(l) for l in logs]

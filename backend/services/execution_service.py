@@ -56,6 +56,29 @@ class ExecutionService:
                 resolved[s.name] = ""
         return resolved
 
+    def launch_agent(
+        self, 
+        agent_id: UUID, 
+        session_id: UUID, 
+        user_id: UUID, 
+        user_content: str = None, 
+        approved_tool_calls: List[Dict] = None
+    ) -> asyncio.Task:
+        """
+        Launches the background agent loop and stores a strong reference to prevent GC.
+        """
+        task = asyncio.create_task(
+            self.run_agent_background(
+                agent_id=agent_id,
+                session_id=session_id,
+                user_id=user_id,
+                user_content=user_content,
+                approved_tool_calls=approved_tool_calls
+            )
+        )
+        self.__class__._active_tasks[session_id] = task
+        return task
+
     async def run_agent_background(
         self, 
         agent_id: UUID, 
@@ -140,10 +163,7 @@ class ExecutionService:
                 subtask_state=subtask_state
             )
             
-            # Store the current running task for cancellation
-            current_task = asyncio.current_task()
-            if current_task:
-                self.__class__._active_tasks[session_id] = current_task
+            # Execute logic
 
             # 5. Run Loop
             # Use empty string if no user content (e.g. resume flow)

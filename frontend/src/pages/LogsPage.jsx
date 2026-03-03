@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react"
+import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { useTheme } from "@/context/ThemeContext"
 import Layout from "@/components/Layout"
@@ -163,7 +163,9 @@ export default function LogsPage() {
   const [sessions, setSessions] = useState([])         // for agent-level view
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [lastFetched, setLastFetched] = useState(null)
+  const [hasMore, setHasMore] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const LIMIT = 20
 
   // ── Frontend-only filter state ──
   const [search, setSearch] = useState("")
@@ -173,24 +175,40 @@ export default function LogsPage() {
   const [copiedId, setCopiedId] = useState(null)
 
   // ── Fetch logs ───────────────────────────────────────────────────────────────
-  const fetchLogs = useCallback(async () => {
+  const fetchLogs = useCallback(async (isLoadMore = false) => {
     if (!sessionId) return
-    setLoading(true)
+    if (isLoadMore && (!hasMore || loadingMore)) return
+
+    if (!isLoadMore) {
+      setLoading(true)
+      setLogs([])
+    } else {
+      setLoadingMore(true)
+    }
+
     setError(null)
     try {
-      const res = await fetch(`http://localhost:8000/api/logs/session/${sessionId}`, {
+      const currentOffset = isLoadMore ? logs.length : 0
+      const res = await fetch(`http://localhost:8000/api/logs/session/${sessionId}?limit=${LIMIT}&offset=${currentOffset}`, {
         credentials: "include",
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
-      setLogs(data)   // already latest-first from backend
-      setLastFetched(new Date())
+
+      if (isLoadMore) {
+        setLogs(prev => [...prev, ...data])
+      } else {
+        setLogs(data)
+      }
+
+      setHasMore(data.length === LIMIT)
     } catch (e) {
       setError(e.message)
     } finally {
-      setLoading(false)
+      if (!isLoadMore) setLoading(false)
+      setLoadingMore(false)
     }
-  }, [sessionId])
+  }, [sessionId, logs.length, hasMore, loadingMore])
 
   // ── Fetch agent sessions (when no sessionId) ──────────────────────────────
   const fetchSessions = useCallback(async () => {
@@ -204,7 +222,6 @@ export default function LogsPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setSessions(data)
-      setLastFetched(new Date())
     } catch (e) {
       setError(e.message)
     } finally {
@@ -213,9 +230,34 @@ export default function LogsPage() {
   }, [agentId, sessionId])
 
   useEffect(() => {
-    if (sessionId) fetchLogs()
+    if (sessionId && logs.length === 0) fetchLogs(false)
     else if (agentId) fetchSessions()
-  }, [sessionId, agentId, fetchLogs, fetchSessions])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, agentId])
+
+  const observerTarget = useRef(null)
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0].isIntersecting) {
+          if (!loading && !loadingMore && hasMore && search === "" && levelFilter === "All Levels" && sourceFilter === "All Categories") {
+            fetchLogs(true)
+          }
+        }
+      },
+      { threshold: 0.1 }
+    )
+
+    const currentTarget = observerTarget.current
+    if (currentTarget) {
+      observer.observe(currentTarget)
+    }
+
+    return () => {
+      if (currentTarget) observer.unobserve(currentTarget)
+    }
+  }, [loading, loadingMore, hasMore, search, levelFilter, sourceFilter, fetchLogs])
 
   // ── Frontend filtering (search + level + source) ──────────────────────────
   const filtered = useMemo(() => {
@@ -353,16 +395,11 @@ export default function LogsPage() {
                 {pageTitle}
               </h1>
             </div>
-            {lastFetched && (
-              <span style={{ fontSize: "0.72em", color: theme.colors.muted_foreground }}>
-                fetched {formatTs(lastFetched.toISOString())}
-              </span>
-            )}
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <button
-              onClick={fetchLogs}
+              onClick={() => fetchLogs(false)}
               disabled={loading}
               title="Refresh"
               style={{
@@ -402,7 +439,8 @@ export default function LogsPage() {
           fontFamily: '"Fira Code", "JetBrains Mono", "Courier New", monospace',
           color: "#e2e8f0",
           overflow: "hidden",
-          minHeight: "600px",
+          height: "calc(100vh - 160px)",
+          minHeight: "500px",
           display: "flex",
           flexDirection: "column",
         }}>
@@ -422,7 +460,7 @@ export default function LogsPage() {
               prani — agent execution logs
             </span>
             <span style={{ fontSize: "0.7em", color: "#475569", fontFamily: "system-ui, sans-serif" }}>
-              {filtered.length} / {logs.length} entries
+              {logs.length} entries loaded
             </span>
           </div>
 
@@ -507,7 +545,10 @@ export default function LogsPage() {
           </div>
 
           {/* ── Log rows ── */}
-          <div style={{ flex: 1, overflowY: "auto", padding: "4px 0" }} className="hover-scrollbar">
+          <div
+            style={{ flex: 1, overflowY: "auto", padding: "4px 0" }}
+            className="hover-scrollbar"
+          >
             {loading && (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "200px", color: "#64748b", gap: "8px" }}>
                 <RefreshCw size={16} style={{ animation: "spin 1s linear infinite" }} />
@@ -540,6 +581,18 @@ export default function LogsPage() {
                 onCopy={handleCopy}
               />
             ))}
+
+            {loadingMore && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "20px 0", color: "#64748b", gap: "8px" }}>
+                <RefreshCw size={14} style={{ animation: "spin 1s linear infinite" }} />
+                <span style={{ fontSize: "0.8em" }}>Loading more logs…</span>
+              </div>
+            )}
+
+            {/* Invisible sentinel element for IntersectionObserver */}
+            {hasMore && !loading && (
+              <div ref={observerTarget} style={{ height: "20px" }} />
+            )}
           </div>
 
           {/* ── Footer ── */}
