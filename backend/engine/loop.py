@@ -60,14 +60,14 @@ class AgenticLoop:
         if not name: return ""
         return name.replace("default_api:", "").replace("default_api.", "")
     async def run(self, user_input: str, approved_tool_calls: Optional[List[Dict]] = None) -> None:
-        print(f"[DEBUG] AgenticLoop.run: entered. session_id={self.session_id}, has_input={bool(user_input)}, has_approval={bool(approved_tool_calls)}")
+        logger.debug(f"AgenticLoop.run: entered. session_id={self.session_id}, has_input={bool(user_input)}, has_approval={bool(approved_tool_calls)}")
         try:
             # 0. Compact History & Goal Recovery
             await self.memory.compact_history(self.llm)
             if not user_input:
                 user_input = self.memory.get_goal_text()
             
-            print(f"[DEBUG] Loop run started. session_id={self.session_id}, is_approved_turn={bool(approved_tool_calls)}")
+            logger.debug(f"Loop run started. session_id={self.session_id}, is_approved_turn={bool(approved_tool_calls)}")
 
             # 1. Start execution (No more upfront decomposer)
             await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.LOOP_START, metadata={"run_id": self.run_id}, run_id=self.run_id))
@@ -92,13 +92,14 @@ class AgenticLoop:
                 context = await asyncio.to_thread(self.memory.get_active_context)
                 self._enrich_context(context, system_prompt)
 
-                print("\n" + "="*60)
-                print(f"ITERATION {self.loop_count}")
-                print("="*60)
-                print(f"STATUS: {status_report}")
-                print(f"CURRENT TASK: {current_task.description if current_task else 'None'}")
-                print(f"CONTEXT: {context}")
-                print("="*60 + "\n")
+                logger.info(
+                    f"Agent Iteration {self.loop_count}",
+                    extra={
+                        "status": status_report,
+                        "current_task": current_task.description if current_task else None,
+                        "context_summary": context
+                    }
+                )
 
                 # Emit turn start for UI visibility
                 await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.STATUS, content=f"Iteration {self.loop_count}: Thinking...", run_id=self.run_id))
@@ -272,7 +273,7 @@ class AgenticLoop:
 
     async def _get_turn_action(self, result: dict, approved_calls, tool_defs, context, current_task, status_report, user_input) -> None:
         if self.loop_count == 1 and approved_calls:
-            print(f"[DEBUG] _get_turn_action: Resuming with {len(approved_calls)} calls")
+            logger.debug(f"_get_turn_action: Resuming with {len(approved_calls)} calls")
             result.update({"full_content": "Resuming...", "tool_calls": [ToolCall(**atc) for atc in approved_calls], "thoughts": ["Approved."], "is_complete": False})
             return
 
@@ -312,7 +313,7 @@ class AgenticLoop:
                     if self.loop_count % 5 == 0: # Check every few chunks to optimize
                         current_status = self.state_service.load_agent_state(self.session_id)
                         if current_status == "ABORTED":
-                            print(f"[DEBUG] loop.run: Abort signal detected for {self.session_id}")
+                            logger.warning(f"loop.run: Abort signal detected for {self.session_id}")
                             await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.ERROR, content="Execution Aborted.", run_id=self.run_id))
                             return
 
@@ -445,7 +446,7 @@ class AgenticLoop:
         requires_approval = any(self.clean_tool_name(tc.function["name"]) not in internal_tools for tc in tool_calls)
         is_internal_only = all(self.clean_tool_name(tc.function["name"]) in internal_tools for tc in tool_calls)
         
-        print(f"[DEBUG] _execute_tool_calls: requires_approval={requires_approval} (tools: {[tc.function['name'] for tc in tool_calls]})")
+        logger.debug(f"_execute_tool_calls: requires_approval={requires_approval} (tools: {[tc.function['name'] for tc in tool_calls]})")
         
         # 0. Prep: Scrub thinking tags from tool call arguments to prevent UI leakage
         for tc in tool_calls:
@@ -529,7 +530,7 @@ class AgenticLoop:
                 self.pending_tool_refinement = {"tool": t_name, "error": str(res)} if "Error" in str(res) else None
                 continue
 
-            print(f"[DEBUG] _execute_tool_calls: executing {t_name}")
+            logger.debug(f"_execute_tool_calls: executing {t_name}")
             tool_rec = await asyncio.to_thread(self.tool_registry.get_tool_by_name, t_name, self.agent)
             
             if not is_internal_only:
@@ -546,16 +547,16 @@ class AgenticLoop:
             
             try:
                 if not tool_rec: 
-                    print(f"[DEBUG] _execute_tool_calls: tool {t_name} not found")
+                    logger.error(f"_execute_tool_calls: tool {t_name} not found")
                     res = "Error: Tool not found."
                 elif tool_rec.get("source") == "mcp": 
-                    print(f"[DEBUG] _execute_tool_calls: calling MCP tool {t_name}")
+                    logger.debug(f"_execute_tool_calls: calling MCP tool {t_name}")
                     res = await self._execute_mcp_tool(tool_rec, tc)
                 else: 
-                    print(f"[DEBUG] _execute_tool_calls: calling Python tool {t_name}")
+                    logger.debug(f"_execute_tool_calls: calling Python tool {t_name}")
                     res = await self._execute_python_tool(tool_rec, tc)
             except Exception as e: 
-                print(f"[DEBUG] _execute_tool_calls: exception during {t_name}: {e}")
+                logger.error(f"_execute_tool_calls: exception during {t_name}: {e}", exc_info=True)
                 res = f"Error: {e}"
 
             if not is_internal_only:

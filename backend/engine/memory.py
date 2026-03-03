@@ -1,4 +1,7 @@
+import logging
 import tiktoken
+
+logger = logging.getLogger(__name__)
 from typing import List, Optional, Any
 import uuid
 import json
@@ -173,14 +176,14 @@ class ContextManager:
         """
         Performs structural compaction if tokens exceed threshold.
         """
-        print(f"[DEBUG] ContextManager.compact_history: started")
+        logger.debug("ContextManager.compact_history: started")
         self.prune_tool_outputs()
 
         # Check total tokens
         db_messages = self.conversation_service.get_messages(self.session_id, user_id=self.user_id)
-        print(f"[DEBUG] ContextManager.compact_history: counting tokens for {len(db_messages)} messages")
+        logger.debug(f"ContextManager.compact_history: counting tokens for {len(db_messages)} messages")
         total_tokens = sum(self._get_message_tokens(self._to_provider_msg(m)) for m in db_messages)
-        print(f"[DEBUG] ContextManager.compact_history: total_tokens={total_tokens}, threshold={int(self.max_context_tokens * self.compaction_threshold_pct)}")
+        logger.debug(f"ContextManager.compact_history: total_tokens={total_tokens}, threshold={int(self.max_context_tokens * self.compaction_threshold_pct)}")
         
         if total_tokens < self.max_context_tokens * self.compaction_threshold_pct:
             return
@@ -221,7 +224,7 @@ class ContextManager:
     async def _call_llm_sync(self, llm, messages) -> str:
         import asyncio
         import concurrent.futures
-        print(f"[DEBUG] ContextManager._call_llm_sync: starting LLM stream")
+        logger.debug("ContextManager._call_llm_sync: starting LLM stream")
         def collect():
             text = ""
             try:
@@ -230,12 +233,12 @@ class ContextManager:
                     elif isinstance(chunk, str): text += chunk
                 return text
             except Exception as e:
-                print(f"[DEBUG] ContextManager._call_llm_sync error: {e}")
+                logger.error(f"ContextManager._call_llm_sync error: {e}", exc_info=True)
                 return ""
         
         loop = asyncio.get_running_loop()
         res = await loop.run_in_executor(None, collect)
-        print(f"[DEBUG] ContextManager._call_llm_sync: complete, received {len(res)} chars")
+        logger.debug(f"ContextManager._call_llm_sync: complete, received {len(res)} chars")
         return res
 
     def prune_tool_outputs(self):

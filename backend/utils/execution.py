@@ -204,7 +204,7 @@ except Exception as e:
         # 5. Prepare Container Execution
         pip_cmd = ""
         if dependencies:
-            print(f"[DEBUG] execute_python_tool: installing dependencies: {dependencies}")
+            logger.debug(f"execute_python_tool: installing dependencies: {dependencies}")
             deps_str = " ".join(dependencies)
             # Use -q for quiet but catch errors
             pip_cmd = f"pip install -q {deps_str} && "
@@ -212,7 +212,7 @@ except Exception as e:
         cmd = f"{pip_cmd}python runner.py"
         
         # 6. Run Container with Timeout
-        print(f"[DEBUG] execute_python_tool: starting docker run")
+        logger.debug("execute_python_tool: starting docker run")
         # Initialize client with a 10s daemon connection timeout
         client = docker.from_env(timeout=10)
         
@@ -229,7 +229,7 @@ except Exception as e:
         )
         
         try:
-            print(f"[DEBUG] execute_python_tool: waiting for container (60s limit)")
+            logger.debug("execute_python_tool: waiting for container (60s limit)")
             # Wait for container to exit with timeout
             # wait() returns a dict with 'StatusCode'
             exit_info = container.wait(timeout=60)
@@ -237,10 +237,10 @@ except Exception as e:
             
             # Fetch logs
             container_output = container.logs()
-            print(f"[DEBUG] execute_python_tool: run complete, exit_code={exit_code}")
+            logger.debug(f"execute_python_tool: run complete, exit_code={exit_code}")
         except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError) as e:
             # If wait() times out, kill and remove the container
-            print(f"[DEBUG] execute_python_tool: container timed out, killing...")
+            logger.warning("execute_python_tool: container timed out, killing...")
             try:
                 container.kill()
             except:

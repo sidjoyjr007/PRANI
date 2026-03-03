@@ -38,9 +38,7 @@ class IntentParser:
         
         plan = await self._get_plan(user_input, loop_instance.agent, loop_instance)
         
-        print("\n" + "="*60)
-        print("plan", plan)
-        print("="*60 + "\n")
+        logger.info("Generated execution plan.", extra={"plan": plan})
         
         if "thought" in plan:
             await loop_instance.bus.emit(
@@ -174,10 +172,6 @@ class IntentParser:
 
     def _log_attempt(self, attempt: int, max_retries: int, error: Optional[str], messages: List[ProviderMessage]) -> None:
         """Utility to format terminal logs for each planning LLM turn."""
-        print(f"\n{'='*60}")
-        print(f"PLANNING ATTEMPT {attempt + 1}/{max_retries}")
-        if error:
-            print(f"Previous Error: {error}")
-        print(f"{'='*60}\n")
+        logger.info(f"PLANNING ATTEMPT {attempt + 1}/{max_retries}", extra={"previous_error": error})
 
 

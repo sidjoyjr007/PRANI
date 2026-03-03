@@ -6,6 +6,13 @@ from config.database import Base, engine, SessionLocal
 from routes import api_router
 from engine.tools import ToolRegistry
 
+from asgi_correlation_id import CorrelationIdMiddleware
+from middleware.logging_middleware import LoggingMiddleware
+from config.logger import setup_logging
+
+# Initialize standardized JSON logging for the application
+setup_logging()
+
 # Import all models so SQLAlchemy's `create_all` discovers them
 import models.agent_log  # noqa: F401
 
@@ -25,6 +32,10 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Standard logging middlewares (executed bottom-up)
+app.add_middleware(LoggingMiddleware)
+app.add_middleware(CorrelationIdMiddleware)
 
 # Add CORS middleware
 app.add_middleware(

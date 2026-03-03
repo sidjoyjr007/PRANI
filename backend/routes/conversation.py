@@ -1,7 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
+import logging
 from uuid import UUID
+
+logger = logging.getLogger(__name__)
 
 from config.database import get_db
 from schemas.conversation import (
@@ -137,7 +140,7 @@ from schemas.execution import ApprovalRequest
 
 @router.post("/{conversation_id}/resume", response_model=dict)
 async def resume_execution(conversation_id: UUID, request: ApprovalRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    print(f"[DEBUG] POST /resume: session_id={conversation_id}, tools={[tc.get('function', {}).get('name') for tc in request.approved_tool_calls]}")
+    logger.debug(f"POST /resume: session_id={conversation_id}, tools={[tc.get('function', {}).get('name') for tc in request.approved_tool_calls]}")
     conversation_service = ConversationService(db)
     conversation = conversation_service.get_conversation(conversation_id, user_id=current_user.id)
     if not conversation:

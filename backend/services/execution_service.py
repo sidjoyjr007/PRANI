@@ -96,7 +96,7 @@ class ExecutionService:
         # We create a new local DB session for the background task to prevent thread sharing issues
         db = SessionLocal()
         
-        print(f"[DEBUG] ExecutionService: run_agent_background started. session_id={session_id}, is_resume={bool(approved_tool_calls)}")
+        logger.debug(f"ExecutionService: run_agent_background started. session_id={session_id}, is_resume={bool(approved_tool_calls)}")
         
         try:
             # 1. Fetch Agent & LLM

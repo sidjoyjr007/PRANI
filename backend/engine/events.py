@@ -108,7 +108,7 @@ class EventBus:
         try:
             channel = f"session:{event.session_id}"
             payload = event.model_dump_json()
-            print(f"[EVENT] Emitting {event.type} to {channel} (run_id={event.run_id})")
+            logger.debug(f"Emitting {event.type} to {channel} (run_id={event.run_id})")
             await self.redis_client.publish(channel, payload)
         except Exception as e:
             logger.error(f"Failed to publish event to Redis: {e}")
