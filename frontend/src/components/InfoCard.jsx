@@ -40,7 +40,7 @@ export default function InfoCard({ title, subtitle, description, footer, onClick
       }}>
         {title}
       </h3>
-      
+
       {subtitle && (
         <p style={{
           margin: 0,
@@ -52,18 +52,22 @@ export default function InfoCard({ title, subtitle, description, footer, onClick
           {subtitle}
         </p>
       )}
-      
+
       {description && (
         <p style={{
           margin: 0,
           marginBottom: theme.spacing[6],
           color: theme.colors.foreground,
           fontSize: theme.typography.fontSize.sm,
+          display: "-webkit-box",
+          WebkitLineClamp: 3,
+          WebkitBoxOrient: "vertical",
+          overflow: "hidden",
         }}>
           {description}
         </p>
       )}
-      
+
       {footer && (
         <div style={{ marginTop: theme.spacing[6] }}>
           {footer}

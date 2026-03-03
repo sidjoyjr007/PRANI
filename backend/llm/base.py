@@ -47,7 +47,17 @@ class LLMProvider(ABC):
         for k, v in schema.items():
             if k not in self._schema_allowed_keys:
                 continue
-            if isinstance(v, dict):
+            
+            if k == "properties" and isinstance(v, dict):
+                # Inside 'properties', keys are arbitrary field names, not JSON Schema keywords.
+                # Do not filter these keys against _schema_allowed_keys, but do sanitize their values.
+                result[k] = {
+                    pk: self.sanitize_tool_schema(pv) if isinstance(pv, dict) else pv
+                    for pk, pv in v.items()
+                }
+            elif k == "items" and isinstance(v, dict):
+                result[k] = self.sanitize_tool_schema(v)
+            elif isinstance(v, dict):
                 result[k] = self.sanitize_tool_schema(v)
             elif isinstance(v, list):
                 result[k] = [self.sanitize_tool_schema(i) if isinstance(i, dict) else i for i in v]

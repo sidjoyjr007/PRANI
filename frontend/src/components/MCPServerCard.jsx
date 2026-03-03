@@ -61,6 +61,7 @@ export default function MCPServerCard({ server, addToast }) {
         style={{
           display: "flex",
           flexDirection: "column",
+          flex: 1,
           height: "100%",
           padding: theme.spacing[6],
           gap: theme.spacing[4],

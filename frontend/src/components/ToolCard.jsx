@@ -51,6 +51,8 @@ export default function ToolCard({ tool, addToast }) {
         style={{
           display: "flex",
           flexDirection: "column",
+          flex: 1,
+          height: "100%",
           padding: theme.spacing[6],
           transition: `all ${theme.transitions.normal}`,
           cursor: "pointer",
@@ -59,7 +61,7 @@ export default function ToolCard({ tool, addToast }) {
           backgroundColor: theme.colors.card,
           boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
           position: "relative",
-          justifyContent: "center",
+          justifyContent: "flex-start",
           minHeight: "120px"
         }}
         onClick={() => navigate(`/edit-tool/${tool.id}`)}
@@ -134,21 +136,26 @@ export default function ToolCard({ tool, addToast }) {
           margin: 0,
           marginBottom: theme.spacing[6],
           lineHeight: 1.6,
-          maxWidth: "80%" // prevent text from hitting buttons on small screens
+          maxWidth: "80%", // prevent text from hitting buttons on small screens
+          display: "-webkit-box",
+          WebkitLineClamp: 3,
+          WebkitBoxOrient: "vertical",
+          overflow: "hidden",
         }}>
           {tool.description}
         </p>
 
         {/* Tool Categories */}
-        {tool.categories && tool.categories.length > 0 && (
+        {tool.categories && tool.categories.length > 0 ? (
           <div
             style={{
               display: "flex",
               flexWrap: "wrap",
               gap: theme.spacing[2],
+              marginTop: "auto",
             }}
           >
-            {tool.categories.map((category, idx) => (
+            {tool.categories.slice(0, 3).map((category, idx) => (
               <span
                 key={idx}
                 style={{
@@ -168,7 +175,26 @@ export default function ToolCard({ tool, addToast }) {
                 {category}
               </span>
             ))}
+            {tool.categories.length > 3 && (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "4px 12px",
+                  borderRadius: "9999px",
+                  fontSize: "11px",
+                  fontWeight: theme.typography.fontWeight.bold,
+                  backgroundColor: theme.colors.neutral[100],
+                  border: `1px solid ${theme.colors.neutral[300]}`,
+                  color: theme.colors.neutral[700],
+                }}
+              >
+                +{tool.categories.length - 3}
+              </span>
+            )}
           </div>
+        ) : (
+          <div style={{ marginTop: "auto" }}></div>
         )}
       </Card>
 

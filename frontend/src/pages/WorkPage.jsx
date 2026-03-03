@@ -10,6 +10,7 @@ import AgentDetailsPanel from "@/components/work/AgentDetailsPanel"
 import { fetchAgents } from "@/store/slices/agentSlice"
 import { fetchTools } from "@/store/slices/toolSlice"
 import { fetchLLMs } from "@/store/slices/llmSlice"
+import { fetchMCPs } from "@/store/slices/mcpSlice"
 import {
   fetchConversations,
   setCurrentConversationId,
@@ -32,6 +33,7 @@ export default function WorkPage() {
   const { items: agents } = useSelector((state) => state.agents)
   const { items: tools } = useSelector((state) => state.tools)
   const { items: llms } = useSelector((state) => state.llms)
+  const { items: mcps } = useSelector((state) => state.mcps)
   const { list: conversations, messages, currentConversationId, currentPlan } = useSelector((state) => state.conversations)
 
   // -- Local State for UI --
@@ -53,6 +55,7 @@ export default function WorkPage() {
     dispatch(fetchAgents({ size: 100 }))
     dispatch(fetchTools({ size: 100 }))
     dispatch(fetchLLMs({ size: 100 }))
+    dispatch(fetchMCPs({ size: 100 }))
     dispatch(fetchConversations())
   }, [dispatch])
 
@@ -223,6 +226,8 @@ export default function WorkPage() {
           selectedAgent={selectedAgent}
           allTools={tools}
           allLLMs={llms}
+          allMCPServers={mcps}
+          sessionId={sessionId}
         />
 
       </div>

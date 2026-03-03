@@ -60,6 +60,7 @@ export default function LLMCard({ llm, addToast }) {
         style={{
           display: "flex",
           flexDirection: "column",
+          flex: 1,
           height: "100%",
           padding: theme.spacing[6],
           gap: theme.spacing[4],
@@ -162,6 +163,10 @@ export default function LLMCard({ llm, addToast }) {
             color: theme.colors.muted_foreground,
             flex: 1,
             lineHeight: theme.typography.lineHeight.relaxed,
+            display: "-webkit-box",
+            WebkitLineClamp: 3,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
           }}
         >
           {llm.model}

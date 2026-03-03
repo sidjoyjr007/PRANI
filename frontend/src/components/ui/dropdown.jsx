@@ -6,14 +6,15 @@
 
 import * as React from "react"
 import { useTheme } from "@/context/ThemeContext"
+import { cn } from "@/lib/utils"
 
-const DropdownContext = React.createContext({ isOpen: false, handleOpenChange: () => {} })
+const DropdownContext = React.createContext({ isOpen: false, handleOpenChange: () => { } })
 
-const Dropdown = React.forwardRef(({ 
-  className, 
+const Dropdown = React.forwardRef(({
+  className,
   open = false,
   onOpenChange,
-  ...props 
+  ...props
 }, ref) => {
   const [isOpen, setIsOpen] = React.useState(open)
 
@@ -69,10 +70,11 @@ const DropdownTrigger = React.forwardRef(({ className, asChild = false, children
 })
 DropdownTrigger.displayName = "DropdownTrigger"
 
-const DropdownContent = React.forwardRef(({ 
+const DropdownContent = React.forwardRef(({
   align = "start",
   side = "bottom",
-  ...props 
+  style,
+  ...props
 }, ref) => {
   const theme = useTheme()
   const { isOpen, handleOpenChange } = React.useContext(DropdownContext)
@@ -98,7 +100,10 @@ const DropdownContent = React.forwardRef(({
           inset: 0,
           zIndex: 40,
         }}
-        onClick={() => handleOpenChange(false)}
+        onClick={(e) => {
+          e.stopPropagation()
+          handleOpenChange(false)
+        }}
       />
       <div
         ref={ref}
@@ -106,7 +111,7 @@ const DropdownContent = React.forwardRef(({
           position: "absolute",
           ...alignmentStyles[align],
           ...sideStyles[side],
-          minWidth: theme.sizes.minWidth.dropdown,
+          minWidth: theme.sizes?.minWidth?.dropdown || "160px",
           borderRadius: theme.borderRadius.md,
           backgroundColor: theme.colors.card,
           border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
@@ -114,6 +119,7 @@ const DropdownContent = React.forwardRef(({
           zIndex: 50,
           overflow: "hidden",
           outline: "none",
+          ...(style || {})
         }}
         {...props}
       />
@@ -122,12 +128,13 @@ const DropdownContent = React.forwardRef(({
 })
 DropdownContent.displayName = "DropdownContent"
 
-const DropdownItem = React.forwardRef(({ 
+const DropdownItem = React.forwardRef(({
   variant = "default",
   disabled = false,
   leadingIcon: LeadingIcon,
   trailingIcon: TrailingIcon,
-  ...props 
+  style,
+  ...props
 }, ref) => {
   const theme = useTheme()
   const { handleOpenChange } = React.useContext(DropdownContext)
@@ -136,7 +143,7 @@ const DropdownItem = React.forwardRef(({
   const variantStyles = {
     default: {
       color: theme.colors.foreground,
-      hoverBg: theme.colors.neutral[50],
+      hoverBg: theme.colors.neutral[100],
     },
     destructive: {
       color: theme.colors.destructive[600],
@@ -144,15 +151,15 @@ const DropdownItem = React.forwardRef(({
     },
   }
 
-  const style = variantStyles[variant]
+  const currentStyle = variantStyles[variant]
 
   return (
     <button
       ref={ref}
       type="button"
       disabled={disabled}
-      onClick={() => {
-        props.onClick?.()
+      onClick={(e) => {
+        props.onClick?.(e)
         handleOpenChange(false)
       }}
       style={{
@@ -161,8 +168,8 @@ const DropdownItem = React.forwardRef(({
         padding: `${theme.spacing[2]} ${theme.spacing[4]}`,
         fontSize: theme.typography.fontSize.sm,
         fontWeight: theme.typography.fontWeight.normal,
-        color: style.color,
-        backgroundColor: isHovering && !disabled ? style.hoverBg : "transparent",
+        color: currentStyle.color,
+        backgroundColor: isHovering && !disabled ? currentStyle.hoverBg : "transparent",
         opacity: disabled ? theme.opacity.disabled : theme.opacity.full,
         cursor: disabled ? "not-allowed" : "pointer",
         transition: theme.transitions.normal,
@@ -170,6 +177,7 @@ const DropdownItem = React.forwardRef(({
         alignItems: "center",
         gap: theme.spacing[2],
         border: "none",
+        ...(style || {})
       }}
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
@@ -187,7 +195,7 @@ const DropdownItem = React.forwardRef(({
 })
 DropdownItem.displayName = "DropdownItem"
 
-const DropdownSeparator = React.forwardRef(({ ...props }, ref) => {
+const DropdownSeparator = React.forwardRef(({ style, ...props }, ref) => {
   const theme = useTheme()
   return (
     <div
@@ -196,6 +204,7 @@ const DropdownSeparator = React.forwardRef(({ ...props }, ref) => {
         height: theme.borderWidth.sm,
         backgroundColor: theme.colors.neutral[200],
         margin: `${theme.spacing[1]} 0`,
+        ...(style || {})
       }}
       {...props}
     />
@@ -203,7 +212,7 @@ const DropdownSeparator = React.forwardRef(({ ...props }, ref) => {
 })
 DropdownSeparator.displayName = "DropdownSeparator"
 
-const DropdownLabel = React.forwardRef(({ ...props }, ref) => {
+const DropdownLabel = React.forwardRef(({ style, ...props }, ref) => {
   const theme = useTheme()
   return (
     <div
@@ -215,6 +224,7 @@ const DropdownLabel = React.forwardRef(({ ...props }, ref) => {
         color: theme.colors.neutral[500],
         textTransform: "uppercase",
         letterSpacing: "0.05em",
+        ...(style || {})
       }}
       {...props}
     />

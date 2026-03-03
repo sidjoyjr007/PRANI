@@ -2,11 +2,12 @@ import { useState, useRef, useEffect, useCallback } from "react"
 import { useTheme } from "@/context/ThemeContext"
 import { Button } from "@/components/ui/button"
 import { Text } from "@/components/ui/text"
+import { Avatar } from "@/components/ui/avatar"
 import { Combobox, ComboboxTrigger, ComboboxContent, ComboboxItem, ComboboxSearch } from "@/components/ui/combobox"
 import {
     Send, User, Bot, Check, X, ChevronDown,
     Terminal, Cpu, ChevronRight, ChevronDown as ChevronDownIcon,
-    AlertTriangle, Zap, Clock
+    AlertTriangle, Zap, Clock, Pause
 } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -151,8 +152,8 @@ function ThinkingBlock({ thoughts, theme }) {
             marginBottom: "6px",
             borderRadius: "6px",
             overflow: "hidden",
-            border: `1px solid ${theme.colors.neutral[700]}`,
-            backgroundColor: theme.colors.neutral[900] || "rgba(15,15,20,0.6)",
+            border: `1px solid ${theme.colors.border}`,
+            backgroundColor: theme.colors.neutral[50],
         }}>
             <div
                 onClick={() => setIsOpen(!isOpen)}
@@ -166,13 +167,13 @@ function ThinkingBlock({ thoughts, theme }) {
                 }}
             >
                 {isOpen
-                    ? <ChevronDownIcon size={12} style={{ color: theme.colors.neutral[400] }} />
-                    : <ChevronRight size={12} style={{ color: theme.colors.neutral[400] }} />
+                    ? <ChevronDownIcon size={14} style={{ color: theme.colors.muted_foreground }} />
+                    : <ChevronRight size={14} style={{ color: theme.colors.muted_foreground }} />
                 }
                 <span style={{
-                    fontSize: "0.72em",
-                    fontWeight: 600,
-                    color: theme.colors.neutral[400],
+                    fontSize: "0.75em",
+                    fontWeight: 500,
+                    color: theme.colors.muted_foreground,
                     textTransform: "uppercase",
                     letterSpacing: "0.08em"
                 }}>
@@ -182,11 +183,10 @@ function ThinkingBlock({ thoughts, theme }) {
             {isOpen && (
                 <div style={{
                     padding: "8px 12px",
-                    color: theme.colors.neutral[300],
-                    fontSize: "0.82em",
-                    lineHeight: 1.65,
-                    fontStyle: "italic",
-                    borderTop: `1px solid ${theme.colors.neutral[800]}`,
+                    color: theme.colors.foreground,
+                    fontSize: "0.85em",
+                    lineHeight: 1.6,
+                    borderTop: `1px solid ${theme.colors.border}`,
                 }}>
                     {thoughts.map((t, i) => <div key={i} style={{ marginBottom: "4px" }}>{t}</div>)}
                 </div>
@@ -489,26 +489,18 @@ function MessageRow({ msg, showLabel, onApprove, onReject, approvalDecisions, th
                     }}>
                         {/* User avatar on the right */}
                         {isUser && (
-                            <div style={{
-                                width: "36px", height: "36px", borderRadius: "50%",
-                                backgroundColor: theme.colors.primary[600],
-                                display: "flex", alignItems: "center", justifyContent: "center",
-                                flexShrink: 0,
-                            }}>
-                                <User size={18} style={{ color: theme.colors.white }} />
+                            <div style={{ flexShrink: 0 }}>
+                                <Avatar size="sm" fallback={<User size={16} />} />
                             </div>
                         )}
                         <div style={{
-                            backgroundColor: isUser ? theme.colors.primary[600] : "rgba(255, 255, 255, 0.02)",
-                            border: "none",
-                            color: isUser ? "#ffffff" : theme.colors.foreground,
-                            padding: isUser ? `10px 16px` : "6px 0px",
-                            borderRadius: isUser ? "16px 16px 4px 16px" : "0",
+                            backgroundColor: isUser ? theme.colors.neutral[100] : "transparent",
+                            color: theme.colors.foreground,
+                            padding: isUser ? `10px 14px` : "6px 0px",
+                            borderRadius: isUser ? theme.borderRadius.lg : "0",
                             wordBreak: "break-word",
                             overflowWrap: "anywhere",
                             lineHeight: 1.6,
-                            boxShadow: "none",
-                            transition: `all ${theme.transitions.normal}`,
                             fontSize: "0.93em",
                             maxWidth: "100%",
                         }}>
@@ -984,7 +976,7 @@ export default function ChatPanel({
                                     backgroundColor: theme.colors.destructive,
                                 }}
                             >
-                                <X size={16} />
+                                <Pause size={16} />
                             </Button>
                         ) : (
                             <Button

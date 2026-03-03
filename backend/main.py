@@ -6,6 +6,9 @@ from config.database import Base, engine, SessionLocal
 from routes import api_router
 from engine.tools import ToolRegistry
 
+# Import all models so SQLAlchemy's `create_all` discovers them
+import models.agent_log  # noqa: F401
+
 # Create tables
 Base.metadata.create_all(bind=engine)
 

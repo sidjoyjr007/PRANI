@@ -1,8 +1,10 @@
 import { useState } from "react"
 import { useTheme } from "@/context/ThemeContext"
+import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Text } from "@/components/ui/text"
-import { Plus, Edit, Trash, MessageSquare } from "lucide-react"
+import { Plus, Edit, Trash, MessageSquare, Logs, MoreVertical } from "lucide-react"
+import { Dropdown, DropdownTrigger, DropdownContent, DropdownItem } from "@/components/ui/dropdown"
 import { Empty } from "@/components/ui/empty"
 import DeleteResourceDialog from "@/components/DeleteResourceDialog"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
@@ -18,7 +20,9 @@ export default function ConversationsPanel({
     selectedAgentId
 }) {
     const theme = useTheme()
+    const navigate = useNavigate()
     const [hoveredConversationId, setHoveredConversationId] = useState(null)
+    const [openDropdownId, setOpenDropdownId] = useState(null) // Added for z-index
 
     // Dialog State
     const [deleteId, setDeleteId] = useState(null)
@@ -49,19 +53,19 @@ export default function ConversationsPanel({
             }}
         >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: theme.spacing[6] }}>
-                <Text as="h3" variant="label" size="md" style={{ margin: 0 }}>Conversations</Text>
+                <Text as="label" variant="helper" size="xs" style={{ margin: 0, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: "700", color: theme.colors.foreground }}>Conversations</Text>
                 <Button
-                    variant="primary"
+                    variant="ghost"
                     size="sm"
                     disabled={!hasAgentSelected}
                     onClick={onNewConversation}
-                    style={{ width: "32px", height: "32px", padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+                    style={{ width: "28px", height: "28px", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", color: theme.colors.muted_foreground }}
                 >
                     <Plus size={16} />
                 </Button>
             </div>
 
-            <div className="hover-scrollbar" style={{ flex: 1, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column", gap: theme.spacing[2], height: "100%", paddingRight: "4px" }}>
+            <div className="hover-scrollbar" style={{ flex: 1, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column", gap: theme.spacing[2], height: "100%", paddingRight: "0px", width: "100%" }}>
                 {!hasAgentSelected ? (
                     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
                         <Empty
@@ -92,16 +96,19 @@ export default function ConversationsPanel({
                                     display: "flex",
                                     alignItems: "center",
                                     justifyContent: "space-between",
-                                    padding: `${theme.spacing[3]} 0`,
+                                    padding: theme.spacing[1],
+                                    width: "100%",
+                                    boxSizing: "border-box",
                                     backgroundColor: activeConversation === conv.id
-                                        ? theme.colors.primary[600]
+                                        ? theme.colors.primary[50]
                                         : isHovered
-                                            ? theme.colors.neutral[100]
+                                            ? theme.colors.neutral[50]
                                             : "transparent",
                                     borderRadius: theme.borderRadius.md,
                                     cursor: "pointer",
-                                    transition: theme.transitions.normal,
-                                    position: "relative", // For absolute positioning if needed, but flex works well
+                                    transition: theme.transitions.fast,
+                                    position: "relative",
+                                    zIndex: (isHovered || openDropdownId === conv.id) ? 10 : 1,
                                 }}
                                 onMouseEnter={() => setHoveredConversationId(conv.id)}
                                 onMouseLeave={() => setHoveredConversationId(null)}
@@ -114,70 +121,80 @@ export default function ConversationsPanel({
                                         border: "none",
                                         cursor: "pointer",
                                         textAlign: "left",
-                                        padding: `0 ${theme.spacing[4]}`,
+                                        padding: theme.spacing[2],
                                         overflow: "hidden",
                                         textOverflow: "ellipsis",
                                         whiteSpace: "nowrap",
-                                        marginRight: isHovered ? "60px" : "0", // Make space for buttons
-                                        transition: "margin-right 0.2s",
+                                        transition: "color 0.2s",
                                     }}
                                 >
-                                    <Text as="div" variant="body" size="sm" style={{ fontWeight: theme.typography.fontWeight.medium, margin: 0, color: activeConversation === conv.id ? theme.colors.white : theme.colors.foreground }}>
+                                    <Text as="div" variant="body" size="xs" style={{ fontWeight: activeConversation === conv.id ? theme.typography.fontWeight.semibold : theme.typography.fontWeight.medium, margin: 0, color: activeConversation === conv.id ? theme.colors.foreground : theme.colors.muted_foreground }}>
                                         {conv.title}
                                     </Text>
                                 </button>
 
-                                {/* Action Buttons - Visible on Hover */}
-                                {isHovered && (
-                                    <div style={{
-                                        position: "absolute",
-                                        right: theme.spacing[2],
-                                        top: "50%",
-                                        transform: "translateY(-50%)",
-                                        display: "flex",
-                                        gap: theme.spacing[1],
-                                    }}>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation()
-                                                setRenameId(conv.id)
-                                                setRenameValue(conv.title)
-                                            }}
-                                            style={{
-                                                background: "none",
-                                                border: "none",
-                                                cursor: "pointer",
-                                                color: activeConversation === conv.id ? theme.colors.white : theme.colors.muted_foreground,
-                                                padding: "4px",
-                                                display: "flex",
-                                                alignItems: "center",
-                                                opacity: 0.8,
-                                            }}
-                                            title="Rename"
-                                        >
-                                            <Edit size={14} />
-                                        </button>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation()
-                                                setDeleteId(conv.id)
-                                            }}
-                                            style={{
-                                                background: "none",
-                                                border: "none",
-                                                cursor: "pointer",
-                                                color: activeConversation === conv.id ? theme.colors.white : theme.colors.destructive,
-                                                padding: "4px",
-                                                display: "flex",
-                                                alignItems: "center",
-                                                opacity: 0.8,
-                                            }}
-                                            title="Delete"
-                                        >
-                                            <Trash size={14} />
-                                        </button>
-                                    </div>
-                                )}
+                                {/* Action Dropdown */}
+                                <div style={{ width: "32px", display: "flex", justifyContent: "center", marginRight: theme.spacing[2] }}>
+                                    <Dropdown onOpenChange={(isOpen) => setOpenDropdownId(isOpen ? conv.id : null)}>
+                                        <DropdownTrigger asChild>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    e.preventDefault()
+                                                }}
+                                                onMouseDown={(e) => {
+                                                    e.stopPropagation()
+                                                }}
+                                                style={{
+                                                    padding: theme.spacing[1],
+                                                    borderRadius: theme.borderRadius.sm,
+                                                    color: theme.colors.muted_foreground,
+                                                    backgroundColor: (isHovered || openDropdownId === conv.id || activeConversation === conv.id) ? (activeConversation === conv.id ? theme.colors.neutral[100] : theme.colors.neutral[50]) : "transparent",
+                                                    opacity: (isHovered || openDropdownId === conv.id || activeConversation === conv.id) ? 1 : 0,
+                                                    pointerEvents: (isHovered || openDropdownId === conv.id || activeConversation === conv.id) ? "auto" : "none",
+                                                }}
+                                            >
+                                                <MoreVertical size={16} />
+                                            </Button>
+                                        </DropdownTrigger>
+                                        <DropdownContent align="end" style={{ zIndex: 100 }}>
+                                            <DropdownItem
+                                                leadingIcon={Logs}
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    const params = new URLSearchParams()
+                                                    params.set("session", conv.id)
+                                                    if (selectedAgentId) params.set("agent", selectedAgentId)
+                                                    navigate(`/logs?${params.toString()}`)
+                                                }}
+                                            >
+                                                View Logs
+                                            </DropdownItem>
+                                            <DropdownItem
+                                                leadingIcon={Edit}
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    setRenameId(conv.id)
+                                                    setRenameValue(conv.title)
+                                                }}
+                                            >
+                                                Rename
+                                            </DropdownItem>
+                                            <DropdownItem
+                                                variant="destructive"
+                                                leadingIcon={Trash}
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    setDeleteId(conv.id)
+                                                }}
+                                            >
+                                                Delete
+                                            </DropdownItem>
+                                        </DropdownContent>
+                                    </Dropdown>
+                                </div>
                             </div>
                         )
                     })

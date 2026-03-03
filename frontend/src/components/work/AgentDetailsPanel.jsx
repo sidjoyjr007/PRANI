@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator"
 import { Logs, MousePointerClick } from "lucide-react"
 import { Empty } from "@/components/ui/empty"
 
-export default function AgentDetailsPanel({ selectedAgent, allTools = [], allLLMs = [] }) {
+export default function AgentDetailsPanel({ selectedAgent, allTools = [], allLLMs = [], allMCPServers = [], sessionId = null }) {
     const theme = useTheme()
     const navigate = useNavigate()
     const [rightPanelTab, setRightPanelTab] = useState("tools")
@@ -18,6 +18,12 @@ export default function AgentDetailsPanel({ selectedAgent, allTools = [], allLLM
     const agentTools = selectedAgent?.tool_ids?.map(id => {
         const tool = allTools.find(t => t.id === id)
         return tool ? tool.name : "Unknown Tool"
+    }) || []
+
+    // Resolve MCP Server names from IDs
+    const agentMCPServers = selectedAgent?.mcp_server_ids?.map(id => {
+        const server = allMCPServers.find(s => s.id === id)
+        return server ? server.name : "Unknown Server"
     }) || []
 
     // Resolve LLM name
@@ -63,31 +69,53 @@ export default function AgentDetailsPanel({ selectedAgent, allTools = [], allLLM
             }}
         >
             <Tabs value={rightPanelTab} onValueChange={setRightPanelTab} variant="badge" style={{ display: "flex", flexDirection: "column", flex: 1 }}>
-                <TabsList style={{ width: "100%", marginBottom: theme.spacing[6], gap: theme.spacing[4], display: "flex" }}>
-                    <TabsTrigger value="tools" badge={String(agentTools.length)}>Tools</TabsTrigger>
+                <TabsList style={{ width: "100%", marginBottom: theme.spacing[6], gap: theme.spacing[4], display: "flex", overflowX: "auto" }}>
+                    <TabsTrigger value="tools" badge={String(agentTools.length + agentMCPServers.length)}>Tools & MCP</TabsTrigger>
                     <TabsTrigger value="capabilities" badge={String(selectedAgent.capabilities?.length || 0)}>Capabilities</TabsTrigger>
-                    <TabsTrigger value="info">Info</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="tools" style={{ flex: 1 }}>
-                    <Text as="h3" variant="label" size="sm" style={{ marginBottom: theme.spacing[4], display: "block" }}>
-                        Available Tools
-                    </Text>
-                    {agentTools.length > 0 ? (
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: theme.spacing[2] }}>
-                            {agentTools.map((tool, idx) => (
-                                <Badge key={idx} variant="outline" color="secondary" pill>
-                                    {tool}
-                                </Badge>
-                            ))}
+                    <div style={{ display: "flex", flexDirection: "column", gap: theme.spacing[6] }}>
+                        {/* Tools Section */}
+                        <div>
+                            <Text as="label" variant="helper" size="xs" style={{ display: "block", marginBottom: theme.spacing[3], textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: "600", color: theme.colors.muted_foreground }}>
+                                Tools
+                            </Text>
+                            {agentTools.length > 0 ? (
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: theme.spacing[2] }}>
+                                    {agentTools.map((tool, idx) => (
+                                        <Badge key={idx} variant="outline" color="secondary" pill>
+                                            {tool}
+                                        </Badge>
+                                    ))}
+                                </div>
+                            ) : (
+                                <Text as="p" variant="muted" size="sm">No tools assigned.</Text>
+                            )}
                         </div>
-                    ) : (
-                        <Text as="p" variant="muted" size="sm">No tools assigned.</Text>
-                    )}
+
+                        {/* MCP Servers Section */}
+                        <div>
+                            <Text as="label" variant="helper" size="xs" style={{ display: "block", marginBottom: theme.spacing[3], textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: "600", color: theme.colors.muted_foreground }}>
+                                MCP Servers
+                            </Text>
+                            {agentMCPServers.length > 0 ? (
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: theme.spacing[2] }}>
+                                    {agentMCPServers.map((server, idx) => (
+                                        <Badge key={idx} variant="outline" color="primary" pill>
+                                            {server}
+                                        </Badge>
+                                    ))}
+                                </div>
+                            ) : (
+                                <Text as="p" variant="muted" size="sm">No MCP servers assigned.</Text>
+                            )}
+                        </div>
+                    </div>
                 </TabsContent>
 
                 <TabsContent value="capabilities" style={{ flex: 1 }}>
-                    <Text as="h3" variant="label" size="sm" style={{ marginBottom: theme.spacing[4], display: "block" }}>
+                    <Text as="label" variant="helper" size="xs" style={{ display: "block", marginBottom: theme.spacing[3], textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: "600", color: theme.colors.muted_foreground }}>
                         Agent Capabilities
                     </Text>
                     {selectedAgent.capabilities && selectedAgent.capabilities.length > 0 ? (
@@ -102,58 +130,8 @@ export default function AgentDetailsPanel({ selectedAgent, allTools = [], allLLM
                         <Text as="p" variant="muted" size="sm">No specific capabilities listed.</Text>
                     )}
                 </TabsContent>
-
-                <TabsContent value="info" style={{ flex: 1 }}>
-                    <div style={{ display: "flex", flexDirection: "column", gap: theme.spacing[4] }}>
-                        <div>
-                            <Text as="label" variant="helper" size="xs" style={{ display: "block", marginBottom: theme.spacing[2] }}>
-                                Name
-                            </Text>
-                            <Text as="p" variant="body" size="sm" style={{ margin: 0, fontWeight: "bold" }}>
-                                {selectedAgent.name}
-                            </Text>
-                        </div>
-                        <Separator />
-                        <div>
-                            <Text as="label" variant="helper" size="xs" style={{ display: "block", marginBottom: theme.spacing[2] }}>
-                                Description
-                            </Text>
-                            <Text as="p" variant="body" size="sm" style={{ margin: 0 }}>
-                                {selectedAgent.description || "No description provided."}
-                            </Text>
-                        </div>
-                        <Separator />
-                        <div>
-                            <Text as="label" variant="helper" size="xs" style={{ display: "block", marginBottom: theme.spacing[2] }}>
-                                Model
-                            </Text>
-                            <Text as="p" variant="body" size="sm" style={{ margin: 0 }}>
-                                {llmName}
-                            </Text>
-                        </div>
-                        <Separator />
-                        <div>
-                            <Text as="label" variant="helper" size="xs" style={{ display: "block", marginBottom: theme.spacing[2] }}>
-                                Human in Loop
-                            </Text>
-                            <Badge variant={selectedAgent.human_in_loop ? "default" : "outline"} color={selectedAgent.human_in_loop ? "primary" : "neutral"} size="sm">
-                                {selectedAgent.human_in_loop ? "Enabled" : "Disabled"}
-                            </Badge>
-                        </div>
-                    </div>
-                </TabsContent>
             </Tabs>
 
-            {/* Check Logs Button */}
-            <Button
-                variant="outline"
-                size="md"
-                leadingIcon={Logs}
-                onClick={() => navigate("/logs")}
-                style={{ marginTop: theme.spacing[6], width: "100%" }}
-            >
-                Check Logs
-            </Button>
         </div>
     )
 }

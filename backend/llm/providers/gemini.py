@@ -24,35 +24,7 @@ class GeminiProvider(LLMProvider):
         if role == "tool": return "function"
         return "user"
 
-    # Fields Gemini's function declaration parameters actually support (OpenAPI 3.0 subset)
-    _GEMINI_SCHEMA_KEYS = {"type", "description", "properties", "required", "enum", "items", "nullable", "format"}
 
-    def _sanitize_schema(self, schema: Any) -> Any:
-        """Keep only Gemini-supported schema fields. Handles anyOf/oneOf by picking the first concrete type."""
-        if not isinstance(schema, dict):
-            return schema
-
-        # Flatten anyOf/oneOf to first non-null concrete option
-        for union_key in ("anyOf", "oneOf"):
-            if union_key in schema:
-                options = [o for o in schema[union_key] if o.get("type") != "null"]
-                schema = {**schema, **(options[0] if options else {})}
-                schema.pop(union_key, None)
-                break
-
-        result = {}
-        for k, v in schema.items():
-            if k not in self._GEMINI_SCHEMA_KEYS:
-                continue
-            if k == "properties" and isinstance(v, dict):
-                result[k] = {pk: self._sanitize_schema(pv) for pk, pv in v.items()}
-            elif k == "items" and isinstance(v, dict):
-                result[k] = self._sanitize_schema(v)
-            elif isinstance(v, list):
-                result[k] = [self._sanitize_schema(i) if isinstance(i, dict) else i for i in v]
-            else:
-                result[k] = v
-        return result
 
     def _prepare_payload(self, messages: List[ProviderMessage], tools: List[Dict] = None):
         contents = []

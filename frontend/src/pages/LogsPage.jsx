@@ -1,475 +1,576 @@
-import { useState, useMemo } from "react"
-import { useNavigate } from "react-router-dom"
+import { useState, useEffect, useMemo, useCallback } from "react"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { useTheme } from "@/context/ThemeContext"
 import Layout from "@/components/Layout"
 import Container from "@/components/Container"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
-import { Text } from "@/components/ui/text"
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
-import { ChevronLeft, Search, Download, Copy, Check } from "lucide-react"
+import {
+  ChevronLeft, Search, Download, Copy, Check,
+  RefreshCw, Terminal, AlertCircle, Info, AlertTriangle, Bug,
+  FileText, Layers, Clock
+} from "lucide-react"
 
-// Mock logs data
-const MOCK_LOGS = [
-  {
-    id: 1,
-    timestamp: "14:35:42.123",
-    level: "INFO",
-    source: "Agent Execution",
-    message: "Agent started processing request",
-  },
-  {
-    id: 2,
-    timestamp: "14:35:43.456",
-    level: "DEBUG",
-    source: "Tool Handler",
-    message: "Loading tool: Web Search",
-  },
-  {
-    id: 3,
-    timestamp: "14:35:44.789",
-    level: "INFO",
-    source: "Execution Engine",
-    message: "Executing tool: Web Search with query 'latest AI trends'",
-  },
-  {
-    id: 4,
-    timestamp: "14:35:46.012",
-    level: "INFO",
-    source: "API Handler",
-    message: "Web Search API call completed - Results: 15 items found",
-  },
-  {
-    id: 5,
-    timestamp: "14:35:47.345",
-    level: "DEBUG",
-    source: "Response Parser",
-    message: "Parsing API response - Extracted 15 search results",
-  },
-  {
-    id: 6,
-    timestamp: "14:35:48.678",
-    level: "INFO",
-    source: "Agent Execution",
-    message: "Processing results with LLM Model: gpt-4",
-  },
-  {
-    id: 7,
-    timestamp: "14:35:50.901",
-    level: "INFO",
-    source: "LLM Handler",
-    message: "LLM response received - Generated summary of 5 key findings",
-  },
-  {
-    id: 8,
-    timestamp: "14:35:51.234",
-    level: "INFO",
-    source: "Agent Execution",
-    message: "Agent completed successfully - Execution time: 8.891s",
-  },
-  {
-    id: 9,
-    timestamp: "14:35:45.500",
-    level: "WARN",
-    source: "Cache Manager",
-    message: "Cache miss detected - Fetching fresh data from source",
-  },
-  {
-    id: 10,
-    timestamp: "14:35:49.800",
-    level: "ERROR",
-    source: "Validation Engine",
-    message: "Validation warning encountered - Some fields require attention",
-  },
-]
-
-const LOG_LEVELS = ["ALL", "DEBUG", "INFO", "WARN", "ERROR"]
-
-// Get ANSI-style color for log level
-const getLevelColor = (level) => {
-  switch (level) {
-    case "DEBUG":
-      return { color: "#7c8dcc", symbol: "DEBUG" } // blue
-    case "INFO":
-      return { color: "#4ade80", symbol: "INFO " } // green
-    case "WARN":
-      return { color: "#facc15", symbol: "WARN " } // yellow
-    case "ERROR":
-      return { color: "#f87171", symbol: "ERROR" } // red
-    default:
-      return { color: "#7c8dcc", symbol: "DEBUG" }
-  }
+// ─── Level config ─────────────────────────────────────────────────────────────
+const LEVEL_CONFIG = {
+  DEBUG: { color: "#7c8dcc", bg: "rgba(124,141,204,0.1)", label: "DEBUG", icon: Bug },
+  INFO: { color: "#4ade80", bg: "rgba(74,222,128,0.1)", label: "INFO ", icon: Info },
+  WARN: { color: "#facc15", bg: "rgba(250,204,21,0.1)", label: "WARN ", icon: AlertTriangle },
+  ERROR: { color: "#f87171", bg: "rgba(248,113,113,0.1)", label: "ERROR", icon: AlertCircle },
 }
 
+// All distinct category (source) values that may come back from the API
+const ALL_SOURCES = [
+  "All Categories",
+  "Agent Loop",
+  "Reasoning",
+  "Tool Handler",
+  "Execution Engine",
+  "Task Planner",
+  "Human in Loop",
+  "Response",
+  "Agent",
+]
+
+const ALL_LEVELS = ["All Levels", "DEBUG", "INFO", "WARN", "ERROR"]
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function formatTs(isoStr) {
+  if (!isoStr) return "—"
+  try {
+    const d = new Date(isoStr)
+    return d.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }) +
+      "." + String(d.getMilliseconds()).padStart(3, "0")
+  } catch { return isoStr }
+}
+
+function formatFullTs(isoStr) {
+  if (!isoStr) return "—"
+  try {
+    const d = new Date(isoStr)
+    return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) +
+      " " + d.toLocaleTimeString("en-US", { hour12: false })
+  } catch { return isoStr }
+}
+
+// ─── LogRow ───────────────────────────────────────────────────────────────────
+function LogRow({ log, index, copiedId, onCopy }) {
+  const lc = LEVEL_CONFIG[log.level] || LEVEL_CONFIG.INFO
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: "12px",
+        padding: "6px 12px",
+        borderRadius: "4px",
+        transition: "background 0.12s",
+        cursor: "pointer",
+        borderBottom: "1px solid rgba(255,255,255,0.03)",
+      }}
+      onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.03)"}
+      onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+    >
+      {/* Line number */}
+      <span style={{ color: "#475569", fontSize: "0.72em", minWidth: "36px", textAlign: "right", userSelect: "none", paddingTop: "2px" }}>
+        {String(index + 1).padStart(4, " ")}
+      </span>
+
+      {/* Timestamp */}
+      <span style={{ color: "#64748b", fontSize: "0.74em", minWidth: "100px", flexShrink: 0, paddingTop: "2px", fontFamily: "monospace" }}>
+        {formatTs(log.timestamp)}
+      </span>
+
+      {/* Level badge */}
+      <span style={{
+        color: lc.color,
+        backgroundColor: lc.bg,
+        fontSize: "0.68em",
+        fontWeight: 700,
+        letterSpacing: "0.06em",
+        padding: "1px 6px",
+        borderRadius: "3px",
+        border: `1px solid ${lc.color}33`,
+        minWidth: "52px",
+        textAlign: "center",
+        flexShrink: 0,
+        marginTop: "1px",
+      }}>
+        {lc.label}
+      </span>
+
+      {/* Source chip */}
+      <span style={{
+        color: "#60a5fa",
+        fontSize: "0.74em",
+        minWidth: "110px",
+        flexShrink: 0,
+        paddingTop: "2px",
+        fontFamily: "monospace",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+      }}>
+        {log.source}
+      </span>
+
+      {/* Content */}
+      <span style={{
+        flex: 1,
+        color: "#e2e8f0",
+        fontSize: "0.82em",
+        fontFamily: "monospace",
+        wordBreak: "break-word",
+        whiteSpace: "pre-wrap",
+        lineHeight: "1.5",
+      }}>
+        {log.content || <span style={{ color: "#475569" }}>—</span>}
+      </span>
+
+      {/* Copy button */}
+      <button
+        onClick={e => { e.stopPropagation(); onCopy(log) }}
+        title={copiedId === log.id ? "Copied!" : "Copy"}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          color: copiedId === log.id ? "#22c55e" : "#475569",
+          padding: "2px 4px",
+          flexShrink: 0,
+          transition: "color 0.15s",
+        }}
+        onMouseEnter={e => { if (copiedId !== log.id) e.currentTarget.style.color = "#94a3b8" }}
+        onMouseLeave={e => { if (copiedId !== log.id) e.currentTarget.style.color = "#475569" }}
+      >
+        {copiedId === log.id ? <Check size={13} /> : <Copy size={13} />}
+      </button>
+    </div>
+  )
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
 export default function LogsPage() {
   const theme = useTheme()
   const navigate = useNavigate()
-  const [searchQuery, setSearchQuery] = useState("")
-  const [selectedLevel, setSelectedLevel] = useState("ALL")
+  const [searchParams] = useSearchParams()
+
+  const sessionId = searchParams.get("session")
+  const agentId = searchParams.get("agent")
+
+  const [logs, setLogs] = useState([])
+  const [sessions, setSessions] = useState([])         // for agent-level view
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [lastFetched, setLastFetched] = useState(null)
+
+  // ── Frontend-only filter state ──
+  const [search, setSearch] = useState("")
+  const [levelFilter, setLevelFilter] = useState("All Levels")
+  const [sourceFilter, setSourceFilter] = useState("All Categories")
+
   const [copiedId, setCopiedId] = useState(null)
 
-  // Filter logs based on search and level
-  const filteredLogs = useMemo(() => {
-    return MOCK_LOGS.filter(log => {
-      const matchesSearch = !searchQuery ||
-        log.message.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        log.source.toLowerCase().includes(searchQuery.toLowerCase())
+  // ── Fetch logs ───────────────────────────────────────────────────────────────
+  const fetchLogs = useCallback(async () => {
+    if (!sessionId) return
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`http://localhost:8000/api/logs/session/${sessionId}`, {
+        credentials: "include",
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setLogs(data)   // already latest-first from backend
+      setLastFetched(new Date())
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [sessionId])
 
-      const matchesLevel = selectedLevel === "ALL" || log.level === selectedLevel
+  // ── Fetch agent sessions (when no sessionId) ──────────────────────────────
+  const fetchSessions = useCallback(async () => {
+    if (!agentId || sessionId) return
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`http://localhost:8000/api/logs/agent/${agentId}/sessions`, {
+        credentials: "include",
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setSessions(data)
+      setLastFetched(new Date())
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [agentId, sessionId])
 
-      return matchesSearch && matchesLevel
+  useEffect(() => {
+    if (sessionId) fetchLogs()
+    else if (agentId) fetchSessions()
+  }, [sessionId, agentId, fetchLogs, fetchSessions])
+
+  // ── Frontend filtering (search + level + source) ──────────────────────────
+  const filtered = useMemo(() => {
+    return logs.filter(log => {
+      const matchLevel = levelFilter === "All Levels" || log.level === levelFilter
+      const matchSource = sourceFilter === "All Categories" || log.source === sourceFilter
+      const q = search.toLowerCase()
+      const matchSearch = !q ||
+        log.content.toLowerCase().includes(q) ||
+        log.source.toLowerCase().includes(q) ||
+        log.event_type.toLowerCase().includes(q)
+      return matchLevel && matchSource && matchSearch
     })
-  }, [searchQuery, selectedLevel])
+  }, [logs, levelFilter, sourceFilter, search])
 
-  // Copy log to clipboard
-  const copyToClipboard = (log) => {
-    const logLine = `[${log.timestamp}] [${log.level}] ${log.source}: ${log.message}`
-    navigator.clipboard.writeText(logLine)
+  // ── Download ──────────────────────────────────────────────────────────────
+  const handleDownload = () => {
+    const text = filtered
+      .map(l => `[${l.timestamp || ""}] [${l.level}] ${l.source}: ${l.content}`)
+      .join("\n")
+    const a = document.createElement("a")
+    const filename = `logs-session-${(sessionId || "agent").slice(0, 8)}-${new Date().toISOString().slice(0, 10)}.txt`
+    a.href = "data:text/plain;charset=utf-8," + encodeURIComponent(text)
+    a.download = filename
+    a.click()
+  }
+
+  // ── Copy one line ────────────────────────────────────────────────────────
+  const handleCopy = (log) => {
+    const line = `[${log.timestamp}] [${log.level}] ${log.source}: ${log.content}`
+    navigator.clipboard.writeText(line)
     setCopiedId(log.id)
     setTimeout(() => setCopiedId(null), 2000)
   }
 
-  // Download logs as text
-  const handleDownloadLogs = () => {
-    const logsText = filteredLogs
-      .map(log => `[${log.timestamp}] [${log.level}] ${log.source}: ${log.message}`)
-      .join("\n")
+  // ── Page title ────────────────────────────────────────────────────────────
+  const pageTitle = sessionId
+    ? "Session Logs"
+    : agentId
+      ? "Agent Sessions"
+      : "Logs"
 
-    const element = document.createElement("a")
-    element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(logsText))
-    element.setAttribute("download", `logs-${new Date().toISOString().split("T")[0]}.txt`)
-    element.style.display = "none"
-    document.body.appendChild(element)
-    element.click()
-    document.body.removeChild(element)
-  }
-
-  return (
-    <Layout>
-      <Container>
-        {/* Header */}
-        <div style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: theme.spacing[6],
-          paddingBottom: theme.spacing[4],
-          borderBottom: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[4] }}>
+  // ─────────────────────────────────────────────────────────────────────────
+  //  RENDER: Agent-level session list (when no sessionId provided)
+  // ─────────────────────────────────────────────────────────────────────────
+  if (!sessionId && agentId) {
+    return (
+      <Layout>
+        <Container>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "24px" }}>
             <Button
               variant="outline"
               size="md"
               leadingIcon={ChevronLeft}
-              onClick={() => navigate("/work")}
+              onClick={() => navigate(-1)}
             >
               Back
             </Button>
-            <div>
-              <h1 style={{
-                fontSize: theme.typography.fontSize.xl2,
-                fontWeight: theme.typography.fontWeight.bold,
-                color: theme.colors.foreground,
-                margin: 0,
-              }}>
-                Execution Logs
+            <h1 style={{ fontSize: "1.2em", fontWeight: 700, color: theme.colors.foreground, margin: 0 }}>
+              Agent Sessions
+            </h1>
+          </div>
+
+          {loading && <div style={{ color: theme.colors.muted_foreground, padding: "40px", textAlign: "center" }}>Loading…</div>}
+          {error && <div style={{ color: theme.colors.destructive, padding: "40px", textAlign: "center" }}>{error}</div>}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {sessions.map(s => (
+              <div
+                key={s.session_id}
+                onClick={() => navigate(`/logs?session=${s.session_id}&agent=${agentId}`)}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "12px 16px",
+                  backgroundColor: theme.colors.neutral[900],
+                  border: `1px solid ${theme.colors.border}`,
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  transition: "border-color 0.15s",
+                }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = theme.colors.primary[500]}
+                onMouseLeave={e => e.currentTarget.style.borderColor = theme.colors.border}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <Layers size={16} style={{ color: theme.colors.primary[400] }} />
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: "0.9em", color: theme.colors.foreground }}>
+                      {s.title || s.session_id.slice(0, 24) + "…"}
+                    </div>
+                    <div style={{ fontSize: "0.75em", color: theme.colors.muted_foreground, marginTop: "2px" }}>
+                      {formatFullTs(s.last_activity || s.created_at)}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.8em", color: theme.colors.muted_foreground }}>
+                  <FileText size={13} />
+                  {s.log_count} entries
+                </div>
+              </div>
+            ))}
+            {!loading && sessions.length === 0 && (
+              <div style={{ textAlign: "center", padding: "60px", color: theme.colors.muted_foreground, fontSize: "0.9em" }}>
+                No sessions with logged activity yet.
+              </div>
+            )}
+          </div>
+        </Container>
+      </Layout>
+    )
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  RENDER: Session-level terminal log viewer
+  // ─────────────────────────────────────────────────────────────────────────
+  return (
+    <Layout>
+      <Container>
+        {/* ── Header ── */}
+        <div style={{
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          marginBottom: "20px",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <Button
+              variant="outline"
+              size="md"
+              leadingIcon={ChevronLeft}
+              onClick={() => navigate(-1)}
+            >
+              Back
+            </Button>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <Terminal size={18} style={{ color: theme.colors.primary[400] }} />
+              <h1 style={{ fontSize: "1.1em", fontWeight: 700, color: theme.colors.foreground, margin: 0 }}>
+                {pageTitle}
               </h1>
             </div>
+            {lastFetched && (
+              <span style={{ fontSize: "0.72em", color: theme.colors.muted_foreground }}>
+                fetched {formatTs(lastFetched.toISOString())}
+              </span>
+            )}
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <button
+              onClick={fetchLogs}
+              disabled={loading}
+              title="Refresh"
+              style={{
+                background: "none", border: `1px solid #1e293b`, borderRadius: "6px",
+                cursor: loading ? "not-allowed" : "pointer",
+                color: "#64748b", padding: "6px 10px", display: "flex", alignItems: "center", gap: "5px",
+                fontSize: "0.8em",
+              }}
+            >
+              <RefreshCw size={13} style={{ animation: loading ? "spin 1s linear infinite" : "none" }} />
+              Refresh
+            </button>
+
+            <button
+              onClick={handleDownload}
+              disabled={filtered.length === 0}
+              title={`Download ${filtered.length} log entries`}
+              style={{
+                background: "#1e293b", border: "1px solid #334155", borderRadius: "6px",
+                cursor: filtered.length === 0 ? "not-allowed" : "pointer",
+                color: "#94a3b8", padding: "6px 12px", display: "flex", alignItems: "center", gap: "5px",
+                fontSize: "0.8em", opacity: filtered.length === 0 ? 0.5 : 1,
+              }}
+            >
+              <Download size={13} />
+              Download ({filtered.length})
+            </button>
           </div>
         </div>
 
-        {/* Terminal View */}
-        <Card
-          style={{
-            padding: theme.spacing[6],
-            border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[800]}`,
-            borderRadius: theme.borderRadius.md,
-            backgroundColor: "#0f172a", // Dark blue-black like terminal
-            fontFamily: '"Fira Code", "Courier New", monospace',
-            color: "#e2e8f0",
-            overflow: "hidden",
-            minHeight: "600px",
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          {/* Terminal Header - Window Controls + Search/Filter */}
+        {/* ── Terminal Card ── */}
+        <Card style={{
+          padding: 0,
+          border: "1px solid #1e293b",
+          borderRadius: "10px",
+          backgroundColor: "#0d1117",
+          fontFamily: '"Fira Code", "JetBrains Mono", "Courier New", monospace',
+          color: "#e2e8f0",
+          overflow: "hidden",
+          minHeight: "600px",
+          display: "flex",
+          flexDirection: "column",
+        }}>
+          {/* ── Terminal chrome ── */}
           <div style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: theme.spacing[3],
-            marginBottom: theme.spacing[4],
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "10px 16px",
+            backgroundColor: "#161b22",
+            borderBottom: "1px solid #21262d",
           }}>
-            {/* Window Controls - Top Line */}
-            <div style={{
-              display: "flex",
-              gap: theme.spacing[2],
-              alignItems: "center",
-            }}>
-              <div style={{
-                width: "12px",
-                height: "12px",
-                borderRadius: "50%",
-                backgroundColor: "#ef4444",
-              }} />
-              <div style={{
-                width: "12px",
-                height: "12px",
-                borderRadius: "50%",
-                backgroundColor: "#eab308",
-              }} />
-              <div style={{
-                width: "12px",
-                height: "12px",
-                borderRadius: "50%",
-                backgroundColor: "#22c55e",
-              }} />
+            <div style={{ display: "flex", gap: "6px" }}>
+              <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#ef4444" }} />
+              <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#eab308" }} />
+              <div style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#22c55e" }} />
             </div>
-
-            {/* Controls Container - Bottom Line */}
-            <div style={{
-              display: "flex",
-              alignItems: "center",
-              gap: theme.spacing[3],
-              paddingBottom: theme.spacing[4],
-              borderBottom: `${theme.borderWidth.sm} solid ${theme.colors.neutral[800]}`,
-              justifyContent: "flex-end",
-            }}>
-              {/* Search Input */}
-              <div style={{
-                display: "flex",
-                alignItems: "center",
-                gap: theme.spacing[2],
-                backgroundColor: "#1e293b",
-                border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[800]}`,
-                borderRadius: theme.borderRadius.sm,
-                padding: `${theme.spacing[2]} ${theme.spacing[3]}`,
-                width: "300px",
-              }}>
-                <Search size={16} style={{ color: "#64748b", flexShrink: 0 }} />
-                <input
-                  type="text"
-                  placeholder="Search logs..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{
-                    flex: 1,
-                    backgroundColor: "transparent",
-                    border: "none",
-                    color: "#e2e8f0",
-                    fontSize: theme.typography.fontSize.xs,
-                    outline: "none",
-                    fontFamily: '"Fira Code", "Courier New", monospace',
-                    padding: 0,
-                  }}
-                />
-              </div>
-
-              {/* Level Filter */}
-              <div style={{
-                display: "flex",
-                alignItems: "center",
-                gap: theme.spacing[2],
-                backgroundColor: "#1e293b",
-                border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[800]}`,
-                borderRadius: theme.borderRadius.sm,
-                padding: `${theme.spacing[2]} ${theme.spacing[3]}`,
-                minWidth: "150px",
-              }}>
-                <select
-                  value={selectedLevel}
-                  onChange={(e) => setSelectedLevel(e.target.value)}
-                  style={{
-                    flex: 1,
-                    backgroundColor: "transparent",
-                    border: "none",
-                    color: "#e2e8f0",
-                    fontSize: theme.typography.fontSize.xs,
-                    outline: "none",
-                    fontFamily: '"Fira Code", "Courier New", monospace',
-                    cursor: "pointer",
-                  }}
-                >
-                  {LOG_LEVELS.map(level => (
-                    <option key={level} value={level} style={{ backgroundColor: "#0f172a", color: "#e2e8f0" }}>
-                      {level}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Download Button */}
-              <Button
-                variant="ghost"
-                size="sm"
-                leadingIcon={Download}
-                onClick={handleDownloadLogs}
-                style={{
-                  color: "#64748b",
-                  padding: `${theme.spacing[2]} ${theme.spacing[3]}`,
-                  fontSize: theme.typography.fontSize.xs,
-                  backgroundColor: "#1e293b",
-                  border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[800]}`,
-                  flexShrink: 0,
-                }}
-                title="Download logs"
-              >
-                Download
-              </Button>
-            </div>
+            <span style={{ fontSize: "0.72em", color: "#64748b", fontFamily: "system-ui, sans-serif" }}>
+              prani — agent execution logs
+            </span>
+            <span style={{ fontSize: "0.7em", color: "#475569", fontFamily: "system-ui, sans-serif" }}>
+              {filtered.length} / {logs.length} entries
+            </span>
           </div>
 
-          {/* Logs Container */}
-          {filteredLogs.length > 0 ? (
-            <div
+          {/* ── Filter bar ── */}
+          <div style={{
+            display: "flex", alignItems: "center", gap: "8px",
+            padding: "10px 16px",
+            borderBottom: "1px solid #161b22",
+            backgroundColor: "#0d1117",
+            flexWrap: "wrap",
+          }}>
+            {/* Search */}
+            <div style={{
+              display: "flex", alignItems: "center", gap: "6px",
+              backgroundColor: "#161b22", border: "1px solid #21262d",
+              borderRadius: "5px", padding: "5px 10px", flex: "1 1 200px",
+            }}>
+              <Search size={13} style={{ color: "#64748b", flexShrink: 0 }} />
+              <input
+                type="text"
+                placeholder="Search content, source, event type…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                style={{
+                  flex: 1, background: "transparent", border: "none", outline: "none",
+                  color: "#e2e8f0", fontSize: "0.78em", fontFamily: "inherit",
+                }}
+              />
+              {search && (
+                <button onClick={() => setSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b", padding: 0, lineHeight: 1 }}>×</button>
+              )}
+            </div>
+
+            {/* Level filter */}
+            <select
+              value={levelFilter}
+              onChange={e => setLevelFilter(e.target.value)}
               style={{
-                flex: 1,
-                overflow: "auto",
-                display: "flex",
-                flexDirection: "column",
-                gap: 0,
+                background: "#161b22", border: "1px solid #21262d", borderRadius: "5px",
+                color: levelFilter === "All Levels" ? "#94a3b8" : (LEVEL_CONFIG[levelFilter]?.color || "#e2e8f0"),
+                fontSize: "0.78em", padding: "5px 8px", outline: "none", cursor: "pointer",
+                fontFamily: "inherit",
               }}
             >
-              {filteredLogs.map((log, index) => {
-                const levelStyle = getLevelColor(log.level)
-                const isLast = index === filteredLogs.length - 1
+              {ALL_LEVELS.map(l => (
+                <option key={l} value={l} style={{ backgroundColor: "#0d1117", color: LEVEL_CONFIG[l]?.color || "#e2e8f0" }}>
+                  {l}
+                </option>
+              ))}
+            </select>
 
-                return (
-                  <div
-                    key={log.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: theme.spacing[3],
-                      paddingBottom: isLast ? 0 : theme.spacing[2],
-                      borderBottom: isLast ? "none" : `${theme.borderWidth.sm} solid ${theme.colors.neutral[900]}`,
-                      cursor: "pointer",
-                      transition: `background-color ${theme.transitions.normal}`,
-                      padding: `${theme.spacing[2]} ${theme.spacing[0]}`,
-                      paddingRight: theme.spacing[3],
-                      marginRight: "-" + theme.spacing[3],
-                      marginLeft: "-" + theme.spacing[3],
-                      paddingLeft: theme.spacing[3],
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "#1e293b20"
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "transparent"
-                    }}
-                  >
-                    {/* Line Number */}
-                    <span style={{
-                      color: "#475569",
-                      fontSize: theme.typography.fontSize.xs,
-                      minWidth: "40px",
-                      textAlign: "right",
-                      userSelect: "none",
-                    }}>
-                      {String(index + 1).padStart(4, " ")}
-                    </span>
+            {/* Category filter */}
+            <select
+              value={sourceFilter}
+              onChange={e => setSourceFilter(e.target.value)}
+              style={{
+                background: "#161b22", border: "1px solid #21262d", borderRadius: "5px",
+                color: "#94a3b8",
+                fontSize: "0.78em", padding: "5px 8px", outline: "none", cursor: "pointer",
+                fontFamily: "inherit", maxWidth: "160px",
+              }}
+            >
+              {ALL_SOURCES.map(s => (
+                <option key={s} value={s} style={{ backgroundColor: "#0d1117", color: "#e2e8f0" }}>
+                  {s}
+                </option>
+              ))}
+            </select>
 
-                    {/* Log Content */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: theme.spacing[2],
-                        marginBottom: theme.spacing[1],
-                        flexWrap: "wrap",
-                      }}>
-                        {/* Timestamp */}
-                        <span style={{
-                          color: "#64748b",
-                          fontSize: theme.typography.fontSize.xs,
-                        }}>
-                          {log.timestamp}
-                        </span>
+            {/* Active filter chips */}
+            {(levelFilter !== "All Levels" || sourceFilter !== "All Categories" || search) && (
+              <button
+                onClick={() => { setLevelFilter("All Levels"); setSourceFilter("All Categories"); setSearch("") }}
+                style={{
+                  background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "4px",
+                  color: "#f87171", fontSize: "0.72em", padding: "4px 8px", cursor: "pointer",
+                }}
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
 
-                        {/* Level Badge */}
-                        <span style={{
-                          color: levelStyle.color,
-                          fontSize: theme.typography.fontSize.xs,
-                          fontWeight: "bold",
-                          letterSpacing: "1px",
-                        }}>
-                          [{levelStyle.symbol}]
-                        </span>
+          {/* ── Log rows ── */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "4px 0" }} className="hover-scrollbar">
+            {loading && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "200px", color: "#64748b", gap: "8px" }}>
+                <RefreshCw size={16} style={{ animation: "spin 1s linear infinite" }} />
+                <span style={{ fontSize: "0.85em" }}>Loading logs…</span>
+              </div>
+            )}
 
-                        {/* Source */}
-                        <span style={{
-                          color: "#60a5fa",
-                          fontSize: theme.typography.fontSize.xs,
-                        }}>
-                          {log.source}
-                        </span>
-                      </div>
+            {error && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "200px", color: "#f87171", gap: "8px" }}>
+                <AlertCircle size={16} />
+                <span style={{ fontSize: "0.85em" }}>{error}</span>
+              </div>
+            )}
 
-                      {/* Message */}
-                      <div style={{
-                        color: "#e2e8f0",
-                        fontSize: theme.typography.fontSize.sm,
-                        fontFamily: '"Fira Code", "Courier New", monospace',
-                        wordBreak: "break-word",
-                        whiteSpace: "pre-wrap",
-                        lineHeight: "1.5",
-                      }}>
-                        {log.message}
-                      </div>
-                    </div>
+            {!loading && !error && filtered.length === 0 && (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "200px", color: "#64748b", gap: "8px" }}>
+                <FileText size={24} />
+                <span style={{ fontSize: "0.85em" }}>
+                  {logs.length === 0 ? "No logs yet for this session." : "No logs match your filters."}
+                </span>
+              </div>
+            )}
 
-                    {/* Copy Button */}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        copyToClipboard(log)
-                      }}
-                      style={{
-                        padding: theme.spacing[1],
-                        minWidth: "unset",
-                        color: copiedId === log.id ? "#22c55e" : "#64748b",
-                        flexShrink: 0,
-                      }}
-                      title={copiedId === log.id ? "Copied!" : "Copy log line"}
-                    >
-                      {copiedId === log.id ? <Check size={16} /> : <Copy size={16} />}
-                    </Button>
-                  </div>
-                )
+            {!loading && !error && filtered.map((log, i) => (
+              <LogRow
+                key={log.id}
+                log={log}
+                index={i}
+                copiedId={copiedId}
+                onCopy={handleCopy}
+              />
+            ))}
+          </div>
+
+          {/* ── Footer ── */}
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "8px 16px",
+            borderTop: "1px solid #161b22",
+            backgroundColor: "#0d1117",
+            color: "#475569",
+            fontSize: "0.72em",
+            fontFamily: "system-ui, sans-serif",
+          }}>
+            <span>
+              {filtered.length} log entries · latest first
+            </span>
+            <div style={{ display: "flex", gap: "12px" }}>
+              {Object.entries(LEVEL_CONFIG).map(([lvl, cfg]) => {
+                const count = filtered.filter(l => l.level === lvl).length
+                return count > 0 ? (
+                  <span key={lvl} style={{ color: cfg.color }}>
+                    {lvl} {count}
+                  </span>
+                ) : null
               })}
             </div>
-          ) : (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flex: 1,
-                color: "#64748b",
-              }}
-            >
-              <span style={{ fontSize: theme.typography.fontSize.sm }}>
-                No logs found matching your filters
-              </span>
-            </div>
-          )}
-
-          {/* Terminal Footer */}
-          <div
-            style={{
-              marginTop: theme.spacing[4],
-              paddingTop: theme.spacing[4],
-              borderTop: `${theme.borderWidth.sm} solid ${theme.colors.neutral[800]}`,
-              color: "#64748b",
-              fontSize: theme.typography.fontSize.xs,
-            }}
-          >
-            <span>Total logs: {filteredLogs.length}</span>
           </div>
         </Card>
+
+        <style>{`
+          @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        `}</style>
       </Container>
     </Layout>
   )

@@ -49,6 +49,7 @@ export default function AgentCard({ agent, addToast }) {
         style={{
           display: "flex",
           flexDirection: "column",
+          flex: 1,
           height: "100%",
           padding: theme.spacing[6],
           gap: theme.spacing[4],
@@ -118,8 +119,11 @@ export default function AgentCard({ agent, addToast }) {
           margin: 0,
           marginBottom: theme.spacing[6],
           lineHeight: 1.6,
-          flex: 1,
-          maxWidth: "80%"
+          maxWidth: "80%",
+          display: "-webkit-box",
+          WebkitLineClamp: 3,
+          WebkitBoxOrient: "vertical",
+          overflow: "hidden",
         }}>
           {agent.description}
         </p>
@@ -134,7 +138,7 @@ export default function AgentCard({ agent, addToast }) {
               marginBottom: theme.spacing[4],
             }}
           >
-            {agent.capabilities.map((capability, idx) => (
+            {agent.capabilities.slice(0, 3).map((capability, idx) => (
               <span
                 key={idx}
                 style={{
@@ -154,6 +158,23 @@ export default function AgentCard({ agent, addToast }) {
                 {capability}
               </span>
             ))}
+            {agent.capabilities.length > 3 && (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "4px 12px",
+                  borderRadius: "9999px",
+                  fontSize: "11px",
+                  fontWeight: theme.typography.fontWeight.bold,
+                  backgroundColor: theme.colors.neutral[100],
+                  border: `1px solid ${theme.colors.neutral[300]}`,
+                  color: theme.colors.neutral[700],
+                }}
+              >
+                +{agent.capabilities.length - 3}
+              </span>
+            )}
           </div>
         )}
 
@@ -164,6 +185,7 @@ export default function AgentCard({ agent, addToast }) {
             gap: theme.spacing[4],
             paddingTop: theme.spacing[4],
             borderTop: `1px solid ${theme.colors.neutral[200]}`,
+            marginTop: "auto",
           }}
         >
           {/* Tools Count */}
