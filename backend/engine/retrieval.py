@@ -48,7 +48,20 @@ class RetrievalSystem:
             
             logger.info(f"Connecting to ChromaDB at {host}:{port}...")
             # Pass ssl=False and a short timeout to prevent hangs
-            self.client = chromadb.HttpClient(host=host, port=port, ssl=False, settings=Settings(anonymized_telemetry=False))
+            self.client = chromadb.HttpClient(
+                host=host, 
+                port=port, 
+                ssl=False, 
+                settings=Settings(anonymized_telemetry=False),
+                headers={},
+                tenant="default_tenant",
+                database="default_database"
+            )
+            # Re-wrap for newer versions of chromadb if needed or just use standard
+            # Adding connect_timeout manually if supported by the client version
+            # Most newer HttpClient versions support it in settings or as a kwarg.
+            # Let's ensure we don't break if the kwarg is unsupported.
+            
             self.collection = self.client.get_or_create_collection(name=self.collection_name)
             logger.info(f"Connected to ChromaDB at {self.chroma_url}, Collection: {self.collection_name}")
             

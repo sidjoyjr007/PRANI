@@ -21,33 +21,31 @@ class ToolRegistry:
         self.mcp_service = MCPService()
         self.retrieval = RetrievalSystem()
 
-    def get_agent_allowlist(self, agent) -> Dict[str, List[str]]:
+    def get_agent_allowlist(self, tool_ids: List[UUID] = None, mcp_server_ids: List[UUID] = None) -> Dict[str, List[str]]:
         """
-        Extracts the explicit allowed Tool IDs and MCP Server IDs for an agent.
+        Extracts the explicit allowed Tool IDs and MCP Server IDs.
         """
         return {
-            "allowed_ids": [str(tid) for tid in agent.tool_ids] if agent.tool_ids else [],
-            "allowed_server_ids": [str(sid) for sid in agent.mcp_server_ids] if agent.mcp_server_ids else []
+            "allowed_ids": [str(tid) for tid in tool_ids] if tool_ids else [],
+            "allowed_server_ids": [str(sid) for sid in mcp_server_ids] if mcp_server_ids else []
         }
 
-    def get_assigned_tools(self, agent) -> List[Dict[str, Any]]:
+    def get_assigned_tools(self, tool_ids: List[UUID] = None) -> List[Dict[str, Any]]:
         """
-        Fetches tools explicitly assigned to the agent.
+        Fetches tools explicitly assigned by IDs.
         """
-        # We no longer eagerly load all tools from assigned MCP servers.
-        # We only keep the explicitly linked tools by ID.
-        allowed_ids = [str(tid) for tid in agent.tool_ids] if agent.tool_ids else []
+        allowed_ids = [str(tid) for tid in tool_ids] if tool_ids else []
         
         if not allowed_ids:
             return []
             
         return self.retrieval.get_tools_by_filter(allowed_ids=allowed_ids)
 
-    def search_tools(self, query: str, agent, limit: int = 5) -> List[Dict[str, Any]]:
+    def search_tools(self, query: str, tool_ids: List[UUID] = None, mcp_server_ids: List[UUID] = None, limit: int = 5) -> List[Dict[str, Any]]:
         """
-        Semantically searches for additional relevant tools the agent has access to.
+        Semantically searches for additional relevant tools based on allowed IDs.
         """
-        allowlist = self.get_agent_allowlist(agent)
+        allowlist = self.get_agent_allowlist(tool_ids, mcp_server_ids)
         
         if not allowlist["allowed_ids"] and not allowlist["allowed_server_ids"]:
             return []
@@ -86,22 +84,21 @@ class ToolRegistry:
         tools = self.retrieval.get_tools_by_filter(allowed_ids=[tool_id])
         return tools[0] if tools else None
 
-    def get_tool_by_name(self, tool_name: str, agent) -> Optional[Dict[str, Any]]:
+    def get_tool_by_name(self, tool_name: str, tool_ids: List[UUID] = None, mcp_server_ids: List[UUID] = None) -> Optional[Dict[str, Any]]:
         """
-        Fetches a tool by name, ensuring the agent is allowed to use it.
-        Handles possible 'default_api:' or 'default_api.' prefixes defensively.
+        Fetches a tool by name, ensuring it's in the allowed list.
         """
         clean_name = tool_name.replace("default_api:", "").replace("default_api.", "")
         
         # 1. Check Assigned Tools
-        assigned = self.get_assigned_tools(agent)
+        assigned = self.get_assigned_tools(tool_ids)
         for t in assigned:
             t_name = t.get("name", "").replace("default_api:", "").replace("default_api.", "")
             if t_name == clean_name:
                 return t
         
         # 2. Check Vector Search results
-        results = self.search_tools(query=clean_name, agent=agent, limit=10)
+        results = self.search_tools(query=clean_name, tool_ids=tool_ids, mcp_server_ids=mcp_server_ids, limit=10)
         for t in results:
             t_name = t.get("name", "").replace("default_api:", "")
             if t_name == clean_name:

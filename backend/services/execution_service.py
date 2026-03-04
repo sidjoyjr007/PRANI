@@ -140,7 +140,7 @@ class ExecutionService:
             # 3. Handle Subtask State
             # If there's new user_content (a new request), clear any old state to start fresh
             if user_content and not approved_tool_calls:
-                state_service.clear_plan(str(session_id))
+                await state_service.clear_plan(str(session_id))
                 subtask_state = None
                 # Explicitly notify frontend to clear the plan UI
                 await self.event_bus.emit(self.event_bus.create_event(
@@ -150,7 +150,7 @@ class ExecutionService:
                 ))
             else:
                 # If it's a resume (or no new text), try to load state
-                subtask_state = state_service.load_plan(str(session_id))
+                subtask_state = await state_service.load_plan(str(session_id))
 
             # 4. Instantiate Engine
             loop = AgenticLoop(

@@ -4,6 +4,7 @@ import json
 import logging
 import re
 from typing import AsyncIterator, List, Optional, Dict, Any
+import time
 
 from sqlalchemy.orm import Session
 from pydantic import ValidationError
@@ -55,6 +56,14 @@ class AgenticLoop:
         self.run_id = str(uuid.uuid4())
         self.action_history: List[str] = []
         self.pending_tool_refinement: Optional[Dict] = None
+        
+        # Pre-extract allowed IDs for thread-safe tool retrieval
+        self.allowed_tool_ids = [tid for tid in agent.tool_ids] if agent.tool_ids else []
+        self.allowed_mcp_ids = [sid for sid in agent.mcp_server_ids] if agent.mcp_server_ids else []
+        
+        # Performance trackers
+        self._chunks_since_abort_check = 0
+        self._is_confident_not_garbage = False
 
     def clean_tool_name(self, name: str) -> str:
         if not name: return ""
@@ -62,34 +71,34 @@ class AgenticLoop:
     async def run(self, user_input: str, approved_tool_calls: Optional[List[Dict]] = None) -> None:
         logger.debug(f"AgenticLoop.run: entered. session_id={self.session_id}, has_input={bool(user_input)}, has_approval={bool(approved_tool_calls)}")
         try:
-            # 0. Compact History & Goal Recovery
+            # 0. Start execution immediately for UI responsiveness
+            await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.LOOP_START, metadata={"run_id": self.run_id}, run_id=self.run_id))
+            
+            # 1. Compact History & Goal Recovery (Sequential to avoid session race conditions)
             await self.memory.compact_history(self.llm)
             if not user_input:
                 user_input = self.memory.get_goal_text()
             
             logger.debug(f"Loop run started. session_id={self.session_id}, is_approved_turn={bool(approved_tool_calls)}")
 
-            # 1. Start execution (No more upfront decomposer)
-            await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.LOOP_START, metadata={"run_id": self.run_id}, run_id=self.run_id))
             is_approved_turn = bool(approved_tool_calls)
             
             while self.loop_count < self.max_loops:
                 self.loop_count += 1
                 
-                self.state_service.save_agent_state(self.session_id, "THINKING")
+                await self.state_service.save_agent_state(self.session_id, "THINKING")
                 
-                # Setup Iteration
+                # Setup Iteration - Optimized but sequential to avoid session race conditions
                 status_report = self.subtask_manager.get_status_report()
                 current_task = self.subtask_manager.get_current_task()
                 
                 if current_task and current_task.status == SubtaskStatus.PENDING:
                     self.subtask_manager.mark_in_progress(current_task.id)
-                    # Refresh report after status change
                     status_report = self.subtask_manager.get_status_report()
 
                 tool_defs, system_prompt = await asyncio.to_thread(self._get_tools_and_prompt, user_input, status_report, current_task)
-                
                 context = await asyncio.to_thread(self.memory.get_active_context)
+                
                 self._enrich_context(context, system_prompt)
 
                 logger.info(
@@ -120,26 +129,26 @@ class AgenticLoop:
 
                 # 1. Execute Actions (Highest priority)
                 if tool_calls_buffer:
-                    self.state_service.save_agent_state(self.session_id, "TOOL_EXECUTION")
+                    await self.state_service.save_agent_state(self.session_id, "TOOL_EXECUTION")
                     is_approval_required = await self._execute_tool_calls(tool_calls_buffer, full_content, thoughts, is_approved_turn)
                     if is_approval_required:
-                        self.state_service.save_agent_state(self.session_id, "AWAITING_APPROVAL")
-                        self.state_service.save_plan(self.session_id, self.subtask_manager.to_dict())
+                        await self.state_service.save_agent_state(self.session_id, "AWAITING_APPROVAL")
+                        await self.state_service.save_plan(self.session_id, self.subtask_manager.to_dict())
                         return 
 
-                    self.state_service.save_plan(self.session_id, self.subtask_manager.to_dict())
+                    await self.state_service.save_plan(self.session_id, self.subtask_manager.to_dict())
                     is_approved_turn = False
                     continue 
 
                 # 2. Check complete state
                 if is_complete:
-                    self.state_service.clear_plan(self.session_id)
+                    await self.state_service.clear_plan(self.session_id)
                     await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.MESSAGE, content=full_content, run_id=self.run_id))
                     break 
 
                 # 3. Intermediate Subtask Check
                 if subtask_status:
-                    self.state_service.save_plan(self.session_id, self.subtask_manager.to_dict())
+                    await self.state_service.save_plan(self.session_id, self.subtask_manager.to_dict())
                     continue 
 
                 # 4. We did nothing useful but generated a message (or just stalled out)
@@ -160,25 +169,30 @@ class AgenticLoop:
                     await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.STATUS, content="Summarizing results...", run_id=self.run_id))
                     continue
 
-            self.state_service.clear_agent_state(self.session_id)
+            await self.state_service.clear_agent_state(self.session_id)
             await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.LOOP_COMPLETE, run_id=self.run_id))
             
         except asyncio.CancelledError:
             logger.info(f"Execution cancelled for run {self.run_id}")
             await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.STATUS, content="Cancelled", run_id=self.run_id))
-            self.state_service.clear_agent_state(self.session_id)
+            await self.state_service.clear_agent_state(self.session_id)
             await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.LOOP_COMPLETE, run_id=self.run_id))
             raise  # bubble up to caller to silently close the task
             
         except Exception as e:
             logger.error(f"Loop Error: {e}")
-            self.state_service.clear_agent_state(self.session_id)
+            await self.state_service.clear_agent_state(self.session_id)
             await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.ERROR, content=str(e), run_id=self.run_id))
 
 
     def _get_tools_and_prompt(self, user_input, status_report, current_task, parse_error=""):
         current_subtask_desc = current_task.description if current_task else user_input
-        tool_recs = self.tool_registry.search_tools(query=current_subtask_desc, agent=self.agent, limit=10)
+        tool_recs = self.tool_registry.search_tools(
+            query=current_subtask_desc, 
+            tool_ids=self.allowed_tool_ids, 
+            mcp_server_ids=self.allowed_mcp_ids, 
+            limit=10
+        )
         unique_tools = {}
         for t in tool_recs:
             name = self.clean_tool_name(t["name"])
@@ -303,15 +317,18 @@ class AgenticLoop:
             current_message = ""
             streamed_tools = []
             
+
             # State tracker for streaming chunks
             in_thinking_tag = False
             error_occurred = False
             
             try:
                 async for chunk in self._call_llm_stream(context, tools=tool_defs):
-                    # 0. Abort Signal Check: Check if user or system aborted this run
-                    if self.loop_count % 5 == 0: # Check every few chunks to optimize
-                        current_status = self.state_service.load_agent_state(self.session_id)
+                    # 0. Abort Signal Check
+                    self._chunks_since_abort_check += 1
+                    if self._chunks_since_abort_check >= 50:
+                        self._chunks_since_abort_check = 0
+                        current_status = await self.state_service.load_agent_state(self.session_id)
                         if current_status == "ABORTED":
                             logger.warning(f"loop.run: Abort signal detected for {self.session_id}")
                             await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.ERROR, content="Execution Aborted.", run_id=self.run_id))
@@ -330,38 +347,29 @@ class AgenticLoop:
                                 if start_idx != -1:
                                     msg_part = text_to_process[:start_idx]
                                     current_message += msg_part
-                                    # Sniff the ACCUMULATED message, not just the chunk
-                                    if not self._is_garbage_json(current_message):
+                                    if msg_part and not self._is_garbage_json(current_message):
                                         await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.MESSAGE_CHUNK, content=msg_part, run_id=self.run_id))
-                                    else:
-                                        # If accumulator turned into garbage, stop streaming to MESSAGE and move to thoughts
-                                        current_thought += msg_part
-                                        await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.THOUGHT_CHUNK, content=msg_part, run_id=self.run_id))
                                     
                                     in_thinking_tag = True
                                     text_to_process = text_to_process[start_idx + len("<thinking>"):]
                                 else:
                                     current_message += text_to_process
-                                    if not self._is_garbage_json(current_message):
+                                    if text_to_process and not self._is_garbage_json(current_message):
                                         await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.MESSAGE_CHUNK, content=text_to_process, run_id=self.run_id))
-                                    else:
-                                        current_thought += text_to_process
-                                        await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.THOUGHT_CHUNK, content=text_to_process, run_id=self.run_id))
                                     text_to_process = ""
                             else:
                                 end_idx = text_to_process.find("</thinking>")
                                 if end_idx != -1:
                                     if end_idx > 0:
                                         thought_part = text_to_process[:end_idx]
-                                        current_thought += thought_part
                                         await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.THOUGHT_CHUNK, content=thought_part, run_id=self.run_id))
                                     
                                     in_thinking_tag = False
                                     text_to_process = text_to_process[end_idx + len("</thinking>"):]
                                 else:
-                                    current_thought += text_to_process
                                     await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.THOUGHT_CHUNK, content=text_to_process, run_id=self.run_id))
                                     text_to_process = ""
+
 
             except Exception as e:
                 logger.error(f"Action parse attempt {attempt+1} stream error: {e}")
@@ -461,13 +469,13 @@ class AgenticLoop:
 
         if self.agent.human_in_loop and not is_approved and requires_approval:
             # IMPORTANT: Save state with the PRE-EXECUTION status to ensure we can resume
-            self.state_service.save_agent_state(self.session_id, "AWAITING_APPROVAL")
+            await self.state_service.save_agent_state(self.session_id, "AWAITING_APPROVAL")
             self.memory.add_message(role="assistant", content=display_text, tool_calls=tool_calls)
             await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.APPROVAL_REQUIRED, metadata={"tool_calls": [t.dict() for t in tool_calls]}, run_id=self.run_id))
             return True
 
         # If we reach here, we are approved or it's internal
-        self.state_service.save_agent_state(self.session_id, "TOOL_EXECUTION")
+        await self.state_service.save_agent_state(self.session_id, "TOOL_EXECUTION")
         
         # Only add a new message to memory if it's an internal tool that skipped the pause block above
         if not is_approved:
@@ -488,7 +496,7 @@ class AgenticLoop:
                             self.subtask_manager.add_subtask(Subtask(id=new_id, description=desc))
                             self.subtask_manager.execution_order.append(new_id)
                     
-                    self.state_service.save_plan(self.session_id, self.subtask_manager.to_dict())
+                    await self.state_service.save_plan(self.session_id, self.subtask_manager.to_dict())
                     res = f"Successfully added {len(tasks)} tasks to the plan."
                     
                     # Sync to frontend
@@ -517,7 +525,7 @@ class AgenticLoop:
                         else:
                             current_task.result = result_msg
                             
-                        self.state_service.save_plan(self.session_id, self.subtask_manager.to_dict())
+                        await self.state_service.save_plan(self.session_id, self.subtask_manager.to_dict())
                         res = f"Updated current task '{current_task.description}' to {status}."
                         
                         # Sync to frontend
@@ -531,7 +539,7 @@ class AgenticLoop:
                 continue
 
             logger.debug(f"_execute_tool_calls: executing {t_name}")
-            tool_rec = await asyncio.to_thread(self.tool_registry.get_tool_by_name, t_name, self.agent)
+            tool_rec = await asyncio.to_thread(self.tool_registry.get_tool_by_name, t_name, self.allowed_tool_ids, self.allowed_mcp_ids)
             
             if not is_internal_only:
                 # 0. Mission Control Status: Provide immediate feedback to the UI
@@ -593,39 +601,43 @@ class AgenticLoop:
         """
         Regex-based 'Absolute Zero Garbage' cleaner 3.2 (High-Sensitivity).
         Aggressively flags JSON fragments, especially in short strings.
+        Optimized: Returns False immediately if we've already deemed this stream 'clean'.
         """
+        if self._is_confident_not_garbage:
+            return False
+            
         import re
         t = text.strip()
         if not t: return False
         
         # 1. Catch definite JSON starts or fragments (even short ones)
-        # e.g. "{}", '{"', '",', '}]', ', {'
         if t in ["{}", "[]", '{"', '["', '},', '],', '}]']:
             return True
         
         # 2. Key-value pattern detection
         json_pattern = r'\"[a-zA-Z0-9_\-]+\"\s*:\s*[\"\{\[\d]'
         if re.search(json_pattern, t):
+            # If we see a key-value pair, it's definitely garbage for the message field
             return True
 
         # 3. Density Check: Very strict for short strings
-        # Technical chars: { } [ ] " : \ ,
         tech_chars = len(re.findall(r"[\{\}\[\]\"\:,\\]", t))
         total = len(t)
         
+        is_garbage = False
         if total < 20:
-            # Extreme density for short remnants
-            if (tech_chars / total) > 0.6:
-                return True
+            if (tech_chars / total) > 0.6: is_garbage = True
         elif total < 50:
-            if (tech_chars / total) > 0.4:
-                return True
+            if (tech_chars / total) > 0.4: is_garbage = True
         else:
-            # Normal density for longer strings
-            if (tech_chars / total) > 0.25:
-                return True
-        
-        return False
+            if (tech_chars / total) > 0.25: is_garbage = True
+            
+        # Optimization: If we have > 100 characters and it's NOT garbage, 
+        # we stop checking for the rest of this message stream.
+        if not is_garbage and total > 100:
+            self._is_confident_not_garbage = True
+            
+        return is_garbage
 
     def _scrub_metadata(self, data: Any) -> Any:
         """

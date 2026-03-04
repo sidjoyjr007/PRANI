@@ -118,22 +118,22 @@ def get_messages(conversation_id: UUID, db: Session = Depends(get_db), current_u
 from services.state_service import StateService
 
 @router.get("/{conversation_id}/plan")
-def get_conversation_plan(conversation_id: UUID, current_user: User = Depends(get_current_user)):
+async def get_conversation_plan(conversation_id: UUID, current_user: User = Depends(get_current_user)):
     state_service = StateService()
-    plan = state_service.load_plan(str(conversation_id))
+    plan = await state_service.load_plan(str(conversation_id))
     if not plan:
         return {"plan": None}
     return {"plan": plan}
 
 @router.get("/{conversation_id}/state")
-def get_conversation_state(conversation_id: UUID, current_user: User = Depends(get_current_user)):
+async def get_conversation_state(conversation_id: UUID, current_user: User = Depends(get_current_user)):
     """
     Returns the current agent execution state (e.g. IDLE, THINKING, TOOL_EXECUTION, AWAITING_APPROVAL)
     and the current execution plan. Used by UI to reconstruct view gracefully.
     """
     state_service = StateService()
-    plan = state_service.load_plan(str(conversation_id))
-    agent_state = state_service.load_agent_state(str(conversation_id))
+    plan = await state_service.load_plan(str(conversation_id))
+    agent_state = await state_service.load_agent_state(str(conversation_id))
     return {"plan": plan, "agent_state": agent_state or "IDLE"}
 
 from schemas.execution import ApprovalRequest

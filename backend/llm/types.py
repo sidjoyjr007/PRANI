@@ -25,6 +25,7 @@ class ProviderMessage(BaseModel):
     name: Optional[str] = None
     tool_calls: Optional[List[ToolCall]] = None
     tool_call_id: Optional[str] = None
+    tokens: Optional[int] = None
 
 class LLMResponse(BaseModel):
     """

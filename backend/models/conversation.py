@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Integer
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -27,6 +27,7 @@ class Message(Base):
     conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id"), nullable=False)
     role = Column(String, nullable=False) # user, assistant, system
     content = Column(JSONB, nullable=False) # Rich content
+    tokens = Column(Integer, nullable=True) # Pre-calculated token count
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

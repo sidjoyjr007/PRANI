@@ -45,6 +45,7 @@ class AgentEvent(BaseModel):
         use_enum_values = True
 
 import json
+import asyncio
 import redis.asyncio as redis
 import logging
 from config.settings import settings
@@ -102,9 +103,22 @@ class EventBus:
 
     async def emit(self, event: AgentEvent):
         """
-        Asynchronously publish the AgentEvent JSON payload to the corresponding Redis channel
-        and persist it to the agent_logs table for later retrieval.
+        Asynchronously publish the AgentEvent JSON payload to the corresponding Redis channel.
+        For non-chunk events, also persists to the agent_logs table in the background.
         """
+        # 1. Early Exit for High-Frequency Chunk Events (Performance Optimization)
+        # Bypasses logging overhead and task scheduling for streaming characters.
+        if event.type in (AgentEventType.MESSAGE_CHUNK, AgentEventType.THOUGHT_CHUNK):
+            try:
+                channel = f"session:{event.session_id}"
+                payload = event.model_dump_json()
+                await self.redis_client.publish(channel, payload)
+                return 
+            except Exception as e:
+                logger.error(f"Failed to publish chunk to Redis: {e}")
+                return
+
+        # 2. Standard Event Handling
         try:
             channel = f"session:{event.session_id}"
             payload = event.model_dump_json()
@@ -113,11 +127,11 @@ class EventBus:
         except Exception as e:
             logger.error(f"Failed to publish event to Redis: {e}")
 
-        # Persist to DB (best-effort — never let a DB failure block the agent)
+        # Persist to DB (background/best-effort — never let a DB failure block the agent)
         try:
-            await self._persist_log(event)
+            asyncio.create_task(self._persist_log(event))
         except Exception as e:
-            logger.error(f"Failed to persist log entry: {e}")
+            logger.error(f"Failed to schedule log entry persistence: {e}")
 
     async def _persist_log(self, event: AgentEvent) -> None:
         """Write the event to the agent_logs table."""

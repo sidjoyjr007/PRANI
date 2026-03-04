@@ -1,7 +1,7 @@
 import json
 import logging
 from typing import Optional, Dict, Any
-import redis
+import redis.asyncio as redis
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -17,14 +17,14 @@ class StateService:
     def _get_key(self, session_id: str) -> str:
         return f"prani:plan:{session_id}"
 
-    def save_plan(self, session_id: str, plan_dict: Dict[str, Any], expire_seconds: int = 7200):
+    async def save_plan(self, session_id: str, plan_dict: Dict[str, Any], expire_seconds: int = 7200):
         if not self.redis_client:
             logger.warning("Redis client not initialized. Cannot save plan.")
             return
 
         key = self._get_key(session_id)
         try:
-            self.redis_client.setex(
+            await self.redis_client.setex(
                 name=key,
                 time=expire_seconds,
                 value=json.dumps(plan_dict)
@@ -33,13 +33,13 @@ class StateService:
         except Exception as e:
             logger.error(f"Error saving plan to Redis for session {session_id}: {e}")
 
-    def load_plan(self, session_id: str) -> Optional[Dict[str, Any]]:
+    async def load_plan(self, session_id: str) -> Optional[Dict[str, Any]]:
         if not self.redis_client:
             return None
 
         key = self._get_key(session_id)
         try:
-            val = self.redis_client.get(key)
+            val = await self.redis_client.get(key)
             if val:
                 logger.debug(f"Loaded plan state from Redis for session {session_id}")
                 return json.loads(val)
@@ -48,13 +48,13 @@ class StateService:
             logger.error(f"Error loading plan from Redis for session {session_id}: {e}")
             return None
 
-    def clear_plan(self, session_id: str):
+    async def clear_plan(self, session_id: str):
         if not self.redis_client:
             return
 
         key = self._get_key(session_id)
         try:
-            self.redis_client.delete(key)
+            await self.redis_client.delete(key)
             logger.debug(f"Cleared plan state from Redis for session {session_id}")
         except Exception as e:
             logger.error(f"Error clearing plan from Redis for session {session_id}: {e}")
@@ -62,25 +62,25 @@ class StateService:
     def _get_state_key(self, session_id: str) -> str:
         return f"prani:agent_state:{session_id}"
 
-    def save_agent_state(self, session_id: str, state: str, expire_seconds: int = 7200):
+    async def save_agent_state(self, session_id: str, state: str, expire_seconds: int = 7200):
         if not self.redis_client: return
         try:
-            self.redis_client.setex(name=self._get_state_key(session_id), time=expire_seconds, value=state)
+            await self.redis_client.setex(name=self._get_state_key(session_id), time=expire_seconds, value=state)
         except Exception as e:
             logger.error(f"Error saving agent state to Redis: {e}")
 
-    def load_agent_state(self, session_id: str) -> Optional[str]:
+    async def load_agent_state(self, session_id: str) -> Optional[str]:
         if not self.redis_client: return None
         try:
-            val = self.redis_client.get(self._get_state_key(session_id))
+            val = await self.redis_client.get(self._get_state_key(session_id))
             return val.decode("utf-8") if val else None
         except Exception as e:
             logger.error(f"Error loading agent state from Redis: {e}")
             return None
 
-    def clear_agent_state(self, session_id: str):
+    async def clear_agent_state(self, session_id: str):
         if not self.redis_client: return
         try:
-            self.redis_client.delete(self._get_state_key(session_id))
+            await self.redis_client.delete(self._get_state_key(session_id))
         except Exception as e:
             logger.error(f"Error clearing agent state from Redis: {e}")
