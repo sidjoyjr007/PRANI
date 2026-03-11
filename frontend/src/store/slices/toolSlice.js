@@ -61,6 +61,18 @@ export const deleteTool = createAsyncThunk(
     }
 )
 
+export const syncTool = createAsyncThunk(
+    'tools/syncTool',
+    async (id, { rejectWithValue }) => {
+        try {
+            const response = await toolService.syncTool(id)
+            return response
+        } catch (error) {
+            return rejectWithValue(error.response?.data || 'Failed to sync tool')
+        }
+    }
+)
+
 const initialState = {
     items: [],
     total: 0,
@@ -152,6 +164,29 @@ const toolSlice = createSlice({
                 }
             })
             .addCase(deleteTool.rejected, (state, action) => {
+                state.error = action.payload
+            })
+
+            // Sync Tool
+            .addCase(syncTool.pending, (state) => {
+                state.isSaving = true
+                state.error = null
+            })
+            .addCase(syncTool.fulfilled, (state, action) => {
+                state.isSaving = false
+                const updatedTool = action.payload
+                // Update in list
+                const idx = state.items.findIndex(item => item.id === updatedTool.id)
+                if (idx !== -1) {
+                    state.items[idx] = updatedTool
+                }
+                // Update current
+                if (state.currentTool && state.currentTool.id === updatedTool.id) {
+                    state.currentTool = updatedTool
+                }
+            })
+            .addCase(syncTool.rejected, (state, action) => {
+                state.isSaving = false
                 state.error = action.payload
             })
     },

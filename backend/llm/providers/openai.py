@@ -8,23 +8,15 @@ from ..types import ToolCall
 class OpenAIProvider(LLMProvider):
     def __init__(self, model: str, headers: Dict[str, Any], config: Dict[str, Any]):
         super().__init__(model, headers, config)
-        self.api_key = config.get("OPENAI_API_KEY") or config.get("API_KEY")
         self.base_url = config.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
         
-    def _prepare_headers(self):
-        headers = self.headers.copy()
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        headers["Content-Type"] = "application/json"
-        return headers
-
     def _prepare_messages(self, messages: List[ProviderMessage]):
         # OpenAI expects {role, content}
         formatted = []
         for m in messages:
             msg = {"role": m.role, "content": m.content}
             if m.tool_calls:
-                 msg["tool_calls"] = m.tool_calls # Raw dicts or model_dump? Pydanticv2 model_dump
+                 msg["tool_calls"] = [tc.model_dump() if hasattr(tc, 'model_dump') else tc.dict() if hasattr(tc, 'dict') else tc for tc in m.tool_calls]
             if m.tool_call_id:
                  msg["tool_call_id"] = m.tool_call_id
             if m.name:
@@ -40,7 +32,7 @@ class OpenAIProvider(LLMProvider):
             "stream": False
         }
         
-        response = requests.post(url, headers=self._prepare_headers(), json=payload)
+        response = requests.post(url, headers=self.headers, json=payload)
         response.raise_for_status()
         data = response.json()
         
@@ -63,7 +55,7 @@ class OpenAIProvider(LLMProvider):
             "stream": True
         }
         
-        with requests.post(url, headers=self._prepare_headers(), json=payload, stream=True) as response:
+        with requests.post(url, headers=self.headers, json=payload, stream=True) as response:
             response.raise_for_status()
             for line in response.iter_lines():
                 if line:

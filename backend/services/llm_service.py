@@ -137,9 +137,7 @@ class LLMService:
             if provider == "OpenAI":
                 return self._test_openai(model, headers, prompt)
             elif provider == "Gemini":
-                # Special handling: Gemini key is often query param or header
-                # If header "x-goog-api-key" is set, great.
-                return self._test_gemini(model, headers, prompt, resolved_secrets)
+                return self._test_gemini(model, headers, prompt)
             elif provider == "Anthropic" or provider == "Claude":
                  return self._test_anthropic(model, headers, prompt)
             elif provider == "HuggingFace":
@@ -161,35 +159,10 @@ class LLMService:
         resp = requests.post(url, headers=headers, json=payload, timeout=10)
         return self._handle_response(resp)
 
-    def _test_gemini(self, model: str, headers: dict, prompt: str, secrets: dict):
-        # Google Generative AI REST API requires API key as query parameter
-        # URL pattern: https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key=API_KEY
-        
-        # Extract API key from headers or secrets
-        api_key = None
-        
-        # Check common header names
-        if "x-goog-api-key" in headers:
-            api_key = headers.pop("x-goog-api-key")  # Remove from headers, will use in query
-        elif "Authorization" in headers:
-            # If Authorization header has "Bearer TOKEN", extract TOKEN
-            auth = headers.pop("Authorization")
-            if auth.startswith("Bearer "):
-                api_key = auth.replace("Bearer ", "")
-        
-        # If not in headers, check secrets directly
-        if not api_key:
-            # Common env var names for Gemini
-            for key_name in ["GEMINI_API_KEY", "GOOGLE_API_KEY", "API_KEY"]:
-                if key_name in secrets:
-                    api_key = secrets[key_name]
-                    break
-        
-        if not api_key:
-            return {"success": False, "error": "Gemini API key not found. Please add it to environment variables or headers."}
-        
-        # Build URL with API key as query parameter
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    def _test_gemini(self, model: str, headers: dict, prompt: str):
+        # Gemini accepts the key via the x-goog-api-key header or Authorization: Bearer
+        # If the user configured it in headers with {{env.KEY}}, it will be injected here.
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         
         payload = {
             "contents": [{
@@ -197,10 +170,7 @@ class LLMService:
             }]
         }
         
-        # Don't send Authorization header to Gemini (key is in query param)
-        clean_headers = {k: v for k, v in headers.items() if k.lower() != "authorization"}
-        
-        resp = requests.post(url, headers=clean_headers, json=payload, timeout=10)
+        resp = requests.post(url, headers=headers, json=payload, timeout=10)
         return self._handle_response(resp)
 
     def _test_anthropic(self, model: str, headers: dict, prompt: str):

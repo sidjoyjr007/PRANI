@@ -28,6 +28,12 @@ class MCPServer(Base):
     env_vars = Column(JSONB, default=list)
     
     is_active = Column(Boolean, default=True)
+    
+    # Sync Status Tracking
+    sync_status = Column(String(50), default="PENDING") # PENDING, SYNCED, FAILED
+    sync_error = Column(Text, nullable=True)
+    last_synced_at = Column(DateTime, nullable=True)
+    
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     

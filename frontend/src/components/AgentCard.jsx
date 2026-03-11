@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card"
 import { Text } from "@/components/ui/text"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Trash2 } from "lucide-react"
+import { Trash2, MessageSquare } from "lucide-react"
 import DeleteResourceDialog from "@/components/DeleteResourceDialog"
 import { deleteAgent } from "@/store/slices/agentSlice"
 
@@ -85,6 +85,22 @@ export default function AgentCard({ agent, addToast }) {
               zIndex: 10,
             }}
           >
+            {/* Chat Button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate("/work", { state: { agentId: agent.id } });
+              }}
+              style={{
+                color: theme.colors.primary[600],
+                padding: theme.spacing[2]
+              }}
+              title="Chat with Agent"
+            >
+              <MessageSquare size={18} />
+            </Button>
             {/* Delete Button */}
             <Button
               variant="ghost"

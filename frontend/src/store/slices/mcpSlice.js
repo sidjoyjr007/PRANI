@@ -61,6 +61,18 @@ export const deleteMCP = createAsyncThunk(
     }
 )
 
+export const syncMCP = createAsyncThunk(
+    'mcps/syncMCP',
+    async (id, { rejectWithValue }) => {
+        try {
+            const response = await mcpService.syncMCP(id)
+            return response
+        } catch (error) {
+            return rejectWithValue(error.response?.data || 'Failed to sync MCP Server')
+        }
+    }
+)
+
 const initialState = {
     items: [],
     total: 0,
@@ -152,6 +164,29 @@ const mcpSlice = createSlice({
                 }
             })
             .addCase(deleteMCP.rejected, (state, action) => {
+                state.error = action.payload
+            })
+            
+            // Sync MCP
+            .addCase(syncMCP.pending, (state) => {
+                state.isSaving = true
+                state.error = null
+            })
+            .addCase(syncMCP.fulfilled, (state, action) => {
+                state.isSaving = false
+                const updatedMCP = action.payload
+                // Update in list
+                const idx = state.items.findIndex(item => item.id === updatedMCP.id)
+                if (idx !== -1) {
+                    state.items[idx] = updatedMCP
+                }
+                // Update current
+                if (state.currentMCP && state.currentMCP.id === updatedMCP.id) {
+                    state.currentMCP = updatedMCP
+                }
+            })
+            .addCase(syncMCP.rejected, (state, action) => {
+                state.isSaving = false
                 state.error = action.payload
             })
     },

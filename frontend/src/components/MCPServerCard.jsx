@@ -5,9 +5,10 @@ import { useDispatch } from "react-redux"
 import { Card } from "@/components/ui/card"
 import { Text } from "@/components/ui/text"
 import { Button } from "@/components/ui/button"
-import { Trash2, Play, Server, Database, FileText, Globe } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Trash2, Play, Server, Database, FileText, Globe, RefreshCw, AlertCircle, CheckCircle2 } from "lucide-react"
 import DeleteResourceDialog from "@/components/DeleteResourceDialog"
-import { deleteMCP } from "@/store/slices/mcpSlice"
+import { deleteMCP, syncMCP } from "@/store/slices/mcpSlice"
 
 export default function MCPServerCard({ server, addToast }) {
   const theme = useTheme()
@@ -37,6 +38,28 @@ export default function MCPServerCard({ server, addToast }) {
   const handleTest = (e) => {
     e.stopPropagation()
     navigate(`/test-mcp-server/${server.id}`)
+  }
+
+  const handleSync = (e) => {
+    e.stopPropagation()
+    if (!server?.id) return
+
+    // Create an optimisitic updating state locally or just dispatch
+    addToast("Info", `Attempting to sync ${server.name}...`, "info")
+    dispatch(syncMCP(server.id))
+      .unwrap()
+      .then((payload) => {
+        if (payload?.sync_status === "FAILED") {
+          const errorMsg = payload.sync_error || "Sync failed. Check the server configuration."
+          addToast("Error", `MCP Server "${server.name}" failed to sync: ${errorMsg}`, "error")
+        } else {
+          addToast("Success", `MCP Server "${server.name}" synced successfully.`, "success")
+        }
+      })
+      .catch((error) => {
+        const errorMsg = typeof error === 'string' ? error : (error.detail || "Failed to sync MCP Server")
+        addToast("Error", errorMsg, "error")
+      })
   }
 
   if (!server) return null
@@ -97,6 +120,22 @@ export default function MCPServerCard({ server, addToast }) {
               zIndex: 10,
             }}
           >
+            {/* Sync Button */}
+            {server.sync_status === "FAILED" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleSync}
+                style={{
+                  padding: theme.spacing[2],
+                  color: theme.colors.warning[600],
+                }}
+                title="Retry Sync"
+              >
+                <RefreshCw size={18} />
+              </Button>
+            )}
+
             {/* Test Button */}
             <Button
               variant="ghost"
@@ -143,6 +182,34 @@ export default function MCPServerCard({ server, addToast }) {
               {server.name}
             </Text>
           </div>
+        </div>
+
+        {/* Sync Status Badge */}
+        <div style={{ display: 'flex', alignItems: 'center', marginTop: theme.spacing[2], gap: theme.spacing[2] }}>
+          {server.sync_status === "SYNCED" && (
+            <Badge variant="success" style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+              <CheckCircle2 size={12} /> Connected & Indexed
+            </Badge>
+          )}
+
+          {server.sync_status === "PENDING" && (
+            <Badge variant="outline" style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+              <RefreshCw size={12} className="animate-spin" /> Syncing...
+            </Badge>
+          )}
+
+          {server.sync_status === "FAILED" && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <Badge variant="destructive" style={{ display: "flex", alignItems: "center", gap: "4px", width: 'fit-content' }}>
+                <AlertCircle size={12} /> Sync Failed
+              </Badge>
+              {server.sync_error && (
+                <Text size="xs" style={{ color: theme.colors.destructive[500], fontSize: '0.7rem', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }} title={server.sync_error}>
+                  {server.sync_error}
+                </Text>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Server Description */}

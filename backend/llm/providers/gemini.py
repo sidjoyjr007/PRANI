@@ -10,12 +10,14 @@ class GeminiProvider(LLMProvider):
 
     def __init__(self, model: str, headers: Dict[str, Any], config: Dict[str, Any]):
         super().__init__(model, headers, config)
-        self.api_key = config.get("GEMINI_API_KEY") or config.get("GOOGLE_API_KEY") or config.get("API_KEY")
         self.base_url = "https://generativelanguage.googleapis.com/v1beta"
 
     def _prepare_url(self, stream=False):
         action = "streamGenerateContent" if stream else "generateContent"
-        return f"{self.base_url}/models/{self.model}:{action}?key={self.api_key}&alt=sse" if stream else f"{self.base_url}/models/{self.model}:{action}?key={self.api_key}"
+        url = f"{self.base_url}/models/{self.model}:{action}"
+        if stream:
+            url += "?alt=sse"
+        return url
 
     def _convert_role(self, role: str) -> str:
         if role == "user": return "user"
@@ -101,13 +103,11 @@ class GeminiProvider(LLMProvider):
     def chat(self, messages: List[ProviderMessage], **kwargs) -> LLMResponse:
         url = self._prepare_url(stream=False)
         payload = self._prepare_payload(messages, tools=kwargs.get("tools"))
-        headers = self.headers.copy()
         
-        if "Authorization" in headers:
-            headers.pop("Authorization")
+        print("Payload: ", payload)
             
         try:
-            response = requests.post(url, json=payload, headers=headers, timeout=60)
+            response = requests.post(url, json=payload, headers=self.headers, timeout=60)
             response.raise_for_status()
         except requests.exceptions.Timeout:
             raise Exception("Gemini API request timed out after 60 seconds.")
@@ -118,14 +118,44 @@ class GeminiProvider(LLMProvider):
         
         try:
             candidate = data["candidates"][0]
-            content_part = candidate.get("content", {}).get("parts", [{}])[0]
-            text = content_part.get("text", "")
-            finish_reason = candidate.get("finishReason")
+            parts = candidate.get("content", {}).get("parts", [])
+            
+            text = ""
+            tool_calls = []
+            
+            for p in parts:
+                if "text" in p:
+                    text += p["text"]
+                if "functionCall" in p:
+                    fc = p["functionCall"]
+                    # Generate a stable-ish ID or just use UUID
+                    import uuid
+                    tc_uuid = str(uuid.uuid4())
+                    tool_call_id = f"{fc['name']}___{tc_uuid}"
+                    tool_calls.append(ToolCall(
+                        id=tool_call_id,
+                        type="function",
+                        function={
+                            "name": fc["name"],
+                            "arguments": json.dumps(fc.get("args", {}))
+                        }
+                    ) if isinstance(fc.get("args"), dict) else ToolCall(
+                        id=tool_call_id,
+                        type="function",
+                        function={
+                            "name": fc["name"],
+                            "arguments": fc.get("args", "{}")
+                        }
+                    ))
+
+            print("Text: ", text)
+            print("Tool Calls: ", tool_calls)
             
             return LLMResponse(
-                content=text,
+                content=text if text else None,
                 role="assistant",
-                finish_reason=finish_reason
+                finish_reason=candidate.get("finishReason"),
+                tool_calls=tool_calls if tool_calls else None
             )
         except (KeyError, IndexError) as e:
              return LLMResponse(content=f"Error parsing Gemini response: {e}", role="assistant")
@@ -133,13 +163,10 @@ class GeminiProvider(LLMProvider):
     def stream(self, messages: List[ProviderMessage], **kwargs) -> Iterator[LLMStreamChunk]:
         url = self._prepare_url(stream=True)
         payload = self._prepare_payload(messages, tools=kwargs.get("tools"))
-        headers = self.headers.copy()
-        if "Authorization" in headers:
-             headers.pop("Authorization")
              
         # SSE format
         try:
-            with requests.post(url, json=payload, headers=headers, stream=True, timeout=(10, 60)) as response:
+            with requests.post(url, json=payload, headers=self.headers, stream=True, timeout=(10, 60)) as response:
                 if not response.ok:
                     raise Exception(f"Gemini API Error: {response.status_code} - {response.text}")
                 

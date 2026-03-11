@@ -96,6 +96,23 @@ def delete_tool(
     return None
 
 
+@router.post("/{tool_id}/sync", response_model=ToolResponse)
+def sync_tool(
+    tool_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Force sync a tool with the vector database"""
+    tool = tool_service.force_sync(db, tool_id, current_user.id)
+    if not tool:
+        # Distinguish between not found and unauthorized if needed, simple approach:
+        existing = tool_service.get_tool(db, tool_id)
+        if not existing:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tool not found")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+    return tool
+
+
 @router.post("/{tool_id}/secrets", status_code=status.HTTP_200_OK)
 def save_tool_secret(
     tool_id: UUID,

@@ -13,6 +13,20 @@ from engine.events import EventBus, AgentEvent, AgentEventType
 from engine.memory import ContextManager
 from engine.tools import ToolRegistry
 from engine.executor import DockerExecutor
+
+# PRANI-PERF: Pre-compiled regexes to avoid re-compilation in tight loops
+RE_THINKING_FULL = re.compile(r"<thinking>(.*?)</thinking>", re.DOTALL)
+RE_THINKING_START = re.compile(r"<thinking>(.*)", re.DOTALL)
+RE_SCRUB_THINKING = re.compile(r"<thinking>.*?(</thinking>|$)", re.DOTALL)
+RE_JSON_MARKDOWN = re.compile(r"```json.*?```", re.DOTALL)
+RE_TOOL_CALL_MIRROR = re.compile(r"\{\s*\"tool_calls\".*?\}\s*\]", re.DOTALL)
+RE_RECURSIVE_JSON = re.compile(r"\{[^{}]*\"[^{}]*\".*?\}", re.DOTALL)
+RE_JSON_KV_PATTERN = re.compile(r'\"[a-zA-Z0-9_\-]+\"\s*:\s*[\"\{\[\d]')
+RE_TECH_CHARS = re.compile(r"[\{\}\[\]\"\:,\\]")
+
+# Emit configuration
+CHUNK_EMIT_INTERVAL = 0.05  # 50ms batching
+CHUNK_MAX_SIZE = 40        # or 40 characters
 from engine.subtasks import SubtaskManager, Subtask, SubtaskStatus
 from engine.intent import IntentParser
 from engine.prompts import get_action_system_prompt
@@ -50,6 +64,7 @@ class AgenticLoop:
         from services.state_service import StateService
         self.state_service = StateService()
         self.subtask_manager = SubtaskManager.from_dict(subtask_state) if subtask_state else SubtaskManager()
+        self._last_emitted_plan_hash = None
         
         self.loop_count = 0
         self.max_loops = 15
@@ -64,6 +79,8 @@ class AgenticLoop:
         # Performance trackers
         self._chunks_since_abort_check = 0
         self._is_confident_not_garbage = False
+        self._tool_search_cache = {}
+        self._last_plan_report = None
 
     def clean_tool_name(self, name: str) -> str:
         if not name: return ""
@@ -77,7 +94,7 @@ class AgenticLoop:
             # 1. Compact History & Goal Recovery (Sequential to avoid session race conditions)
             await self.memory.compact_history(self.llm)
             if not user_input:
-                user_input = self.memory.get_goal_text()
+                user_input = await self.memory.get_goal_text()
             
             logger.debug(f"Loop run started. session_id={self.session_id}, is_approved_turn={bool(approved_tool_calls)}")
 
@@ -96,8 +113,15 @@ class AgenticLoop:
                     self.subtask_manager.mark_in_progress(current_task.id)
                     status_report = self.subtask_manager.get_status_report()
 
-                tool_defs, system_prompt = await asyncio.to_thread(self._get_tools_and_prompt, user_input, status_report, current_task)
-                context = await asyncio.to_thread(self.memory.get_active_context)
+                t0 = time.time()
+                tool_defs, system_prompt = await self._get_tools_and_prompt(user_input, status_report, current_task)
+                t_tools = time.time() - t0
+                
+                t0 = time.time()
+                context = await self.memory.get_active_context()
+                t_context = time.time() - t0
+                
+                logger.info(f"Loop Timing - Tools: {t_tools:.3f}s, Context: {t_context:.3f}s")
                 
                 self._enrich_context(context, system_prompt)
 
@@ -110,10 +134,13 @@ class AgenticLoop:
                     }
                 )
 
-                # Emit turn start for UI visibility
+                t0 = time.time()
                 await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.STATUS, content=f"Iteration {self.loop_count}: Thinking...", run_id=self.run_id))
                 turn_data = {}
                 await self._get_turn_action(turn_data, approved_tool_calls, tool_defs, context, current_task, status_report, user_input)
+                t_turn = time.time() - t0
+                
+                logger.info(f"Loop Timing - Tools: {t_tools:.3f}s, Context: {t_context:.3f}s, TurnAction: {t_turn:.3f}s")
                 
 
                 
@@ -143,6 +170,7 @@ class AgenticLoop:
                 # 2. Check complete state
                 if is_complete:
                     await self.state_service.clear_plan(self.session_id)
+                    await self.memory.add_message(role="assistant", content=full_content, thoughts=thoughts) # Persist final msg
                     await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.MESSAGE, content=full_content, run_id=self.run_id))
                     break 
 
@@ -152,8 +180,8 @@ class AgenticLoop:
                     continue 
 
                 # 4. We did nothing useful but generated a message (or just stalled out)
-                # If we legitimately have a text message but NO tools and NO subtask changes, we just emit and break
                 if full_content and not tool_calls_buffer:
+                    await self.memory.add_message(role="assistant", content=full_content, thoughts=thoughts)
                     await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.MESSAGE, content=full_content, run_id=self.run_id))
                     break
 
@@ -185,14 +213,22 @@ class AgenticLoop:
             await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.ERROR, content=str(e), run_id=self.run_id))
 
 
-    def _get_tools_and_prompt(self, user_input, status_report, current_task, parse_error=""):
+    async def _get_tools_and_prompt(self, user_input, status_report, current_task, parse_error=""):
         current_subtask_desc = current_task.description if current_task else user_input
-        tool_recs = self.tool_registry.search_tools(
-            query=current_subtask_desc, 
-            tool_ids=self.allowed_tool_ids, 
-            mcp_server_ids=self.allowed_mcp_ids, 
-            limit=10
-        )
+        
+        # Optimization: Cache tool search results for the same subtask
+        cache_key = f"{current_subtask_desc}|{self.allowed_tool_ids}|{self.allowed_mcp_ids}"
+        if cache_key in self._tool_search_cache:
+            tool_recs = self._tool_search_cache[cache_key]
+        else:
+            tool_recs = self.tool_registry.search_tools(
+                query=current_subtask_desc, 
+                tool_ids=self.allowed_tool_ids, 
+                mcp_server_ids=self.allowed_mcp_ids, 
+                limit=10
+            )
+            self._tool_search_cache[cache_key] = tool_recs
+
         unique_tools = {}
         for t in tool_recs:
             name = self.clean_tool_name(t["name"])
@@ -260,12 +296,13 @@ class AgenticLoop:
             tool_defs.append({"type": "function", "function": t_func})
             tools_desc_list.append(f"- {name}: {t_func.get('description', '')}\n  Schema: {json.dumps(t_func.get('parameters', {}), indent=2)}")
         
+        history_text = await self.memory.get_history_text(limit=10)
         system_prompt = get_action_system_prompt(
             agent_role=self.agent.description or "Autonomous Agent",
             tools_desc="\n".join(tools_desc_list), 
             status_report=status_report,
             current_subtask=current_subtask_desc,
-            session_history=self.memory.get_history_text(limit=10),
+            session_history=history_text,
             parse_error=parse_error,
             global_goal=user_input
         )
@@ -306,7 +343,7 @@ class AgenticLoop:
 
         for attempt in range(max_retries):
             # Update system prompt with the parse_error context if there is one
-            tool_defs, system_prompt = await asyncio.to_thread(self._get_tools_and_prompt, user_input, status_report, current_task, parse_error)
+            tool_defs, system_prompt = await self._get_tools_and_prompt(user_input, status_report, current_task, parse_error)
             self._enrich_context(context, system_prompt)
             
             # Set initial transient status
@@ -323,52 +360,26 @@ class AgenticLoop:
             error_occurred = False
             
             try:
-                async for chunk in self._call_llm_stream(context, tools=tool_defs):
-                    # 0. Abort Signal Check
-                    self._chunks_since_abort_check += 1
-                    if self._chunks_since_abort_check >= 50:
-                        self._chunks_since_abort_check = 0
-                        current_status = await self.state_service.load_agent_state(self.session_id)
-                        if current_status == "ABORTED":
-                            logger.warning(f"loop.run: Abort signal detected for {self.session_id}")
-                            await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.ERROR, content="Execution Aborted.", run_id=self.run_id))
-                            return
-
-                    if chunk.tool_calls:
-                        streamed_tools.extend(chunk.tool_calls)
-                        
-                    if chunk.content:
-                        text_to_process = chunk.content
-                        full_content += chunk.content
-                        
-                        while text_to_process:
-                            if not in_thinking_tag:
-                                start_idx = text_to_process.find("<thinking>")
-                                if start_idx != -1:
-                                    msg_part = text_to_process[:start_idx]
-                                    current_message += msg_part
-                                    if msg_part and not self._is_garbage_json(current_message):
-                                        await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.MESSAGE_CHUNK, content=msg_part, run_id=self.run_id))
-                                    
-                                    in_thinking_tag = True
-                                    text_to_process = text_to_process[start_idx + len("<thinking>"):]
-                                else:
-                                    current_message += text_to_process
-                                    if text_to_process and not self._is_garbage_json(current_message):
-                                        await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.MESSAGE_CHUNK, content=text_to_process, run_id=self.run_id))
-                                    text_to_process = ""
-                            else:
-                                end_idx = text_to_process.find("</thinking>")
-                                if end_idx != -1:
-                                    if end_idx > 0:
-                                        thought_part = text_to_process[:end_idx]
-                                        await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.THOUGHT_CHUNK, content=thought_part, run_id=self.run_id))
-                                    
-                                    in_thinking_tag = False
-                                    text_to_process = text_to_process[end_idx + len("</thinking>"):]
-                                else:
-                                    await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.THOUGHT_CHUNK, content=text_to_process, run_id=self.run_id))
-                                    text_to_process = ""
+                # PRANI-PERF: Switching to chat endpoint per user request to resolve hanging issues.
+                response = await asyncio.to_thread(self.llm.chat, context, tools=tool_defs)
+                full_content = response.content or ""
+                streamed_tools = response.tool_calls or []
+                
+                # Emit the full content as chunks for UI compatibility if needed
+                # (Or just let the final consolidation handle it)
+                if "<thinking>" in full_content:
+                    # Minimal parsing for immediate feedback
+                    thinking_match = RE_THINKING_FULL.search(full_content)
+                    if thinking_match:
+                        await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.THOUGHT_CHUNK, content=thinking_match.group(1), run_id=self.run_id))
+                    
+                    # Also emit message part
+                    msg_only = RE_SCRUB_THINKING.sub("", full_content).strip()
+                    if msg_only:
+                        await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.MESSAGE_CHUNK, content=msg_only, run_id=self.run_id))
+                else:
+                    if full_content:
+                        await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.MESSAGE_CHUNK, content=full_content, run_id=self.run_id))
 
 
             except Exception as e:
@@ -384,24 +395,24 @@ class AgenticLoop:
             
             # 1. Clean up the final full_content string completely to prevent chunk boundary leaks
             final_thoughts = []
-            for match in re.finditer(r"<thinking>(.*?)</thinking>", full_content, re.DOTALL):
+            for match in RE_THINKING_FULL.finditer(full_content):
                 final_thoughts.append(match.group(1).strip())
                 
             # If the tag is unclosed, grab whatever's after <thinking>
             if not final_thoughts and "<thinking>" in full_content:
-                unclosed_match = re.search(r"<thinking>(.*)", full_content, re.DOTALL)
+                unclosed_match = RE_THINKING_START.search(full_content)
                 if unclosed_match:
                     final_thoughts.append(unclosed_match.group(1).strip())
                     
             # Absolute Zero Garbage: Strip ALL JSON-like structures and technical codes
-            final_message = re.sub(r"<thinking>.*?(</thinking>|$)", "", full_content, flags=re.DOTALL).strip()
+            final_message = RE_SCRUB_THINKING.sub("", full_content).strip()
             
             # Remove Markdown JSON blocks
-            final_message = re.sub(r"```json.*?```", "", final_message, flags=re.DOTALL)
+            final_message = RE_JSON_MARKDOWN.sub("", final_message)
             # Remove mirrored tool call structures
-            final_message = re.sub(r"\{\s*\"tool_calls\".*?\}\s*\]", "", final_message, flags=re.DOTALL)
-            # General JSON catch-all (recursive-ish)
-            final_message = re.sub(r"\{[^{}]*\"[^{}]*\".*?\}", "", final_message, flags=re.DOTALL)
+            final_message = RE_TOOL_CALL_MIRROR.sub("", final_message)
+            # General JSON catch-all
+            final_message = RE_RECURSIVE_JSON.sub("", final_message)
             
             final_message = final_message.strip()
             
@@ -413,12 +424,12 @@ class AgenticLoop:
             
             # 2. Check for Hallucinations vs Completion
             if not streamed_tools:
-                if current_task:
-                    # The LLM output no tools, but there's an active subtask! This is a hallucination.
-                    parse_error = "You have an active subtask but did not output any tool calls (like `update_subtask_status` or native tools). Please try again and remember to execute tools."
+                if current_task and not has_content:
+                    # The LLM output NOTHING, but there's an active subtask! This is a likely failure/stall.
+                    parse_error = "You did not output any response or tool calls. Please continue your task."
                     continue
                 else:
-                    is_complete = True
+                    is_complete = not current_task # Task is done if no tools and no subtask active
             
             # 3. If we reached here, the execution pass was a structural success. Save it.
             tool_calls = streamed_tools
@@ -427,7 +438,11 @@ class AgenticLoop:
                 await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.THOUGHT, content="\n".join(final_thoughts), run_id=self.run_id))
                 
             if is_complete and has_content:
-                self.memory.add_message(role="assistant", content=final_message, thoughts=final_thoughts)
+                # Execution history already moved to add_message inside loop where appropriate
+                # but for simple responses we do it here.
+                # Since we already handle it in 'run', we can skip this or confirm it doesn't double-save
+                # We'll rely on the 'run' method for the final persistence to avoid duplicate saves in cache.
+                pass
                 
             # Break as we successfully streamed/parsed
             break
@@ -470,7 +485,7 @@ class AgenticLoop:
         if self.agent.human_in_loop and not is_approved and requires_approval:
             # IMPORTANT: Save state with the PRE-EXECUTION status to ensure we can resume
             await self.state_service.save_agent_state(self.session_id, "AWAITING_APPROVAL")
-            self.memory.add_message(role="assistant", content=display_text, tool_calls=tool_calls)
+            await self.memory.add_message(role="assistant", content=display_text, tool_calls=tool_calls, thoughts=thoughts) # Add thoughts here
             await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.APPROVAL_REQUIRED, metadata={"tool_calls": [t.dict() for t in tool_calls]}, run_id=self.run_id))
             return True
 
@@ -479,9 +494,10 @@ class AgenticLoop:
         
         # Only add a new message to memory if it's an internal tool that skipped the pause block above
         if not is_approved:
-            self.memory.add_message(role="assistant", content=display_text, tool_calls=tool_calls, thoughts=thoughts, status="Executing")
+            await self.memory.add_message(role="assistant", content=display_text, tool_calls=tool_calls, thoughts=thoughts, status="Executing")
         
         for tc in tool_calls:
+            res = "" # Explicit initialization
             t_name = tc.function["name"]
             
             # 1. Handle Built-in Universal Tools first
@@ -496,15 +512,12 @@ class AgenticLoop:
                             self.subtask_manager.add_subtask(Subtask(id=new_id, description=desc))
                             self.subtask_manager.execution_order.append(new_id)
                     
-                    await self.state_service.save_plan(self.session_id, self.subtask_manager.to_dict())
+                    await self._emit_plan_if_changed()
                     res = f"Successfully added {len(tasks)} tasks to the plan."
-                    
-                    # Sync to frontend
-                    await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.PLAN, metadata={"plan": self.subtask_manager.to_dict()}, run_id=self.run_id))
                 except Exception as e:
                     res = f"Error adding subtasks: {e}"
                     
-                self.memory.add_message(role="tool", content=res, tool_call_id=tc.id, name=t_name)
+                await self.memory.add_message(role="tool", content=res, tool_call_id=tc.id, name=t_name)
                 self.pending_tool_refinement = {"tool": t_name, "error": str(res)} if "Error" in str(res) else None
                 continue
                 
@@ -525,16 +538,14 @@ class AgenticLoop:
                         else:
                             current_task.result = result_msg
                             
-                        await self.state_service.save_plan(self.session_id, self.subtask_manager.to_dict())
+                        await self._emit_plan_if_changed()
                         res = f"Updated current task '{current_task.description}' to {status}."
-                        
-                        # Sync to frontend
+                        # Sync to frontend status
                         await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.STATUS, content=f"Step {status.lower()}: {current_task.description}", run_id=self.run_id))
-                        await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.PLAN, metadata={"plan": self.subtask_manager.to_dict()}, run_id=self.run_id))
                 except Exception as e:
                     res = f"Error updating subtask: {e}"
                     
-                self.memory.add_message(role="tool", content=res, tool_call_id=tc.id, name=t_name)
+                await self.memory.add_message(role="tool", content=res, tool_call_id=tc.id, name=t_name)
                 self.pending_tool_refinement = {"tool": t_name, "error": str(res)} if "Error" in str(res) else None
                 continue
 
@@ -569,7 +580,7 @@ class AgenticLoop:
 
             if not is_internal_only:
                 await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.TOOL_OUTPUT, content=str(res), metadata={"tool": t_name}, run_id=self.run_id))
-            self.memory.add_message(role="tool", content=res, tool_call_id=tc.id, name=t_name)
+            await self.memory.add_message(role="tool", content=res, tool_call_id=tc.id, name=t_name)
             self.pending_tool_refinement = {"tool": t_name, "error": str(res)} if "Error" in str(res) else None
             
         return False
@@ -590,6 +601,9 @@ class AgenticLoop:
     def _detect_loop(self, content, tools):
         sig = f"{content}|{sorted([t.function['name'] for t in tools])}"
         self.action_history.append(sig)
+        # PRANI-PERF: Cap history to prevent memory leak
+        if len(self.action_history) > 10:
+            self.action_history = self.action_history[-10:]
         return len(self.action_history) >= 3 and all(s == sig for s in self.action_history[-3:])
 
     def _resolve_tool_secrets(self, tool_id: str) -> Dict[str, str]:
@@ -600,13 +614,11 @@ class AgenticLoop:
     def _is_garbage_json(self, text: str) -> bool:
         """
         Regex-based 'Absolute Zero Garbage' cleaner 3.2 (High-Sensitivity).
-        Aggressively flags JSON fragments, especially in short strings.
         Optimized: Returns False immediately if we've already deemed this stream 'clean'.
         """
         if self._is_confident_not_garbage:
             return False
             
-        import re
         t = text.strip()
         if not t: return False
         
@@ -614,15 +626,13 @@ class AgenticLoop:
         if t in ["{}", "[]", '{"', '["', '},', '],', '}]']:
             return True
         
-        # 2. Key-value pattern detection
-        json_pattern = r'\"[a-zA-Z0-9_\-]+\"\s*:\s*[\"\{\[\d]'
-        if re.search(json_pattern, t):
-            # If we see a key-value pair, it's definitely garbage for the message field
+        # 2. Key-value pattern detection (e.g. "tool_calls":)
+        if RE_JSON_KV_PATTERN.search(t):
             return True
 
-        # 3. Density Check: Very strict for short strings
-        tech_chars = len(re.findall(r"[\{\}\[\]\"\:,\\]", t))
+        # 3. Density Check: Very strict for short strings to catch JSON structures
         total = len(t)
+        tech_chars = len(RE_TECH_CHARS.findall(t))
         
         is_garbage = False
         if total < 20:
@@ -632,9 +642,9 @@ class AgenticLoop:
         else:
             if (tech_chars / total) > 0.25: is_garbage = True
             
-        # Optimization: If we have > 100 characters and it's NOT garbage, 
-        # we stop checking for the rest of this message stream.
-        if not is_garbage and total > 100:
+        # Optimization PRANI-PERF: Once we have > 60 characters and it's NOT garbage, 
+        # we stop checking for the rest of this session stream.
+        if not is_garbage and total > 60:
             self._is_confident_not_garbage = True
             
         return is_garbage
@@ -658,6 +668,18 @@ class AgenticLoop:
             return {k: self._scrub_metadata(v) for k, v in data.items()}
         return data
 
+    async def _emit_plan_if_changed(self):
+        """Saves plan to Redis and emits PLAN event only if the structure has changed."""
+        import hashlib
+        plan_dict = self.subtask_manager.to_dict()
+        plan_json = json.dumps(plan_dict, sort_keys=True)
+        plan_hash = hashlib.md5(plan_json.encode()).hexdigest()
+        
+        if plan_hash != self._last_emitted_plan_hash:
+            await self.state_service.save_plan(self.session_id, plan_dict)
+            await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.PLAN, metadata={"plan": plan_dict}, run_id=self.run_id))
+            self._last_emitted_plan_hash = plan_hash
+
     async def _call_llm_stream(self, messages: List[ProviderMessage], tools: List[Dict] = None) -> AsyncIterator[Any]:
         loop = asyncio.get_running_loop()
         queue = asyncio.Queue()
@@ -666,11 +688,11 @@ class AgenticLoop:
             try:
                 # Assuming provider implements .stream() yielding LLMStreamChunk
                 for chunk in self.llm.stream(messages, tools=tools):
-                    asyncio.run_coroutine_threadsafe(queue.put(chunk), loop)
+                    loop.call_soon_threadsafe(queue.put_nowait, chunk)
             except Exception as e:
-                asyncio.run_coroutine_threadsafe(queue.put(e), loop)
+                loop.call_soon_threadsafe(queue.put_nowait, e)
             finally:
-                asyncio.run_coroutine_threadsafe(queue.put(None), loop)
+                loop.call_soon_threadsafe(queue.put_nowait, None)
                 
         loop.run_in_executor(None, run_stream)
         

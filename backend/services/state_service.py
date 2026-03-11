@@ -7,12 +7,18 @@ from config.settings import settings
 logger = logging.getLogger(__name__)
 
 class StateService:
+    _redis_client: Optional[redis.Redis] = None
+
     def __init__(self):
-        try:
-            self.redis_client = redis.from_url(settings.redis_url)
-        except Exception as e:
-            logger.error(f"Failed to connect to Redis: {e}")
-            self.redis_client = None
+        if StateService._redis_client is None:
+            try:
+                StateService._redis_client = redis.from_url(settings.redis_url)
+                logger.debug("Initialized shared Redis client for StateService")
+            except Exception as e:
+                logger.error(f"Failed to connect to Redis: {e}")
+                StateService._redis_client = None
+        
+        self.redis_client = StateService._redis_client
 
     def _get_key(self, session_id: str) -> str:
         return f"prani:plan:{session_id}"

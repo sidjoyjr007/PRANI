@@ -7,16 +7,8 @@ from ..types import ToolCall
 class AnthropicProvider(LLMProvider):
     def __init__(self, model: str, headers: Dict[str, Any], config: Dict[str, Any]):
         super().__init__(model, headers, config)
-        self.api_key = config.get("ANTHROPIC_API_KEY") or config.get("API_KEY")
         self.base_url = "https://api.anthropic.com/v1"
         
-    def _prepare_headers(self):
-        headers = self.headers.copy()
-        headers["x-api-key"] = self.api_key
-        headers["anthropic-version"] = "2023-06-01"
-        headers["content-type"] = "application/json"
-        return headers
-
     def _prepare_payload(self, messages: List[ProviderMessage], stream=False):
         system_prompt = None
         formatted_messages = []
@@ -43,7 +35,7 @@ class AnthropicProvider(LLMProvider):
         url = f"{self.base_url}/messages"
         payload = self._prepare_payload(messages, stream=False)
         
-        response = requests.post(url, headers=self._prepare_headers(), json=payload)
+        response = requests.post(url, headers=self.headers, json=payload)
         response.raise_for_status()
         data = response.json()
         
@@ -62,7 +54,7 @@ class AnthropicProvider(LLMProvider):
         url = f"{self.base_url}/messages"
         payload = self._prepare_payload(messages, stream=True)
         
-        with requests.post(url, headers=self._prepare_headers(), json=payload, stream=True) as response:
+        with requests.post(url, headers=self.headers, json=payload, stream=True) as response:
             response.raise_for_status()
             
             for line in response.iter_lines():

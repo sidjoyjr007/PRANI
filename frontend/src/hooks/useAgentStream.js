@@ -50,6 +50,20 @@ export const useAgentStream = (sessionId) => {
 
             // Background reader loop
             (async () => {
+                let chunkBuffer = {}; // { type: text }
+                let lastDispatch = Date.now();
+                const BATCH_INTERVAL = 80; // ms
+
+                const flushBuffer = () => {
+                    Object.keys(chunkBuffer).forEach(type => {
+                        if (chunkBuffer[type]) {
+                            dispatch(handleAgentEvent({ type, content: chunkBuffer[type] }));
+                            chunkBuffer[type] = "";
+                        }
+                    });
+                    lastDispatch = Date.now();
+                };
+
                 try {
                     while (isConnected && abortControllerRef.current === abortController) {
                         const { done, value } = await reader.read();
@@ -71,16 +85,29 @@ export const useAgentStream = (sessionId) => {
                                         dispatch(handleAgentEvent({ type: 'error', content: data.error }));
                                     } else {
                                         if (data.type === 'loop_complete' || data.type === 'error' || data.type === 'approval_required') {
+                                            flushBuffer();
                                             setIsStreaming(false);
                                         }
-                                        if (data.content && !data.type) {
-                                            dispatch(handleAgentEvent({
-                                                type: 'message',
-                                                content: data.content,
-                                                role: data.role || 'assistant'
-                                            }));
+
+                                        // Batching logic for chunks
+                                        if (data.type === 'message_chunk' || data.type === 'thought_chunk') {
+                                            chunkBuffer[data.type] = (chunkBuffer[data.type] || "") + data.content;
+
+                                            if (Date.now() - lastDispatch > BATCH_INTERVAL) {
+                                                flushBuffer();
+                                            }
                                         } else {
-                                            dispatch(handleAgentEvent(data));
+                                            // Non-chunk events are dispatched immediately after flushing existing chunks
+                                            flushBuffer();
+                                            if (data.content && !data.type) {
+                                                dispatch(handleAgentEvent({
+                                                    type: 'message',
+                                                    content: data.content,
+                                                    role: data.role || 'assistant'
+                                                }));
+                                            } else {
+                                                dispatch(handleAgentEvent(data));
+                                            }
                                         }
                                     }
                                 } catch (e) {
@@ -89,6 +116,7 @@ export const useAgentStream = (sessionId) => {
                             }
                         }
                     }
+                    flushBuffer(); // Final flush
                 } catch (error) {
                     if (error.name !== 'AbortError') {
                         console.error("SSE read failed:", error);

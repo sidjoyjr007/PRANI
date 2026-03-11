@@ -28,6 +28,12 @@ class Tool(Base):
     env_var_defs = Column(JSONB, default=list)
     
     is_public = Column(Boolean, default=False)
+    
+    # Sync Status Tracking
+    sync_status = Column(String(50), default="PENDING") # PENDING, SYNCED, FAILED
+    sync_error = Column(Text, nullable=True)
+    last_synced_at = Column(DateTime, nullable=True)
+    
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     

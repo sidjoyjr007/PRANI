@@ -23,10 +23,10 @@ class ToolEnvVar(BaseModel):
 
 class ToolBase(BaseModel):
     """Base schema for Tool"""
-    name: str = Field(..., min_length=3, max_length=255)
-    description: str = Field(..., min_length=10)
+    name: str = Field(..., min_length=3, max_length=20)
+    description: str = Field(..., min_length=10, max_length=75)
     code: str
-    categories: List[str] = Field(..., min_length=1)
+    categories: Optional[List[str]] = Field(default_factory=list)
     input_fields: List[ToolInput] = Field(default_factory=list)
     env_var_defs: List[ToolEnvVar] = Field(default_factory=list)
     is_public: bool = False
@@ -35,6 +35,10 @@ class ToolBase(BaseModel):
     def validate_code(cls, v):
         if "def execute_tool" not in v:
             raise ValueError("Code must contain 'def execute_tool' function definition")
+        try:
+            compile(v, '<string>', 'exec')
+        except SyntaxError as e:
+            raise ValueError(f"Invalid Python syntax: {str(e)}")
         return v
 
 
@@ -46,10 +50,10 @@ class ToolCreate(ToolBase):
 
 class ToolUpdate(BaseModel):
     """Schema for updating a tool"""
-    name: Optional[str] = Field(None, min_length=3, max_length=255)
-    description: Optional[str] = Field(None, min_length=10)
+    name: Optional[str] = Field(None, min_length=3, max_length=20)
+    description: Optional[str] = Field(None, min_length=10, max_length=75)
     code: Optional[str] = None
-    categories: Optional[List[str]] = Field(None, min_length=1)
+    categories: Optional[List[str]] = Field(None)
     input_fields: Optional[List[ToolInput]] = None
     env_var_defs: Optional[List[ToolEnvVar]] = None
     is_public: Optional[bool] = None
@@ -58,8 +62,13 @@ class ToolUpdate(BaseModel):
 
     @field_validator('code')
     def validate_code(cls, v):
-        if v is not None and "def execute_tool" not in v:
-            raise ValueError("Code must contain 'def execute_tool' function definition")
+        if v is not None:
+            if "def execute_tool" not in v:
+                raise ValueError("Code must contain 'def execute_tool' function definition")
+            try:
+                compile(v, '<string>', 'exec')
+            except SyntaxError as e:
+                raise ValueError(f"Invalid Python syntax: {str(e)}")
         return v
 
 
@@ -67,6 +76,9 @@ class ToolResponse(ToolBase):
     """Schema for tool response"""
     id: UUID
     owner_id: UUID
+    sync_status: str
+    sync_error: Optional[str] = None
+    last_synced_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 

@@ -5,21 +5,15 @@ from schemas.conversation import ConversationCreate, ConversationUpdate, Message
 from uuid import UUID
 from datetime import datetime
 from typing import List, Any
-import tiktoken
+from utils.llm_token import estimate_tokens
 import json
 
 class ConversationService:
     def __init__(self, db: Session):
         self.db = db
-        self._tokenizer = tiktoken.get_encoding("cl100k_base")
 
     def _calculate_tokens(self, role: str, content: Any) -> int:
-        try:
-            content_str = content if isinstance(content, str) else json.dumps(content)
-            # Simple approximation of OpenAI message token counting
-            return len(self._tokenizer.encode(role)) + len(self._tokenizer.encode(content_str)) + 4
-        except Exception:
-            return 0
+        return estimate_tokens(role) + estimate_tokens(content)
 
     def get_conversations(self, user_id: UUID, limit: int = 50, skip: int = 0):
         # Ordered by updated_at desc (most recent first)

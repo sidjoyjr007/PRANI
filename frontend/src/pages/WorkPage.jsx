@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react"
 import { Toast, ToastContainer } from "@/components/ui/toast"
 import { useDispatch, useSelector } from "react-redux"
-import { useParams, useNavigate } from "react-router-dom"
+import { useParams, useNavigate, useLocation } from "react-router-dom"
 import Layout from "@/components/Layout"
 import ConversationsPanel from "@/components/work/ConversationsPanel"
 import ChatPanel from "@/components/work/ChatPanel"
@@ -26,8 +26,9 @@ import { useAgentStream } from "@/hooks/useAgentStream"
 export default function WorkPage() {
   const dispatch = useDispatch()
   const navigate = useNavigate()
+  const location = useLocation()
   const { sessionId } = useParams()
-  const { streamMessage, resumeStream, abortStream, connectStream, disconnectStream, isStreaming } = useAgentStream(sessionId)
+  const { streamMessage, resumeStream, abortStream, connectStream, disconnectStream, isStreaming, setIsStreaming } = useAgentStream(sessionId)
 
   // -- Redux Data --
   const { items: agents } = useSelector((state) => state.agents)
@@ -49,6 +50,13 @@ export default function WorkPage() {
     setTimeout(() => removeToast(id), 5000)
   }
   const removeToast = (id) => setToasts((prev) => prev.filter((t) => t.id !== id))
+
+  // -- Handle Navigation State --
+  useEffect(() => {
+    if (!sessionId && location.state?.agentId) {
+      setSelectedAgentId(location.state.agentId)
+    }
+  }, [sessionId, location.state])
 
   // -- Fetch Data on Mount --
   useEffect(() => {
@@ -89,9 +97,17 @@ export default function WorkPage() {
     return () => disconnectStream()
   }, [sessionId, dispatch, conversations, currentConversationId, connectStream, disconnectStream])
 
-  // -- Handlers --
+  // Handlers --
   const scrollToBottom = () => {
     setIsScrolledToBottom(true)
+  }
+
+  const handleAgentChange = (agentId) => {
+    setSelectedAgentId(agentId)
+    if (sessionId) {
+      // If we are in an active session and switch agents, navigate to new chat
+      navigate("/work")
+    }
   }
 
   const handleSendMessage = async () => {
@@ -135,7 +151,11 @@ export default function WorkPage() {
 
   // Conversation Panel Handlers
   const handleSelectConversation = (id) => {
-    navigate(`/work/${id}`)
+    if (id === "new") {
+      navigate("/work")
+    } else {
+      navigate(`/work/${id}`)
+    }
   }
 
   const handleNewConversation = () => {
@@ -160,6 +180,13 @@ export default function WorkPage() {
 
   // Helper to resolve selected agent object
   const selectedAgent = agents.find(a => a.id === selectedAgentId)
+
+  // Calculate conversations to display
+  const agentConversations = selectedAgentId ? conversations.filter(c => c.agent_id === selectedAgentId) : []
+  const displayConversations = (!sessionId && selectedAgentId)
+    ? [{ id: "new", title: "New Chat", isTemporary: true }, ...agentConversations]
+    : agentConversations
+  const activePanelConversation = sessionId || (selectedAgentId ? "new" : null)
 
   // Map Redux messages to ChatPanel format
   const uiMessages = messages.map(m => ({
@@ -191,8 +218,8 @@ export default function WorkPage() {
 
         {/* Left Panel */}
         <ConversationsPanel
-          conversations={selectedAgentId ? conversations.filter(c => c.agent_id === selectedAgentId) : []}
-          activeConversation={sessionId}
+          conversations={displayConversations}
+          activeConversation={activePanelConversation}
           onSelectConversation={handleSelectConversation}
           onNewConversation={handleNewConversation}
           onDeleteConversation={handleDeleteConversation}
@@ -209,7 +236,7 @@ export default function WorkPage() {
           setInputValue={setInputValue}
           handleSendMessage={handleSendMessage}
           selectedAgentId={selectedAgentId}
-          setSelectedAgentId={setSelectedAgentId}
+          setSelectedAgentId={handleAgentChange}
           agents={agents}
           streamingIndex={null}
           messageActions={{}}

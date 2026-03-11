@@ -43,5 +43,11 @@ export const toolService = {
     testTool: async (id, inputData) => {
         const response = await apiClient.post(`/tools/${id}/test`, { input_data: inputData })
         return response.data
+    },
+
+    // Sync tool manually
+    syncTool: async (id) => {
+        const response = await apiClient.post(`/tools/${id}/sync`)
+        return response.data
     }
 }

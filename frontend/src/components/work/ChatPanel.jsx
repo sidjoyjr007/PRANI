@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react"
+import { useState, useRef, useEffect, useCallback, memo, useMemo } from "react"
 import { useTheme } from "@/context/ThemeContext"
 import { Button } from "@/components/ui/button"
 import { Text } from "@/components/ui/text"
@@ -13,20 +13,19 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
 // ─── Markdown Renderer ───────────────────────────────────────────────────────
-function MarkdownContent({ content, theme }) {
-    const scrubbedContent = typeof content === 'string'
-        ? content
+// ─── Markdown Renderer ───────────────────────────────────────────────────────
+const MarkdownContent = memo(({ content, theme }) => {
+    const scrubbedContent = useMemo(() => {
+        if (typeof content !== 'string') return content;
+
+        return content
             .replace(/<thinking>[\s\S]*?<\/thinking>/g, '')
             .replace(/```json[\s\S]*?```/g, '')
             .replace(/\{[\s\S]*?"tool_calls"[\s\S]*?\}/g, '')
             .replace(/\{[\s\S]*?"text"[\s\S]*?\}/g, '')
-            .replace(/[\{\}\[\]\"\:,\\]/g, (match) => {
-                // Highly aggressive remnant removal: 
-                // if it's just punctuation remnants, nuke it
-                return '';
-            })
-            .trim()
-        : content;
+            .replace(/[\{\}\[\]\"\:,\\]/g, '')
+            .trim();
+    }, [content]);
 
     if (!scrubbedContent) return null;
 
@@ -38,12 +37,8 @@ function MarkdownContent({ content, theme }) {
                     <p style={{ margin: "0 0 8px 0", lineHeight: 1.65, color: theme.colors.foreground }}>{children}</p>
                 ),
                 code: ({ node, inline, className, children, ...props }) => {
-                    // Newer react-markdown doesn't reliably set `inline`.
-                    // Detect: block code always has a language-* class or multiline content.
-                    const isBlock = className?.startsWith("language-") ||
-                        String(children).includes("\n")
+                    const isBlock = className?.startsWith("language-") || String(children).includes("\n")
                     if (!isBlock) {
-                        // Inline code — compact chip style
                         return (
                             <code style={{
                                 backgroundColor: "rgba(99,102,241,0.12)",
@@ -58,7 +53,6 @@ function MarkdownContent({ content, theme }) {
                             }}>{children}</code>
                         )
                     }
-                    // Block code — full pre block
                     return (
                         <pre style={{
                             backgroundColor: theme.colors.neutral[900],
@@ -75,24 +69,12 @@ function MarkdownContent({ content, theme }) {
                         </pre>
                     )
                 },
-                ul: ({ children }) => (
-                    <ul style={{ margin: "6px 0", paddingLeft: "20px", color: theme.colors.foreground }}>{children}</ul>
-                ),
-                ol: ({ children }) => (
-                    <ol style={{ margin: "6px 0", paddingLeft: "20px", color: theme.colors.foreground }}>{children}</ol>
-                ),
-                li: ({ children }) => (
-                    <li style={{ marginBottom: "4px", lineHeight: 1.6 }}>{children}</li>
-                ),
-                h1: ({ children }) => (
-                    <h1 style={{ fontSize: "1.2em", fontWeight: 700, margin: "12px 0 6px", color: theme.colors.foreground }}>{children}</h1>
-                ),
-                h2: ({ children }) => (
-                    <h2 style={{ fontSize: "1.1em", fontWeight: 600, margin: "10px 0 4px", color: theme.colors.foreground }}>{children}</h2>
-                ),
-                h3: ({ children }) => (
-                    <h3 style={{ fontSize: "1em", fontWeight: 600, margin: "8px 0 4px", color: theme.colors.muted_foreground }}>{children}</h3>
-                ),
+                ul: ({ children }) => <ul style={{ margin: "6px 0", paddingLeft: "20px", color: theme.colors.foreground }}>{children}</ul>,
+                ol: ({ children }) => <ol style={{ margin: "6px 0", paddingLeft: "20px", color: theme.colors.foreground }}>{children}</ol>,
+                li: ({ children }) => <li style={{ marginBottom: "4px", lineHeight: 1.6 }}>{children}</li>,
+                h1: ({ children }) => <h1 style={{ fontSize: "1.2em", fontWeight: 700, margin: "12px 0 6px", color: theme.colors.foreground }}>{children}</h1>,
+                h2: ({ children }) => <h2 style={{ fontSize: "1.1em", fontWeight: 600, margin: "10px 0 4px", color: theme.colors.foreground }}>{children}</h2>,
+                h3: ({ children }) => <h3 style={{ fontSize: "1em", fontWeight: 600, margin: "8px 0 4px", color: theme.colors.muted_foreground }}>{children}</h3>,
                 blockquote: ({ children }) => (
                     <blockquote style={{
                         borderLeft: `3px solid ${theme.colors.primary[500]}`,
@@ -102,46 +84,25 @@ function MarkdownContent({ content, theme }) {
                         fontStyle: "italic"
                     }}>{children}</blockquote>
                 ),
-                a: ({ href, children }) => (
-                    <a href={href} target="_blank" rel="noopener noreferrer"
-                        style={{ color: theme.colors.primary[400], textDecoration: "underline" }}>
-                        {children}
-                    </a>
-                ),
-                strong: ({ children }) => (
-                    <strong style={{ fontWeight: 600, color: theme.colors.foreground }}>{children}</strong>
-                ),
+                a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: theme.colors.primary[400], textDecoration: "underline" }}>{children}</a>,
+                strong: ({ children }) => <strong style={{ fontWeight: 600, color: theme.colors.foreground }}>{children}</strong>,
                 table: ({ children }) => (
                     <div style={{ overflowX: "auto", margin: "10px 0" }}>
-                        <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "0.9em" }}>
-                            {children}
-                        </table>
+                        <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "0.9em" }}>{children}</table>
                     </div>
                 ),
-                th: ({ children }) => (
-                    <th style={{
-                        border: `1px solid ${theme.colors.border}`,
-                        padding: "6px 12px",
-                        backgroundColor: theme.colors.neutral[800],
-                        textAlign: "left",
-                        fontWeight: 600
-                    }}>{children}</th>
-                ),
-                td: ({ children }) => (
-                    <td style={{
-                        border: `1px solid ${theme.colors.border}`,
-                        padding: "6px 12px"
-                    }}>{children}</td>
-                ),
+                th: ({ children }) => <th style={{ border: `1px solid ${theme.colors.border}`, padding: "6px 12px", backgroundColor: theme.colors.neutral[800], textAlign: "left", fontWeight: 600 }}>{children}</th>,
+                td: ({ children }) => <td style={{ border: `1px solid ${theme.colors.border}`, padding: "6px 12px" }}>{children}</td>,
             }}
         >
             {scrubbedContent}
         </ReactMarkdown>
     )
-}
+});
 
 // ─── Thinking / Reasoning Block ───────────────────────────────────────────────
-function ThinkingBlock({ thoughts, theme }) {
+// ─── Thinking / Reasoning Block ───────────────────────────────────────────────
+const ThinkingBlock = memo(({ thoughts, theme }) => {
     const [isOpen, setIsOpen] = useState(false);
     const hasMeaningfulThoughts = thoughts.some(t => t.trim().length > 0 && t !== "Thinking...");
     if (!hasMeaningfulThoughts) return null
@@ -193,9 +154,9 @@ function ThinkingBlock({ thoughts, theme }) {
             )}
         </div>
     )
-}
+});
 
-function StatusIndicator({ status, theme }) {
+const StatusIndicator = memo(({ status, theme }) => {
     if (!status || status.trim().length === 0) return null
 
     return (
@@ -221,10 +182,11 @@ function StatusIndicator({ status, theme }) {
             <span style={{ fontWeight: 500 }}>{status}</span>
         </div>
     )
-}
+});
 
 // ─── Tool Call Card (V3: Clean minimal style) ───────────────────────────────
-function ToolCallCard({ tool, theme }) {
+// ─── Tool Call Card (V3: Clean minimal style) ───────────────────────────────
+const ToolCallCard = memo(({ tool, theme }) => {
     const isCompleted = tool.status === 'completed';
     const isRunning = tool.status === 'running';
     const isError = tool.status === 'error';
@@ -259,7 +221,7 @@ function ToolCallCard({ tool, theme }) {
             </span>
         </div>
     )
-}
+});
 
 // ─── Approval Card ────────────────────────────────────────────────────────────
 function ApprovalCard({ msg, onApprove, onReject, theme }) {
@@ -403,7 +365,8 @@ function ApprovalBadge({ decision, theme }) {
 }
 
 // ─── Message Row ──────────────────────────────────────────────────────────────
-function MessageRow({ msg, showLabel, onApprove, onReject, approvalDecisions, theme }) {
+// ─── Message Row ──────────────────────────────────────────────────────────────
+const MessageRow = memo(({ msg, showLabel, onApprove, onReject, approvalDecisions, theme }) => {
     const isUser = msg.sender === "user"
     const decision = approvalDecisions[msg.id]
 
@@ -412,12 +375,17 @@ function MessageRow({ msg, showLabel, onApprove, onReject, approvalDecisions, th
         !['add_subtasks', 'update_subtask_status'].includes(t.name)
     );
 
-    // Ghost Div Protection: Only render bubble if it contains valid alphanumeric content
-    const scrubbed = !isUser ? (msg.text || "").replace(/[\{\}\[\]\"\:,\\]/g, '').trim() : (msg.text || "").trim();
-    const hasTextContent = scrubbed.length > 0 && (isUser || /[a-zA-Z0-9]/.test(scrubbed));
+    // Optimized visibility checks
+    const hasTextContent = useMemo(() => {
+        const text = msg.text || "";
+        const scrubbed = !isUser ? text.replace(/[\{\}\[\]\"\:,\\]/g, '').trim() : text.trim();
+        return scrubbed.length > 0 && (isUser || /[a-zA-Z0-9]/.test(scrubbed));
+    }, [msg.text, isUser]);
 
-    // Total visibility check: If NO visible elements exist, kill the whole row
-    const hasMeaningfulThoughts = (msg.thoughts || []).some(t => t.trim().length > 0 && t !== "Thinking...");
+    const hasMeaningfulThoughts = useMemo(() =>
+        (msg.thoughts || []).some(t => t.trim().length > 0 && t !== "Thinking..."),
+        [msg.thoughts]);
+
     const hasVisibleContent = showLabel || visibleToolCalls.length > 0 || hasMeaningfulThoughts || (msg.status && msg.status.trim()) || hasTextContent || msg.error || msg.approval_required;
 
     if (!hasVisibleContent) return null;
@@ -428,33 +396,18 @@ function MessageRow({ msg, showLabel, onApprove, onReject, approvalDecisions, th
             flexDirection: "column",
             gap: "2px",
             maxWidth: isUser ? "75%" : "100%",
-            alignSelf: isUser ? "flex-end" : "flex-start", // Reverted user to right
-            marginBottom: showLabel ? "6px" : "0", // Slightly more space if label exists
+            alignSelf: isUser ? "flex-end" : "flex-start",
+            marginBottom: showLabel ? "6px" : "0",
         }}>
-            {/* Sender label for bot (only right align logic removed for user) */}
             {!isUser && showLabel && (
-                <div style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    marginBottom: "2px",
-                }}>
-                    <div style={{
-                        width: "20px", height: "20px",
-                        borderRadius: "50%",
-                        backgroundColor: theme.colors.neutral[800],
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        border: `1px solid ${theme.colors.neutral[700]}`
-                    }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "2px" }}>
+                    <div style={{ width: "20px", height: "20px", borderRadius: "50%", backgroundColor: theme.colors.neutral[800], display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${theme.colors.neutral[700]}` }}>
                         <Bot size={12} style={{ color: theme.colors.primary[400] }} />
                     </div>
-                    <span style={{ fontSize: "0.72em", fontWeight: 700, color: theme.colors.foreground, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                        Prani
-                    </span>
+                    <span style={{ fontSize: "0.72em", fontWeight: 700, color: theme.colors.foreground, textTransform: "uppercase", letterSpacing: "0.05em" }}>Prani</span>
                 </div>
             )}
 
-            {/* Thinking & Status */}
             {!isUser && (
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
                     <StatusIndicator status={msg.status} theme={theme} />
@@ -462,85 +415,188 @@ function MessageRow({ msg, showLabel, onApprove, onReject, approvalDecisions, th
                 </div>
             )}
 
-            {/* Tool Calls */}
             {!isUser && visibleToolCalls.length > 0 && (
                 <div style={{ marginBottom: "6px" }}>
                     {visibleToolCalls.map((t, i) => <ToolCallCard key={i} tool={t} theme={theme} />)}
                 </div>
             )}
 
-            {/* Main message */}
-            {(() => {
-                const text = msg.text || "";
-                const isUser = msg.sender === 'user';
-                const scrubbed = !isUser ? text.replace(/[\{\}\[\]\"\:,\\]/g, '').trim() : text.trim();
-
-                // Ghost Div Protection: Only render bubble if it contains valid alphanumeric content
-                const hasContent = scrubbed.length > 0 && (isUser || /[a-zA-Z0-9]/.test(scrubbed));
-                if (!hasContent && !msg.error) return null;
-
-                return (
+            {(hasTextContent || msg.error) && (
+                <div style={{
+                    display: "flex",
+                    alignItems: "flex-end",
+                    gap: "10px",
+                    flexDirection: isUser ? "row-reverse" : "row",
+                    marginTop: !showLabel && !isUser ? "6px" : "0"
+                }}>
+                    {isUser && <div style={{ flexShrink: 0 }}><Avatar size="sm" fallback={<User size={16} />} /></div>}
                     <div style={{
-                        display: "flex",
-                        alignItems: "flex-end",
-                        gap: "10px",
-                        flexDirection: isUser ? "row-reverse" : "row", // User on right again
-                        marginTop: !showLabel && !isUser ? "6px" : "0" // Small gap for unlabelled bot messages
+                        backgroundColor: isUser ? theme.colors.neutral[100] : "transparent",
+                        color: theme.colors.foreground,
+                        padding: isUser ? `10px 14px` : "6px 0px",
+                        borderRadius: isUser ? theme.borderRadius.lg : "0",
+                        wordBreak: "break-word",
+                        overflowWrap: "anywhere",
+                        lineHeight: 1.6,
+                        fontSize: "0.93em",
+                        maxWidth: "100%",
                     }}>
-                        {/* User avatar on the right */}
-                        {isUser && (
-                            <div style={{ flexShrink: 0 }}>
-                                <Avatar size="sm" fallback={<User size={16} />} />
+                        {isUser ? (
+                            <span style={{ whiteSpace: "pre-wrap" }}>{msg.text}</span>
+                        ) : (
+                            msg.text ? <MarkdownContent content={msg.text} theme={theme} /> : null
+                        )}
+                        {msg.error && (
+                            <div style={{
+                                marginTop: "8px", padding: "6px 10px",
+                                backgroundColor: "rgba(239,68,68,0.08)",
+                                border: `1px solid ${theme.colors.destructive}`,
+                                borderRadius: "6px",
+                                color: theme.colors.destructive, fontSize: "0.85em",
+                            }}>
+                                {msg.error}
                             </div>
                         )}
-                        <div style={{
-                            backgroundColor: isUser ? theme.colors.neutral[100] : "transparent",
-                            color: theme.colors.foreground,
-                            padding: isUser ? `10px 14px` : "6px 0px",
-                            borderRadius: isUser ? theme.borderRadius.lg : "0",
-                            wordBreak: "break-word",
-                            overflowWrap: "anywhere",
-                            lineHeight: 1.6,
-                            fontSize: "0.93em",
-                            maxWidth: "100%",
-                        }}>
-                            {isUser ? (
-                                <span style={{ whiteSpace: "pre-wrap" }}>{msg.text}</span>
-                            ) : (
-                                msg.text ? <MarkdownContent content={msg.text} theme={theme} /> : null
-                            )}
-                            {msg.error && (
-                                <div style={{
-                                    marginTop: (hasContent || isUser) ? "8px" : "0", padding: "6px 10px",
-                                    backgroundColor: "rgba(239,68,68,0.08)",
-                                    border: `1px solid ${theme.colors.destructive}`,
-                                    borderRadius: "6px",
-                                    color: theme.colors.destructive, fontSize: "0.85em",
-                                }}>
-                                    {msg.error}
-                                </div>
-                            )}
-                        </div>
                     </div>
-                );
-            })()}
+                </div>
+            )}
 
-            {/* Approval */}
             {!isUser && msg.approval_required && (
                 decision ? (
                     <ApprovalBadge decision={decision} theme={theme} />
                 ) : (
-                    <ApprovalCard
-                        msg={msg}
-                        theme={theme}
-                        onApprove={() => onApprove(msg)}
-                        onReject={() => onReject(msg)}
-                    />
+                    <ApprovalCard msg={msg} theme={theme} onApprove={() => onApprove(msg)} onReject={() => onReject(msg)} />
                 )
             )}
         </div>
     )
-}
+});
+
+// ─── Plan Overlay ─────────────────────────────────────────────────────────────
+const PlanOverlay = memo(({ currentPlan, theme, isPlanExpanded, setIsPlanExpanded }) => {
+    let safeSubtasks = [];
+    if (currentPlan) {
+        const planObj = currentPlan.plan || currentPlan;
+        if (planObj.subtasks && planObj.execution_order && Array.isArray(planObj.execution_order)) {
+            safeSubtasks = planObj.execution_order.map(id => planObj.subtasks[id]).filter(Boolean);
+        } else if (Array.isArray(planObj.subtasks)) {
+            safeSubtasks = planObj.subtasks;
+        } else if (planObj.subtasks && typeof planObj.subtasks === 'object') {
+            safeSubtasks = Object.values(planObj.subtasks);
+        }
+    }
+
+    if (safeSubtasks.length === 0) return null;
+
+    const isComplete = safeSubtasks.every(s => String(s.status).toLowerCase() === 'completed' || String(s.status).toLowerCase() === 'success');
+    const isFailed = safeSubtasks.some(s => String(s.status).toLowerCase() === 'failed');
+
+    if (isComplete || isFailed) return null;
+
+    const activeTaskCount = safeSubtasks.filter(s => String(s.status).toLowerCase() === 'completed').length;
+
+    return (
+        <div style={{
+            margin: "20px 40px 0 40px",
+            padding: "16px 20px",
+            backgroundColor: theme.colors.neutral[900],
+            borderRadius: "12px",
+            border: `1px solid ${isFailed ? theme.colors.destructive : theme.colors.neutral[800]}`,
+            boxShadow: isFailed ? `0 0 20px rgba(239, 68, 68, 0.1)` : "0 8px 24px rgba(0,0,0,0.15)",
+            maxHeight: isPlanExpanded ? "40%" : "auto",
+            overflowY: isPlanExpanded ? "auto" : "hidden",
+            flexShrink: 0,
+            transition: "all 0.3s ease",
+            zIndex: 10
+        }} className="hover-scrollbar">
+            <div
+                style={{ display: "flex", alignItems: "center", cursor: "pointer", userSelect: "none" }}
+                onClick={() => setIsPlanExpanded(!isPlanExpanded)}
+            >
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div style={{
+                        width: "28px", height: "28px", borderRadius: "8px",
+                        backgroundColor: isFailed ? "rgba(239, 68, 68, 0.1)" : theme.colors.primary[900],
+                        color: isFailed ? theme.colors.destructive : theme.colors.primary[400],
+                        display: "flex", alignItems: "center", justifyContent: "center"
+                    }}>
+                        {isFailed ? <X size={16} strokeWidth={2.5} /> : <Check size={16} strokeWidth={2.5} />}
+                    </div>
+                    <div>
+                        <div style={{ fontSize: "0.9em", fontWeight: 600, color: theme.colors.neutral[200], letterSpacing: "0.02em" }}>
+                            {isFailed ? "Execution Failed" : "Execution Plan"}
+                        </div>
+                        <div style={{ fontSize: "0.75em", color: theme.colors.muted_foreground, marginTop: "2px" }}>
+                            {activeTaskCount} of {safeSubtasks.length} steps completed
+                        </div>
+                    </div>
+                </div>
+                <div style={{
+                    marginLeft: "auto",
+                    width: "28px", height: "28px", borderRadius: "50%",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    backgroundColor: isPlanExpanded ? theme.colors.neutral[800] : "transparent",
+                    color: isPlanExpanded ? theme.colors.foreground : theme.colors.muted_foreground,
+                    transition: "all 0.2s"
+                }}>
+                    {isPlanExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                </div>
+            </div>
+
+            {isPlanExpanded && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "2px", marginTop: "16px", marginLeft: "4px" }}>
+                    {safeSubtasks.map((st, i) => {
+                        const status = String(st.status).toLowerCase();
+                        const isDone = status === "completed" || status === "success";
+                        const isActive = status === "in_progress";
+                        const isFailed = status === "failed";
+                        const isPending = status === "pending";
+
+                        return (
+                            <div key={st.id || i} style={{
+                                display: "flex", alignItems: "flex-start", gap: "14px",
+                                fontSize: "0.85em", color: theme.colors.foreground,
+                                padding: "10px 12px",
+                                backgroundColor: isActive ? theme.colors.neutral[800] : "transparent",
+                                borderRadius: "8px",
+                                transition: "all 0.2s ease",
+                                opacity: isPending ? 0.5 : 1,
+                                borderLeft: isActive ? `2px solid ${theme.colors.primary[500]}` : "none"
+                            }}>
+                                <div style={{
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    width: "20px", height: "20px", borderRadius: "50%",
+                                    backgroundColor: isDone ? (theme.colors.success?.DEFAULT || "#22c55e") :
+                                        isFailed ? (theme.colors.destructive || "#ef4444") :
+                                            isActive ? theme.colors.primary[500] : theme.colors.neutral[800],
+                                    border: (!isDone && !isActive && !isFailed) ? `1px solid ${theme.colors.neutral[600]}` : "none",
+                                    color: theme.colors.white,
+                                    flexShrink: 0,
+                                    marginTop: "2px",
+                                    boxShadow: isActive ? `0 0 10px ${theme.colors.primary[900]}` : "none"
+                                }}>
+                                    {isDone && <Check size={12} strokeWidth={3} />}
+                                    {isFailed && <X size={12} strokeWidth={3} />}
+                                    {isActive && <div style={{ width: "6px", height: "6px", backgroundColor: "white", borderRadius: "50%", animation: "pulse 1.5s infinite" }} />}
+                                </div>
+                                <div style={{ display: "flex", flexDirection: "column" }}>
+                                    <span style={{
+                                        textDecoration: isDone ? "line-through" : "none",
+                                        color: isDone ? theme.colors.neutral[400] : (isFailed ? theme.colors.destructive : (isActive ? theme.colors.neutral[100] : theme.colors.neutral[300])),
+                                        fontWeight: (isActive || isFailed) ? 600 : 400
+                                    }}>
+                                        {st.description}
+                                    </span>
+                                    {st.error && <span style={{ fontSize: "0.85em", color: theme.colors.destructive, marginTop: "4px" }}>{st.error}</span>}
+                                </div>
+                            </div>
+                        )
+                    })}
+                </div>
+            )}
+        </div>
+    );
+});
 
 // ─── Empty State ──────────────────────────────────────────────────────────────
 function EmptyState({ theme }) {
@@ -603,12 +659,18 @@ export default function ChatPanel({
 
     const [isPlanExpanded, setIsPlanExpanded] = useState(true)
 
-    // Auto-scroll
+    // Auto-scroll logic (Optimized for performance)
+    const lastScrollTime = useRef(0);
     useEffect(() => {
-        if (isScrolledToBottom) {
-            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+        if (isScrolledToBottom && messages.length > 0) {
+            const now = Date.now();
+            // Throttle scroll updates to prevent UI thrashing during high-speed streaming
+            if (now - lastScrollTime.current > 100) {
+                messagesEndRef.current?.scrollIntoView({ behavior: isStreaming ? "auto" : "smooth" });
+                lastScrollTime.current = now;
+            }
         }
-    }, [messages, isScrolledToBottom])
+    }, [messages, isScrolledToBottom, isStreaming]);
 
     const handleScroll = () => {
         if (!messagesContainerRef.current) return
@@ -637,137 +699,12 @@ export default function ChatPanel({
             overflow: "hidden",
         }}>
             {/* Plan Area - Persistent Mission Control */}
-            {(() => {
-                let safeSubtasks = [];
-                if (currentPlan) {
-                    const planObj = currentPlan.plan || currentPlan;
-                    if (planObj.subtasks && planObj.execution_order && Array.isArray(planObj.execution_order)) {
-                        safeSubtasks = planObj.execution_order.map(id => planObj.subtasks[id]).filter(Boolean);
-                    } else if (Array.isArray(planObj.subtasks)) {
-                        safeSubtasks = planObj.subtasks;
-                    } else if (planObj.subtasks && typeof planObj.subtasks === 'object') {
-                        safeSubtasks = Object.values(planObj.subtasks);
-                    }
-                }
-
-                if (safeSubtasks.length === 0) return null;
-
-                const isComplete = safeSubtasks.every(s => String(s.status).toLowerCase() === 'completed' || String(s.status).toLowerCase() === 'success');
-                const isFailed = safeSubtasks.some(s => String(s.status).toLowerCase() === 'failed');
-
-                // AUTO-HIDE: Remove plan panel once things are done or failed
-                if (isComplete || isFailed) return null;
-
-                const activeTaskCount = safeSubtasks.filter(s => String(s.status).toLowerCase() === 'completed').length;
-
-                return (
-                    <div style={{
-                        margin: "20px 40px 0 40px",
-                        padding: "16px 20px",
-                        backgroundColor: theme.colors.neutral[900],
-                        borderRadius: "12px",
-                        border: `1px solid ${isFailed ? theme.colors.destructive : theme.colors.neutral[800]}`,
-                        boxShadow: isFailed ? `0 0 20px rgba(239, 68, 68, 0.1)` : "0 8px 24px rgba(0,0,0,0.15)",
-                        maxHeight: isPlanExpanded ? "40%" : "auto",
-                        overflowY: isPlanExpanded ? "auto" : "hidden",
-                        flexShrink: 0,
-                        transition: "all 0.3s ease",
-                        zIndex: 10
-                    }} className="hover-scrollbar">
-                        <div
-                            style={{
-                                display: "flex",
-                                alignItems: "center",
-                                cursor: "pointer",
-                                userSelect: "none"
-                            }}
-                            onClick={() => setIsPlanExpanded(!isPlanExpanded)}
-                        >
-                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                <div style={{
-                                    width: "28px", height: "28px", borderRadius: "8px",
-                                    backgroundColor: isFailed ? "rgba(239, 68, 68, 0.1)" : theme.colors.primary[900],
-                                    color: isFailed ? theme.colors.destructive : theme.colors.primary[400],
-                                    display: "flex", alignItems: "center", justifyContent: "center"
-                                }}>
-                                    {isFailed ? <X size={16} strokeWidth={2.5} /> : <Check size={16} strokeWidth={2.5} />}
-                                </div>
-                                <div>
-                                    <div style={{ fontSize: "0.9em", fontWeight: 600, color: theme.colors.neutral[200], letterSpacing: "0.02em" }}>
-                                        {isFailed ? "Execution Failed" : "Execution Plan"}
-                                    </div>
-                                    <div style={{ fontSize: "0.75em", color: theme.colors.muted_foreground, marginTop: "2px" }}>
-                                        {activeTaskCount} of {safeSubtasks.length} steps completed
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div style={{
-                                marginLeft: "auto",
-                                width: "28px", height: "28px", borderRadius: "50%",
-                                display: "flex", alignItems: "center", justifyContent: "center",
-                                backgroundColor: isPlanExpanded ? theme.colors.neutral[800] : "transparent",
-                                color: isPlanExpanded ? theme.colors.foreground : theme.colors.muted_foreground,
-                                transition: "all 0.2s"
-                            }}>
-                                {isPlanExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                            </div>
-                        </div>
-
-                        {isPlanExpanded && (
-                            <div style={{ display: "flex", flexDirection: "column", gap: "2px", marginTop: "16px", marginLeft: "4px" }}>
-                                {safeSubtasks.map((st, i) => {
-                                    const status = String(st.status).toLowerCase();
-                                    const isDone = status === "completed" || status === "success";
-                                    const isActive = status === "in_progress";
-                                    const isFailed = status === "failed";
-                                    const isPending = status === "pending";
-
-                                    return (
-                                        <div key={st.id || i} style={{
-                                            display: "flex", alignItems: "flex-start", gap: "14px",
-                                            fontSize: "0.85em", color: theme.colors.foreground,
-                                            padding: "10px 12px",
-                                            backgroundColor: isActive ? theme.colors.neutral[800] : "transparent",
-                                            borderRadius: "8px",
-                                            transition: "all 0.2s ease",
-                                            opacity: isPending ? 0.5 : 1,
-                                            borderLeft: isActive ? `2px solid ${theme.colors.primary[500]}` : "none"
-                                        }}>
-                                            <div style={{
-                                                display: "flex", alignItems: "center", justifyContent: "center",
-                                                width: "20px", height: "20px", borderRadius: "50%",
-                                                backgroundColor: isDone ? (theme.colors.success?.DEFAULT || "#22c55e") :
-                                                    isFailed ? (theme.colors.destructive || "#ef4444") :
-                                                        isActive ? theme.colors.primary[500] : theme.colors.neutral[800],
-                                                border: (!isDone && !isActive && !isFailed) ? `1px solid ${theme.colors.neutral[600]}` : "none",
-                                                color: theme.colors.white,
-                                                flexShrink: 0,
-                                                marginTop: "2px",
-                                                boxShadow: isActive ? `0 0 10px ${theme.colors.primary[900]}` : "none"
-                                            }}>
-                                                {isDone && <Check size={12} strokeWidth={3} />}
-                                                {isFailed && <X size={12} strokeWidth={3} />}
-                                                {isActive && <div style={{ width: "6px", height: "6px", backgroundColor: "white", borderRadius: "50%", animation: "pulse 1.5s infinite" }} />}
-                                            </div>
-                                            <div style={{ display: "flex", flexDirection: "column" }}>
-                                                <span style={{
-                                                    textDecoration: isDone ? "line-through" : "none",
-                                                    color: isDone ? theme.colors.neutral[400] : (isFailed ? theme.colors.destructive : (isActive ? theme.colors.neutral[100] : theme.colors.neutral[300])),
-                                                    fontWeight: (isActive || isFailed) ? 600 : 400
-                                                }}>
-                                                    {st.description}
-                                                </span>
-                                                {st.error && <span style={{ fontSize: "0.85em", color: theme.colors.destructive, marginTop: "4px" }}>{st.error}</span>}
-                                            </div>
-                                        </div>
-                                    )
-                                })}
-                            </div>
-                        )}
-                    </div>
-                );
-            })()}
+            <PlanOverlay
+                currentPlan={currentPlan}
+                theme={theme}
+                isPlanExpanded={isPlanExpanded}
+                setIsPlanExpanded={setIsPlanExpanded}
+            />
 
             {/* Messages Area */}
             <div

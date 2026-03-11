@@ -133,21 +133,31 @@ export default function CreateToolPage() {
   }, [toolId, dispatch, navigate])
 
   const validateToolData = () => {
+    // Format Name and Description before validation
+    const formatToolName = (nameStr) => {
+      const trimmed = nameStr.trim()
+      // If it has spaces, dashes, or special characters, let's treat it as needing snake_case
+      if (/[\s-]/.test(trimmed)) {
+        return trimmed
+          .replace(/[\s-]/g, '_')
+          .replace(/[^A-Za-z0-z_]/g, '')
+          .toLowerCase()
+      }
+      return trimmed
+    }
+
+    const formattedName = formatToolName(toolData.name || "")
+    const trimmedDescription = (toolData.description || "").trim()
+
     // 1. Name Required
-    if (!toolData.name || toolData.name.trim().length < 3) {
-      addToast("Validation Error", "Tool name is required.", "error")
+    if (!formattedName || formattedName.length < 3) {
+      addToast("Validation Error", "Tool name is required and should be at least 3 characters.", "error")
       return false
     }
 
     // 2. Description Required
-    if (!toolData.description || toolData.description.trim().length < 10) {
-      addToast("Validation Error", "Description is required.", "error")
-      return false
-    }
-
-    // 3. Category Required
-    if (!toolData.categories || toolData.categories.length === 0) {
-      addToast("Validation Error", "Please select at least one tool category.", "error")
+    if (!trimmedDescription || trimmedDescription.length < 10) {
+      addToast("Validation Error", "Description must be at least 10 characters.", "error")
       return false
     }
 
@@ -182,17 +192,28 @@ export default function CreateToolPage() {
 
     // 6. Env Variables Validation
     if (toolData.environmentVariables.length > 0) {
+      const keys = new Set()
       for (let idx = 0; idx < toolData.environmentVariables.length; idx++) {
         const env = toolData.environmentVariables[idx]
+
+        // 6a. Empty key check
         if (!env.key || !env.key.trim()) {
-          addToast("Validation Error", `Env Variable #${idx + 1}: Key is required.`, "error")
+          addToast("Validation Error", `Env Variable #${idx + 1}: Key cannot be empty.`, "error")
           return false
         }
 
-        // Value required for NEW variables. Optional for EXISTING variables (empty = unchanged).
+        // 6b. Duplicate key check
+        const trimmedKey = env.key.trim()
+        if (keys.has(trimmedKey)) {
+          addToast("Validation Error", `Env Variable '${trimmedKey}': Duplicate keys are not allowed.`, "error")
+          return false
+        }
+        keys.add(trimmedKey)
+
+        // 6c. Empty value check (required for both NEW and EXISTING variables based on instructions)
         const isValueMissing = !env.value || !env.value.trim()
-        if (isValueMissing && !env.isExisting) {
-          addToast("Validation Error", `Env Variable #${idx + 1} (${env.key || 'Unnamed'}): Value is required for new variables.`, "error")
+        if (isValueMissing) {
+          addToast("Validation Error", `Env Variable '${trimmedKey}': Value cannot be empty.`, "error")
           return false
         }
       }
@@ -205,6 +226,22 @@ export default function CreateToolPage() {
     if (!validateToolData()) {
       return
     }
+
+    // Format Name and Description before validation
+    const formatToolName = (nameStr) => {
+      const trimmed = nameStr.trim()
+      // If it has spaces, dashes, or special characters, let's treat it as needing snake_case
+      if (/[\s-]/.test(trimmed)) {
+        return trimmed
+          .replace(/[\s-]/g, '_')
+          .replace(/[^A-Za-z0-z_]/g, '')
+          .toLowerCase()
+      }
+      return trimmed
+    }
+
+    const formattedName = formatToolName(toolData.name || "")
+    const trimmedDescription = (toolData.description || "").trim()
 
     let payload = {}
 
@@ -234,16 +271,17 @@ export default function CreateToolPage() {
       return acc
     }, {})
 
-    if (toolData.id && originalData) {
-      // UPDATE: Check for changes
-      if (toolData.name !== originalData.name) payload.name = toolData.name
-      if (toolData.description !== originalData.description) payload.description = toolData.description
+    const isEditing = !!toolData.id && !!originalData;
+
+    if (isEditing) {
+      // Delta generation
+      const payload = {}
+      if (formattedName !== originalData.name) payload.name = formattedName
+      if (trimmedDescription !== originalData.description) payload.description = trimmedDescription
       if (toolData.code !== originalData.code) payload.code = toolData.code
 
-      // Compare Lists (using JSON stringify for simple comparison)
-      if (JSON.stringify(toolData.categories.sort()) !== JSON.stringify(originalData.categories.sort())) {
-        payload.categories = toolData.categories
-      }
+      // We no longer strictly compare categories since it's removed from UI, but keep the field if present
+      if (toolData.categories) payload.categories = toolData.categories
 
       // Compare Input Fields (ignore internal UI IDs)
       const originalInputs = originalData.inputFields.map(f => ({
@@ -272,16 +310,22 @@ export default function CreateToolPage() {
         return
       }
 
+      // If no changes, warn user? Or just return?
+      if (Object.keys(payload).length === 0) {
+        addToast("Info", "No changes detected.", "info")
+        return
+      }
+
     } else {
       // CREATE: Send full payload
-      payload = {
-        name: toolData.name,
-        description: toolData.description,
-        code: toolData.code,
-        categories: toolData.categories,
-        is_public: false,
+      const payload = {
+        name: formattedName,
+        description: trimmedDescription,
+        code: toolData.code || "def execute_tool():\n    pass",
+        categories: toolData.categories || [],
         input_fields: inputFieldsMapped,
         env_var_defs: envVarDefsMapped,
+        is_public: !!toolData.is_public,
         secrets: secretsMapped
       }
     }
@@ -298,8 +342,19 @@ export default function CreateToolPage() {
       setTimeout(() => navigate("/tools"), 1000)
     } catch (error) {
       console.error("Error saving tool:", error)
-      const errorMsg = typeof error === 'string' ? error : (error.detail || "Error saving tool")
-      addToast("Error", errorMsg, "error")
+      let errorMsg = "Error saving tool"
+      if (typeof error === 'string') {
+        errorMsg = error
+      } else if (error && error.detail) {
+        if (Array.isArray(error.detail)) {
+          errorMsg = error.detail.map(e => e.msg).join(", ")
+        } else {
+          errorMsg = String(error.detail)
+        }
+      } else if (error && error.message) {
+        errorMsg = error.message
+      }
+      addToast("Validation Error", errorMsg, "error")
     }
   }
 
@@ -391,14 +446,14 @@ export default function CreateToolPage() {
                     placeholder="e.g., Web Search, Code Executor"
                     value={toolData.name || ""}
                     onChange={(e) => setToolData({ ...toolData, name: e.target.value })}
-                    maxLength={100}
+                    maxLength={20}
                   />
                   <p style={{
                     fontSize: theme.typography.fontSize.xs,
                     color: theme.colors.muted_foreground,
                     margin: `${theme.spacing[2]} 0 0 0`,
                   }}>
-                    {toolData.name?.length || 0}/100 characters
+                    {toolData.name?.length || 0}/20 characters
                   </p>
                 </div>
                 <div>
@@ -416,104 +471,18 @@ export default function CreateToolPage() {
                     value={toolData.description || ""}
                     onChange={(e) => setToolData({ ...toolData, description: e.target.value })}
                     rows={3}
+                    maxLength={200}
+                    showCharCount={false}
                   />
                   <p style={{
                     fontSize: theme.typography.fontSize.xs,
                     color: theme.colors.muted_foreground,
                     margin: `${theme.spacing[2]} 0 0 0`,
                   }}>
-                    {toolData.description?.length || 0}/500 characters
+                    {toolData.description?.length || 0}/200 characters
                   </p>
                 </div>
 
-
-              </Card>
-
-              {/* Tool Categories Card */}
-              <Card style={{
-                padding: theme.spacing[6],
-                border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-                borderRadius: theme.borderRadius.md,
-                backgroundColor: theme.colors.card,
-              }}>
-                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: theme.spacing[4], gap: theme.spacing[4] }}>
-                  <Text as="h3" size="lg" variant="label">
-                    Tool Categories ({toolData.categories?.length || 0})
-                  </Text>
-
-                  {/* Add Category Button */}
-                  <div style={{ width: "fit-content" }}>
-                    <Combobox
-                      value=""
-                      onValueChange={(category) => {
-                        if (category && !toolData.categories?.includes(category)) {
-                          setToolData({
-                            ...toolData,
-                            categories: [...(toolData.categories || []), category]
-                          })
-                        } else if (category && toolData.categories?.includes(category)) {
-                          // Deselect if already selected
-                          setToolData({
-                            ...toolData,
-                            categories: toolData.categories.filter(c => c !== category)
-                          })
-                        }
-                      }}
-                      variant="default"
-                      size="md"
-                      multiselect={true}
-                    >
-                      <div style={{ display: "contents" }}>
-                        <Button
-                          variant="outline"
-                          size="md"
-                          onClick={(e) => {
-                            e.preventDefault()
-                            document.querySelector('[data-combobox-trigger="categories"]')?.click()
-                          }}
-                        >
-                          + Add Category
-                        </Button>
-                        <div style={{ display: "none" }}>
-                          <ComboboxTrigger data-combobox-trigger="categories">
-                            Select category
-                          </ComboboxTrigger>
-                        </div>
-                      </div>
-                      <ComboboxContent>
-                        <ComboboxSearch placeholder="Search categories..." />
-                        {["READ", "WRITE", "DELETE", "UPDATE"].map((category) => (
-                          <ComboboxItem key={category} value={category} searchableText={category}>
-                            <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[2] }}>
-                              {toolData.categories?.includes(category) && <Check size={14} style={{ color: theme.colors.primary[600] }} />}
-                              {category}
-                            </div>
-                          </ComboboxItem>
-                        ))}
-                      </ComboboxContent>
-                    </Combobox>
-                  </div>
-                </div>
-
-                {/* Selected Categories Display */}
-                {toolData.categories && toolData.categories.length > 0 && (
-                  <div>
-                    <Chips
-                      items={toolData.categories.map(cat => ({
-                        id: cat,
-                        label: cat
-                      }))}
-                      variant="primary"
-                      size="md"
-                      onRemove={(cat) => {
-                        setToolData({
-                          ...toolData,
-                          categories: toolData.categories.filter(c => c !== cat)
-                        })
-                      }}
-                    />
-                  </div>
-                )}
               </Card>
 
               {/* Input Fields Card */}
@@ -704,12 +673,15 @@ export default function CreateToolPage() {
               }}>
                 <div style={{ marginBottom: theme.spacing[6], display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div>
-                    <Text as="h3" size="lg" variant="label">
+                    <h3 style={{
+                      fontSize: theme.typography.fontSize.lg,
+                      fontWeight: theme.typography.fontWeight.semibold,
+                      color: theme.colors.foreground,
+                      margin: 0,
+                    }}>
                       Python Code
-                    </Text>
-                    <Text as="p" size="sm" variant="body" style={{ color: theme.colors.muted_foreground, marginTop: theme.spacing[1] }}>
-                      Must include a "def execute_tool(inputs):" function
-                    </Text>
+                    </h3>
+
                   </div>
                   <Button
                     variant="outline"
@@ -722,15 +694,25 @@ export default function CreateToolPage() {
                 </div>
 
                 <div style={{ marginBottom: theme.spacing[4] }}>
-                  <Alert variant="filled" status="info">
-                    <Text size="sm">
-                      <strong>Required Function:</strong> Your code MUST define a function named <code>def execute_tool(...):</code> which accepts inputs and returns a result.
+                  <div style={{
+                    padding: theme.spacing[4],
+                    backgroundColor: theme.colors.primary[50],
+                    border: `1px solid ${theme.colors.primary[200]}`,
+                    borderRadius: theme.borderRadius.md,
+                  }}>
+                    <p style={{
+                      fontSize: theme.typography.fontSize.sm,
+                      color: theme.colors.primary[900],
+                      margin: 0,
+                      lineHeight: 1.5,
+                    }}>
+                      <strong>Required Function:</strong> Your code MUST define a function named <code>def execute_tool(inputs):</code> which accepts dictionary inputs and returns a result.
                       <br />
                       <strong>Environment Variables:</strong> Access environment variables defined below using the syntax <code>{"{{env.VARIABLE_NAME}}"}</code> within your code string.
                       <br />
                       <em>Example:</em> <code>api_key = "{"{{env.API_KEY}}"}"</code>
-                    </Text>
-                  </Alert>
+                    </p>
+                  </div>
                 </div>
                 <label style={{
                   display: "block",
@@ -776,213 +758,6 @@ export default function CreateToolPage() {
               </Card>
             </div>
 
-            {/* Environment Variables Modal using Dialog Component */}
-            {showEnvModal && (
-              <div style={{
-                position: "fixed",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: "rgba(0, 0, 0, 0.5)",
-                display: "flex",
-                justifyContent: "center",
-                alignItems: "center",
-                zIndex: 1000,
-              }}>
-                <Card style={{
-                  padding: theme.spacing[6],
-                  borderRadius: theme.borderRadius.lg,
-                  backgroundColor: theme.colors.card,
-                  maxWidth: "600px",
-                  width: "90%",
-                  maxHeight: "80vh",
-                  overflow: "auto",
-                  border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-                }}>
-                  <div style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    marginBottom: theme.spacing[6],
-                  }}>
-                    <div>
-                      <h2 style={{
-                        fontSize: theme.typography.fontSize.lg,
-                        fontWeight: theme.typography.fontWeight.semibold,
-                        color: theme.colors.foreground,
-                        margin: 0,
-                      }}>
-                        Environment Variables
-                      </h2>
-                      <p style={{
-                        fontSize: theme.typography.fontSize.sm,
-                        color: theme.colors.muted_foreground,
-                        marginTop: theme.spacing[1],
-                        margin: 0,
-                      }}>
-                        Add sensitive configuration variables. Use <code>{"{{env.KEY}}"}</code> to access them in your code.
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => setShowEnvModal(false)}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        padding: 0,
-                        cursor: "pointer",
-                        color: theme.colors.muted_foreground,
-                      }}
-                    >
-                      <X size={24} />
-                    </button>
-                  </div>
-
-                  {toolData.environmentVariables && toolData.environmentVariables.length > 0 && (
-                    <div style={{ marginBottom: theme.spacing[6] }}>
-                      {toolData.environmentVariables.map((envVar, idx) => (
-                        <div key={idx} style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: theme.spacing[3],
-                          marginBottom: theme.spacing[4],
-                          padding: theme.spacing[4],
-                          border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-                          borderRadius: theme.borderRadius.sm,
-                          backgroundColor: theme.colors.neutral[50],
-                        }}>
-                          {/* Key and Value Inputs Side by Side */}
-                          <div style={{
-                            display: "flex",
-                            gap: theme.spacing[3],
-                          }}>
-                            {/* Key Input */}
-                            <div style={{ flex: 1 }}>
-                              <label style={{
-                                display: "block",
-                                fontSize: theme.typography.fontSize.xs,
-                                fontWeight: theme.typography.fontWeight.semibold,
-                                color: theme.colors.foreground,
-                                marginBottom: theme.spacing[1],
-                              }}>
-                                Key
-                              </label>
-                              <Input
-                                placeholder="e.g., API_KEY"
-                                value={envVar.key || ""}
-                                onChange={(e) => {
-                                  const newVars = [...toolData.environmentVariables]
-                                  newVars[idx].key = e.target.value
-                                  setToolData({ ...toolData, environmentVariables: newVars })
-                                }}
-                                disabled={envVar.isExisting}
-                              />
-                            </div>
-
-                            {/* Value Input with Eye Icon */}
-                            <div style={{ flex: 1 }}>
-                              <label style={{
-                                display: "block",
-                                fontSize: theme.typography.fontSize.xs,
-                                fontWeight: theme.typography.fontWeight.semibold,
-                                color: theme.colors.foreground,
-                                marginBottom: theme.spacing[1],
-                              }}>
-                                Value
-                              </label>
-                              <div style={{ position: "relative" }}>
-                                <Input
-                                  placeholder="Environment variable value"
-                                  type={envVisibility[envVar.id] ? "text" : "password"}
-                                  value={envVar.value || ""}
-                                  onChange={(e) => {
-                                    const newVars = [...toolData.environmentVariables]
-                                    newVars[idx].value = e.target.value
-                                    setToolData({ ...toolData, environmentVariables: newVars })
-                                  }}
-                                  disabled={envVar.isExisting}
-                                />
-                                <button
-                                  onClick={() => toggleEnvVisibility(envVar.id)}
-                                  style={{
-                                    position: "absolute",
-                                    right: theme.spacing[3],
-                                    top: "50%",
-                                    transform: "translateY(-50%)",
-                                    background: "none",
-                                    border: "none",
-                                    padding: 0,
-                                    cursor: "pointer",
-                                    color: theme.colors.muted_foreground,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                  }}
-                                  type="button"
-                                >
-                                  {envVisibility[envVar.id] ? <EyeOff size={18} /> : <Eye size={18} />}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Remove Button */}
-                          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              leadingIcon={Trash2}
-                              onClick={() => {
-                                const newVars = toolData.environmentVariables.filter((_, i) => i !== idx)
-                                setToolData({ ...toolData, environmentVariables: newVars })
-                                const newVisibility = { ...envVisibility }
-                                delete newVisibility[envVar.id]
-                                setEnvVisibility(newVisibility)
-                              }}
-                            >
-                              Remove
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <Button
-                    variant="outline"
-                    size="md"
-                    leadingIcon={Plus}
-                    onClick={() => {
-                      const newVars = [
-                        ...(toolData.environmentVariables || []),
-                        { id: Date.now(), key: "", value: "", isPassword: true, isExisting: false }
-                      ]
-                      if (newVars.length <= 20) {
-                        setToolData({ ...toolData, environmentVariables: newVars })
-                      } else {
-                        alert("Maximum 20 environment variables allowed")
-                      }
-                    }}
-                    style={{ marginBottom: theme.spacing[6], width: "100%" }}
-                  >
-                    Add Environment Variable
-                  </Button>
-
-                  <div style={{
-                    display: "flex",
-                    justifyContent: "flex-end",
-                    gap: theme.spacing[3],
-                    paddingTop: theme.spacing[4],
-                    borderTop: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-                  }}>
-                    <Button variant="outline" size="md" onClick={() => setShowEnvModal(false)}>
-                      Close
-                    </Button>
-                  </div>
-                </Card>
-              </div>
-            )}
-
             {/* Footer Section */}
             <div style={{
               display: "flex",
@@ -1007,6 +782,214 @@ export default function CreateToolPage() {
           </>
         )}
       </Container>
+
+      {/* Environment Variables Modal */}
+      {showEnvModal && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0, 0, 0, 0.5)",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          zIndex: 1000,
+        }}>
+          <Card style={{
+            padding: theme.spacing[6],
+            borderRadius: theme.borderRadius.lg,
+            backgroundColor: theme.colors.card,
+            maxWidth: "600px",
+            width: "90%",
+            maxHeight: "80vh",
+            overflow: "auto",
+            border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
+          }}>
+            <div style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              marginBottom: theme.spacing[6],
+            }}>
+              <div>
+                <h2 style={{
+                  fontSize: theme.typography.fontSize.lg,
+                  fontWeight: theme.typography.fontWeight.semibold,
+                  color: theme.colors.foreground,
+                  margin: 0,
+                }}>
+                  Environment Variables
+                </h2>
+                <p style={{
+                  fontSize: theme.typography.fontSize.sm,
+                  color: theme.colors.muted_foreground,
+                  marginTop: theme.spacing[1],
+                  margin: 0,
+                }}>
+                  Add sensitive configuration variables. Use <code>{"{{env.KEY}}"}</code> to access them in your code.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowEnvModal(false)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
+                  color: theme.colors.muted_foreground,
+                }}
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            {toolData.environmentVariables && toolData.environmentVariables.length > 0 && (
+              <div style={{ marginBottom: theme.spacing[6] }}>
+                {toolData.environmentVariables.map((envVar, idx) => (
+                  <div key={idx} style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: theme.spacing[3],
+                    marginBottom: theme.spacing[4],
+                    padding: theme.spacing[4],
+                    border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
+                    borderRadius: theme.borderRadius.sm,
+                    backgroundColor: theme.colors.neutral[50],
+                  }}>
+                    {/* Key and Value Inputs Side by Side */}
+                    <div style={{
+                      display: "flex",
+                      gap: theme.spacing[3],
+                    }}>
+                      {/* Key Input */}
+                      <div style={{ flex: 1 }}>
+                        <label style={{
+                          display: "block",
+                          fontSize: theme.typography.fontSize.xs,
+                          fontWeight: theme.typography.fontWeight.semibold,
+                          color: theme.colors.foreground,
+                          marginBottom: theme.spacing[1],
+                        }}>
+                          Key
+                        </label>
+                        <Input
+                          placeholder="e.g., API_KEY"
+                          value={envVar.key || ""}
+                          onChange={(e) => {
+                            const newVars = [...toolData.environmentVariables]
+                            newVars[idx].key = e.target.value
+                            setToolData({ ...toolData, environmentVariables: newVars })
+                          }}
+                          disabled={envVar.isExisting}
+                        />
+                      </div>
+
+                      {/* Value Input with Eye Icon */}
+                      <div style={{ flex: 1 }}>
+                        <label style={{
+                          display: "block",
+                          fontSize: theme.typography.fontSize.xs,
+                          fontWeight: theme.typography.fontWeight.semibold,
+                          color: theme.colors.foreground,
+                          marginBottom: theme.spacing[1],
+                        }}>
+                          Value
+                        </label>
+                        <div style={{ position: "relative" }}>
+                          <Input
+                            placeholder="Environment variable value"
+                            type={envVisibility[envVar.id] ? "text" : "password"}
+                            value={envVar.value || ""}
+                            onChange={(e) => {
+                              const newVars = [...toolData.environmentVariables]
+                              newVars[idx].value = e.target.value
+                              setToolData({ ...toolData, environmentVariables: newVars })
+                            }}
+                            disabled={envVar.isExisting}
+                          />
+                          <button
+                            onClick={() => toggleEnvVisibility(envVar.id)}
+                            style={{
+                              position: "absolute",
+                              right: theme.spacing[3],
+                              top: "50%",
+                              transform: "translateY(-50%)",
+                              background: "none",
+                              border: "none",
+                              padding: 0,
+                              cursor: "pointer",
+                              color: theme.colors.muted_foreground,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                            type="button"
+                          >
+                            {envVisibility[envVar.id] ? <EyeOff size={18} /> : <Eye size={18} />}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Remove Button */}
+                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        leadingIcon={Trash2}
+                        onClick={() => {
+                          const newVars = toolData.environmentVariables.filter((_, i) => i !== idx)
+                          setToolData({ ...toolData, environmentVariables: newVars })
+                          const newVisibility = { ...envVisibility }
+                          delete newVisibility[envVar.id]
+                          setEnvVisibility(newVisibility)
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <Button
+              variant="outline"
+              size="md"
+              leadingIcon={Plus}
+              onClick={() => {
+                const newVars = [
+                  ...(toolData.environmentVariables || []),
+                  { id: Date.now(), key: "", value: "", isPassword: true, isExisting: false }
+                ]
+                if (newVars.length <= 20) {
+                  setToolData({ ...toolData, environmentVariables: newVars })
+                } else {
+                  alert("Maximum 20 environment variables allowed")
+                }
+              }}
+              style={{ marginBottom: theme.spacing[6], width: "100%" }}
+            >
+              Add Environment Variable
+            </Button>
+
+            <div style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              gap: theme.spacing[3],
+              paddingTop: theme.spacing[4],
+              borderTop: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
+            }}>
+              <Button variant="outline" size="md" onClick={() => setShowEnvModal(false)}>
+                Close
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
     </Layout>
   )
 }
+

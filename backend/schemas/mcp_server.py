@@ -44,6 +44,9 @@ class MCPResponse(MCPBase):
     """Schema for MCP Server response"""
     id: UUID
     owner_id: UUID
+    sync_status: str
+    sync_error: Optional[str] = None
+    last_synced_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 

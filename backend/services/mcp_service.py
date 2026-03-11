@@ -6,7 +6,7 @@ from typing import List, Optional, Dict, Any
 from uuid import UUID
 from urllib.parse import urljoin
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 
 from models.mcp_server import MCPServer
 from models.mcp_secret import MCPSecret
@@ -46,14 +46,23 @@ class MCPService:
             # Instead we use the modular helpers to fetch and index
             headers = self._resolve_connection_params(db, db_mcp.url, db_mcp.headers, env_vars, db_mcp.id)
             async with httpx.AsyncClient(timeout=30.0, headers=headers) as client:
-                tools = await self._fetch_tools_sse(client, db_mcp.url)
-                if tools is None:
-                    tools = await self._fetch_tools_direct(client, db_mcp.url)
+                tools = await self._fetch_tools_direct(client, db_mcp.url)
                 
                 if tools:
                     self._index_mcp_tools(db_mcp.id, db_mcp.url, tools)
+                    db_mcp.sync_status = "SYNCED"
+                    db_mcp.sync_error = None
+                    db_mcp.last_synced_at = func.now()
+                else:
+                    db_mcp.sync_status = "FAILED"
+                    db_mcp.sync_error = "Failed to fetch tools from remote server"
         except Exception as e:
             logger.error(f"Post-creation tool sync failed for {db_mcp.id}: {e}")
+            db_mcp.sync_status = "FAILED"
+            db_mcp.sync_error = str(e)
+            
+        db.commit()
+        db.refresh(db_mcp)
 
         return self.format_mcp(db_mcp)
 
@@ -109,15 +118,24 @@ class MCPService:
 
             headers = self._resolve_connection_params(db, mcp.url, mcp.headers, current_env_vars, mcp.id)
             async with httpx.AsyncClient(timeout=30.0, headers=headers) as client:
-                tools = await self._fetch_tools_sse(client, mcp.url)
-                if tools is None:
-                    tools = await self._fetch_tools_direct(client, mcp.url)
+                tools = await self._fetch_tools_direct(client, mcp.url)
                 
                 if tools:
                     self._index_mcp_tools(mcp.id, mcp.url, tools)
-
+                    mcp.sync_status = "SYNCED"
+                    mcp.sync_error = None
+                    mcp.last_synced_at = func.now()
+                else:
+                    mcp.sync_status = "FAILED"
+                    mcp.sync_error = "Failed to fetch tools from remote server"
+                    
         except Exception as e:
             logger.error(f"Post-update tool sync failed for {mcp.id}: {e}")
+            mcp.sync_status = "FAILED"
+            mcp.sync_error = str(e)
+            
+        db.commit()
+        db.refresh(mcp)
 
         return self.format_mcp(mcp)
 
@@ -133,6 +151,38 @@ class MCPService:
             
             return True
         return False
+        
+    async def force_sync(self, db: Session, mcp_id: UUID, user_id: UUID) -> Optional[MCPServer]:
+        """Manually trigger a sync for an MCP Server"""
+        mcp = self.get_mcp(db, mcp_id)
+        if not mcp or mcp.owner_id != user_id:
+            return None
+            
+        try:
+            secrets = db.query(MCPSecret).filter(MCPSecret.mcp_id == mcp_id).all()
+            current_env_vars = [{"key": s.name, "value": decrypt_value(s.encrypted_value)} for s in secrets]
+
+            headers = self._resolve_connection_params(db, mcp.url, mcp.headers, current_env_vars, mcp.id)
+            async with httpx.AsyncClient(timeout=30.0, headers=headers) as client:
+                tools = await self._fetch_tools_direct(client, mcp.url)
+                
+                if tools:
+                    self._index_mcp_tools(mcp.id, mcp.url, tools)
+                    mcp.sync_status = "SYNCED"
+                    mcp.sync_error = None
+                    mcp.last_synced_at = func.now()
+                else:
+                    mcp.sync_status = "FAILED"
+                    mcp.sync_error = "Failed to fetch tools from remote server"
+                    
+        except Exception as e:
+            logger.error(f"Manual tool sync failed for {mcp.id}: {e}")
+            mcp.sync_status = "FAILED"
+            mcp.sync_error = str(e)
+            
+        db.commit()
+        db.refresh(mcp)
+        return mcp
         
     def _resolve_connection_params(self, db: Session, url: str, headers_json: Any, env_vars: List[dict], mcp_id: Optional[UUID] = None) -> Dict[str, str]:
         """Resolves secrets and processes headers for an MCP connection."""
@@ -168,72 +218,6 @@ class MCPService:
             except (json.JSONDecodeError, TypeError):
                  logger.warning(f"Failed to parse headers: {headers_json}")
         return headers
-
-    async def _fetch_tools_sse(self, client: Any, url: str) -> Optional[List[dict]]:
-        """Attempt to fetch tools using the SSE handshake."""
-        endpoint_future = asyncio.Future()
-        rpc_futures: Dict[int, asyncio.Future] = {}
-
-        async def read_sse(response):
-            try:
-                current_event = None
-                async for line in response.aiter_lines():
-                    line = line.strip()
-                    if not line:
-                        current_event = None
-                        continue
-                    if line.startswith("event:"):
-                        current_event = line[6:].strip()
-                    elif line.startswith("data:"):
-                        data = line[5:].strip()
-                        if current_event == "endpoint":
-                            if not endpoint_future.done():
-                                endpoint_future.set_result(data)
-                        elif current_event == "message":
-                            try:
-                                msg = json.loads(data)
-                                if "id" in msg and msg["id"] in rpc_futures:
-                                    fut = rpc_futures[msg["id"]]
-                                    if not fut.done(): fut.set_result(msg)
-                            except json.JSONDecodeError: pass
-            except Exception as e:
-                if not endpoint_future.done(): endpoint_future.set_result(None)
-                for fut in rpc_futures.values():
-                    if not fut.done(): fut.set_exception(e)
-
-        try:
-            async with client.stream("GET", url, headers={"Accept": "text/event-stream"}) as response:
-                if response.status_code != 200: return None
-                reader_task = asyncio.create_task(read_sse(response))
-                try:
-                    post_endpoint = await asyncio.wait_for(endpoint_future, timeout=5.0)
-                    if not post_endpoint: return None
-                    if not post_endpoint.startswith("http"):
-                        post_endpoint = urljoin(url, post_endpoint)
-                    
-                    rpc_futures[1] = asyncio.Future()
-                    await client.post(post_endpoint, headers={"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}, json={
-                        "jsonrpc": "2.0", "method": "initialize", "id": 1,
-                        "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "Prani", "version": "0.1.0"}}
-                    })
-                    init_res = await asyncio.wait_for(rpc_futures[1], timeout=5.0)
-                    if "error" in init_res: return None
-
-                    await client.post(post_endpoint, headers={"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}, json={"jsonrpc": "2.0", "method": "notifications/initialized"})
-                    
-                    rpc_futures[2] = asyncio.Future()
-                    await client.post(post_endpoint, headers={"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}, json={"jsonrpc": "2.0", "method": "tools/list", "id": 2})
-                    tools_res = await asyncio.wait_for(rpc_futures[2], timeout=10.0)
-                    return tools_res.get("result", {}).get("tools", []) if "error" not in tools_res else None
-                finally:
-                    reader_task.cancel()
-                    try:
-                        await reader_task
-                    except asyncio.CancelledError:
-                        pass
-        except Exception as e:
-            logger.error(f"SSE Fetch failed: {e}")
-            return None
 
     async def _fetch_tools_direct(self, client: Any, url: str) -> Optional[List[dict]]:
         """Attempt to fetch tools using the Streamable HTTP / Direct POST transport.
@@ -355,14 +339,8 @@ class MCPService:
         try:
             headers = self._resolve_connection_params(db, url, headers_json, env_vars, mcp_id)
             async with httpx.AsyncClient(timeout=20.0, headers=headers, follow_redirects=True, verify=False) as client:
-                # Try SSE protocol first
-                tools = await self._fetch_tools_sse(client, url)
-                mode = "SSE"
-                
-                # Fallback to Direct POST
-                if tools is None:
-                    tools = await self._fetch_tools_direct(client, url)
-                    mode = "Direct POST"
+                tools = await self._fetch_tools_direct(client, url)
+                mode = "Direct POST"
                 
                 if tools is None:
                     # Try a simple connectivity check to show a more helpful error
@@ -556,6 +534,9 @@ class MCPService:
             "headers": headers_str,
             "environmentVariables": response_env,
             "is_active": mcp.is_active,
+            "sync_status": mcp.sync_status,
+            "sync_error": mcp.sync_error,
+            "last_synced_at": mcp.last_synced_at,
             "created_at": mcp.created_at,
             "updated_at": mcp.updated_at
         }

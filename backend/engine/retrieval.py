@@ -15,10 +15,10 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 class RetrievalSystem:
-    """
-    Manages embedding and retrieval of tools using ChromaDB.
-    Supports both 'Normal' tools and 'MCP' tools.
-    """
+    _client: Optional[ClientAPI] = None
+    _collection = None
+    _connected = False
+
     def __init__(self, collection_name: str = "agent_tools"):
         # Load from settings which properly reads .env
         try:
@@ -28,15 +28,15 @@ class RetrievalSystem:
             self.chroma_url = os.getenv("CHROMA_URL", "http://localhost:8100")
         
         self.collection_name = collection_name
-        self.client: Optional[ClientAPI] = None
-        self.collection = None
-        self._connected = False
 
     def _ensure_connected(self):
         """Lazily connect to ChromaDB only when needed."""
-        if self._connected:
+        if RetrievalSystem._connected:
+            self.client = RetrievalSystem._client
+            self.collection = RetrievalSystem._collection
             return
-        self._connected = True  # Mark as attempted to avoid repeated retries
+        
+        RetrievalSystem._connected = True 
         try:
             clean_url = self.chroma_url.replace("http://", "").replace("https://", "")
             if ":" in clean_url:
@@ -48,7 +48,7 @@ class RetrievalSystem:
             
             logger.info(f"Connecting to ChromaDB at {host}:{port}...")
             # Pass ssl=False and a short timeout to prevent hangs
-            self.client = chromadb.HttpClient(
+            RetrievalSystem._client = chromadb.HttpClient(
                 host=host, 
                 port=port, 
                 ssl=False, 
@@ -57,12 +57,10 @@ class RetrievalSystem:
                 tenant="default_tenant",
                 database="default_database"
             )
-            # Re-wrap for newer versions of chromadb if needed or just use standard
-            # Adding connect_timeout manually if supported by the client version
-            # Most newer HttpClient versions support it in settings or as a kwarg.
-            # Let's ensure we don't break if the kwarg is unsupported.
+            RetrievalSystem._collection = RetrievalSystem._client.get_or_create_collection(name=self.collection_name)
             
-            self.collection = self.client.get_or_create_collection(name=self.collection_name)
+            self.client = RetrievalSystem._client
+            self.collection = RetrievalSystem._collection
             logger.info(f"Connected to ChromaDB at {self.chroma_url}, Collection: {self.collection_name}")
             
         except Exception as e:

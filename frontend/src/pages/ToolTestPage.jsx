@@ -27,6 +27,7 @@ export default function ToolTestPage() {
   const [result, setResult] = useState(null)
   const [isTestLoading, setIsTestLoading] = useState(false)
   const [testError, setTestError] = useState(null)
+  const [isOutputExpanded, setIsOutputExpanded] = useState(false)
 
   useEffect(() => {
     if (toolId) {
@@ -76,6 +77,7 @@ export default function ToolTestPage() {
       setTestError(msg)
     } finally {
       setIsTestLoading(false)
+      setIsOutputExpanded(false)
     }
   }
 
@@ -331,43 +333,68 @@ export default function ToolTestPage() {
                   {/* Output Lines */}
                   <div style={{
                     flex: 1,
-                    overflow: "auto",
+                    overflowY: "auto",
+                    maxHeight: "350px",
                     display: "flex",
                     flexDirection: "column",
+                    paddingRight: theme.spacing[2],
                   }}>
-                    {String(result.data.output).split("\n").map((line, index) => (
-                      <div
-                        key={index}
-                        style={{
-                          display: "flex",
-                          alignItems: "flex-start",
-                          padding: `${theme.spacing[2]} ${theme.spacing[3]}`,
-                          transition: `background-color ${theme.transitions.normal}`,
-                          cursor: "text",
-                          userSelect: "text",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = "#1e293b20"
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = "transparent"
-                        }}
-                      >
-                        {/* Line Content */}
-                        <span style={{
-                          color: "#e2e8f0",
-                          fontSize: theme.typography.fontSize.xs,
-                          fontFamily: "inherit",
-                          lineHeight: 1.5,
-                          letterSpacing: 0.5,
-                          flex: 1,
-                          whiteSpace: "pre-wrap",
-                          wordBreak: "break-all",
-                        }}>
-                          {line}
-                        </span>
-                      </div>
-                    ))}
+                    {(() => {
+                      const allLines = String(result.data.output).split("\n");
+                      const showLines = isOutputExpanded ? allLines : allLines.slice(0, 15);
+                      const hasMore = allLines.length > 15;
+
+                      return (
+                        <>
+                          {showLines.map((line, index) => (
+                            <div
+                              key={index}
+                              style={{
+                                display: "flex",
+                                alignItems: "flex-start",
+                                padding: `${theme.spacing[2]} ${theme.spacing[3]}`,
+                                transition: `background-color ${theme.transitions.normal}`,
+                                cursor: "text",
+                                userSelect: "text",
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = "#1e293b20"
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = "transparent"
+                              }}
+                            >
+                              {/* Line Content */}
+                              <span style={{
+                                color: "#e2e8f0",
+                                fontSize: theme.typography.fontSize.xs,
+                                fontFamily: "inherit",
+                                lineHeight: 1.5,
+                                letterSpacing: 0.5,
+                                flex: 1,
+                                whiteSpace: "pre-wrap",
+                                wordBreak: "break-all",
+                              }}>
+                                {line}
+                              </span>
+                            </div>
+                          ))}
+
+                          {hasMore && (
+                            <div style={{ padding: `${theme.spacing[3]}` }}>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setIsOutputExpanded(!isOutputExpanded)}
+                                style={{ color: theme.colors.primary[300], padding: 0, height: "auto" }}
+                              >
+                                {isOutputExpanded ? "...Show Less" : `...Show More (${allLines.length - 15} more lines)`}
+                              </Button>
+                            </div>
+                          )}
+                        </>
+                      )
+                    })()}
                   </div>
 
                   {/* Metadata Line */}

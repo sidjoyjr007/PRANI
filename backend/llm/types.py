@@ -35,4 +35,4 @@ class LLMResponse(BaseModel):
     role: Literal["assistant"]
     tool_calls: Optional[List[ToolCall]] = None
     finish_reason: Optional[str] = None
-    usage: Optional[Dict[str, int]] = None
+    usage: Optional[Dict[str, Any]] = None

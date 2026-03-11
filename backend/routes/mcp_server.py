@@ -80,6 +80,23 @@ def delete_mcp(
     mcp_service.delete_mcp(db=db, mcp_id=mcp_id, user_id=current_user.id)
     return {"success": True, "message": "MCP Server deleted successfully"}
 
+@router.post("/{mcp_id}/sync", response_model=MCPResponse)
+async def sync_mcp(
+    mcp_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Force sync tools from an MCP server"""
+    mcp = await mcp_service.force_sync(db=db, mcp_id=mcp_id, user_id=current_user.id)
+    if not mcp:
+        # Check if exists vs unauthorized
+        existing = mcp_service.get_mcp(db=db, mcp_id=mcp_id)
+        if not existing:
+             raise HTTPException(status_code=404, detail="MCP Server not found")
+        raise HTTPException(status_code=403, detail="Not authorized")
+        
+    return mcp_service.format_mcp(mcp)
+
 @router.post("/test")
 async def test_connection(
     request: MCPTestRequest,

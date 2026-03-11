@@ -135,65 +135,67 @@ export default function ConversationsPanel({
 
                                 {/* Action Dropdown */}
                                 <div style={{ width: "32px", display: "flex", justifyContent: "center", marginRight: theme.spacing[2] }}>
-                                    <Dropdown onOpenChange={(isOpen) => setOpenDropdownId(isOpen ? conv.id : null)}>
-                                        <DropdownTrigger asChild>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={(e) => {
-                                                    e.stopPropagation()
-                                                    e.preventDefault()
-                                                }}
-                                                onMouseDown={(e) => {
-                                                    e.stopPropagation()
-                                                }}
-                                                style={{
-                                                    padding: theme.spacing[1],
-                                                    borderRadius: theme.borderRadius.sm,
-                                                    color: theme.colors.muted_foreground,
-                                                    backgroundColor: (isHovered || openDropdownId === conv.id || activeConversation === conv.id) ? (activeConversation === conv.id ? theme.colors.neutral[100] : theme.colors.neutral[50]) : "transparent",
-                                                    opacity: (isHovered || openDropdownId === conv.id || activeConversation === conv.id) ? 1 : 0,
-                                                    pointerEvents: (isHovered || openDropdownId === conv.id || activeConversation === conv.id) ? "auto" : "none",
-                                                }}
-                                            >
-                                                <MoreVertical size={16} />
-                                            </Button>
-                                        </DropdownTrigger>
-                                        <DropdownContent align="end" style={{ zIndex: 100 }}>
-                                            <DropdownItem
-                                                leadingIcon={Logs}
-                                                onClick={(e) => {
-                                                    e.stopPropagation()
-                                                    const params = new URLSearchParams()
-                                                    params.set("session", conv.id)
-                                                    if (selectedAgentId) params.set("agent", selectedAgentId)
-                                                    navigate(`/logs?${params.toString()}`)
-                                                }}
-                                            >
-                                                View Logs
-                                            </DropdownItem>
-                                            <DropdownItem
-                                                leadingIcon={Edit}
-                                                onClick={(e) => {
-                                                    e.stopPropagation()
-                                                    setRenameId(conv.id)
-                                                    setRenameValue(conv.title)
-                                                }}
-                                            >
-                                                Rename
-                                            </DropdownItem>
-                                            <DropdownItem
-                                                variant="destructive"
-                                                leadingIcon={Trash}
-                                                onClick={(e) => {
-                                                    e.stopPropagation()
-                                                    setDeleteId(conv.id)
-                                                }}
-                                            >
-                                                Delete
-                                            </DropdownItem>
-                                        </DropdownContent>
-                                    </Dropdown>
+                                    {!conv.isTemporary && (
+                                        <Dropdown onOpenChange={(isOpen) => setOpenDropdownId(isOpen ? conv.id : null)}>
+                                            <DropdownTrigger asChild>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        e.preventDefault()
+                                                    }}
+                                                    onMouseDown={(e) => {
+                                                        e.stopPropagation()
+                                                    }}
+                                                    style={{
+                                                        padding: theme.spacing[1],
+                                                        borderRadius: theme.borderRadius.sm,
+                                                        color: theme.colors.muted_foreground,
+                                                        backgroundColor: (isHovered || openDropdownId === conv.id || activeConversation === conv.id) ? (activeConversation === conv.id ? theme.colors.neutral[100] : theme.colors.neutral[50]) : "transparent",
+                                                        opacity: (isHovered || openDropdownId === conv.id || activeConversation === conv.id) ? 1 : 0,
+                                                        pointerEvents: (isHovered || openDropdownId === conv.id || activeConversation === conv.id) ? "auto" : "none",
+                                                    }}
+                                                >
+                                                    <MoreVertical size={16} />
+                                                </Button>
+                                            </DropdownTrigger>
+                                            <DropdownContent align="end" style={{ zIndex: 100 }}>
+                                                <DropdownItem
+                                                    leadingIcon={Logs}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        const params = new URLSearchParams()
+                                                        params.set("session", conv.id)
+                                                        if (selectedAgentId) params.set("agent", selectedAgentId)
+                                                        navigate(`/logs?${params.toString()}`)
+                                                    }}
+                                                >
+                                                    View Logs
+                                                </DropdownItem>
+                                                <DropdownItem
+                                                    leadingIcon={Edit}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        setRenameId(conv.id)
+                                                        setRenameValue(conv.title)
+                                                    }}
+                                                >
+                                                    Rename
+                                                </DropdownItem>
+                                                <DropdownItem
+                                                    variant="destructive"
+                                                    leadingIcon={Trash}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        setDeleteId(conv.id)
+                                                    }}
+                                                >
+                                                    Delete
+                                                </DropdownItem>
+                                            </DropdownContent>
+                                        </Dropdown>
+                                    )}
                                 </div>
                             </div>
                         )

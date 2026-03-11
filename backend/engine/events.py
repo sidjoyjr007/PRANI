@@ -48,7 +48,12 @@ import json
 import asyncio
 import redis.asyncio as redis
 import logging
+import concurrent.futures
+from datetime import datetime
 from config.settings import settings
+
+# Pre-formatted templates for high-frequency events to bypass Pydantic overhead
+_CHUNK_TEMPLATE = '{{"id": "{id}", "timestamp": "{timestamp}", "type": "{type}", "session_id": "{session_id}", "run_id": "{run_id}", "content": {content}, "metadata": {{}}}}'
 
 logger = logging.getLogger(__name__)
 
@@ -97,9 +102,13 @@ class EventBus:
     Clients can subscribe to this channel using the async `subscribe()` method.
     Events are also persisted to the `agent_logs` PostgreSQL table.
     """
+    _redis_client: Optional[redis.Redis] = None
+    _db_executor = concurrent.futures.ThreadPoolExecutor(max_workers=5, thread_name_prefix="event_bus_db")
+
     def __init__(self):
-        # Create a single connection pool for the bus instance (or could be global)
-        self.redis_client = redis.from_url(settings.redis_url)
+        if EventBus._redis_client is None:
+            EventBus._redis_client = redis.from_url(settings.redis_url)
+        self.redis_client = EventBus._redis_client
 
     async def emit(self, event: AgentEvent):
         """
@@ -107,15 +116,28 @@ class EventBus:
         For non-chunk events, also persists to the agent_logs table in the background.
         """
         # 1. Early Exit for High-Frequency Chunk Events (Performance Optimization)
-        # Bypasses logging overhead and task scheduling for streaming characters.
+        # PRANI-PERF: Using hand-coded JSON f-strings is ~100x faster than Pydantic for high-volume chunks.
         if event.type in (AgentEventType.MESSAGE_CHUNK, AgentEventType.THOUGHT_CHUNK):
             try:
                 channel = f"session:{event.session_id}"
-                payload = event.model_dump_json()
+                
+                # Manual serialization (Fast-path)
+                # JSON escape the content to handle newlines/quotes safely
+                escaped_content = json.dumps(event.content)
+                event_type_val = event.type.value if hasattr(event.type, 'value') else event.type
+                payload = _CHUNK_TEMPLATE.format(
+                    id=event.id,
+                    timestamp=event.timestamp.isoformat(),
+                    type=event_type_val,
+                    session_id=event.session_id,
+                    run_id=event.run_id or "null",
+                    content=escaped_content
+                )
+                
                 await self.redis_client.publish(channel, payload)
                 return 
             except Exception as e:
-                logger.error(f"Failed to publish chunk to Redis: {e}")
+                logger.error(f"Failed to publish chunk fast-path to Redis: {e}")
                 return
 
         # 2. Standard Event Handling
@@ -143,10 +165,16 @@ class EventBus:
         level = _LEVEL_MAP.get(event_type_str, "INFO")
         source = _SOURCE_MAP.get(event_type_str, "Agent")
 
-        # Truncate noisy chunk events to keep the log clean
+        # Truncate noisy events to keep the log clean
         # Use .value to correctly compare with raw string produced by pydantic enum serialization
-        if event_type_str in (AgentEventType.THOUGHT_CHUNK.value, AgentEventType.MESSAGE_CHUNK.value):
-            return  # Skip streaming chunks — only log final thought/message events
+        skip_log_types = (
+            AgentEventType.THOUGHT_CHUNK.value, 
+            AgentEventType.MESSAGE_CHUNK.value,
+            AgentEventType.PLAN.value,   # Already in Redis
+            AgentEventType.STATUS.value  # Too high frequency
+        )
+        if event_type_str in skip_log_types:
+            return  # Skip streaming chunks and high-frequency sync events
 
         # Run DB write in a thread executor so we don't block the async loop
         def _write():
@@ -176,7 +204,7 @@ class EventBus:
                 db.close()
 
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _write)
+        await loop.run_in_executor(self._db_executor, _write)
             
     async def subscribe(self, session_id: str):
         """

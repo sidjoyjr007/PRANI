@@ -43,12 +43,13 @@ class ToolService:
                 self.save_secret(db, db_tool.id, owner_id, ToolSecretCreate(name=name, value=value))
                 
         # Index into ChromaDB for zero-latency retrieval
-        self._index_db_tool(db_tool)
+        self._index_db_tool(db, db_tool)
         
         return db_tool
 
-    def _index_db_tool(self, tool: Tool):
+    def _index_db_tool(self, db: Session, tool: Tool):
         """Converts a DB Tool into a Tool Def and indexes it."""
+        from sqlalchemy import func
         try:
             TYPE_MAP = {"int": "integer", "float": "number", "bool": "boolean", "str": "string", "list": "array", "dict": "object"}
             properties = {}
@@ -71,10 +72,18 @@ class ToolService:
                 "input_fields": tool.input_fields
             }
             self.retrieval.index_tools([tool_def])
+            
+            tool.sync_status = "SYNCED"
+            tool.sync_error = None
+            tool.last_synced_at = func.now()
         except Exception as e:
-            # We don't fail the API request if indexing fails, but we log it.
             import logging
             logging.getLogger(__name__).error(f"Failed to index tool {tool.id}: {e}")
+            tool.sync_status = "FAILED"
+            tool.sync_error = str(e)
+            
+        db.commit()
+        db.refresh(tool)
 
     def get_tool(self, db: Session, tool_id: UUID) -> Optional[Tool]:
         """Get a tool by ID"""
@@ -142,7 +151,7 @@ class ToolService:
         db.refresh(db_tool)
         
         # Re-index
-        self._index_db_tool(db_tool)
+        self._index_db_tool(db, db_tool)
         
         return db_tool
 
@@ -164,6 +173,15 @@ class ToolService:
         self.retrieval.delete_tools([str(tool_id)])
         
         return True
+
+    def force_sync(self, db: Session, tool_id: UUID, owner_id: UUID) -> Optional[Tool]:
+        """Manually trigger a sync for a Tool"""
+        db_tool = self.get_tool(db, tool_id)
+        if not db_tool or db_tool.owner_id != owner_id:
+            return None
+            
+        self._index_db_tool(db, db_tool)
+        return db_tool
 
     def save_secret(self, db: Session, tool_id: UUID, user_id: UUID, secret_data: ToolSecretCreate):
         """Encrypt and save a user's secret for a tool"""

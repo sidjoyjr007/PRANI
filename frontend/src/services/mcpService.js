@@ -37,5 +37,11 @@ export const mcpService = {
     testMCP: async (testData) => {
         const response = await apiClient.post("/mcp-servers/test", testData)
         return response.data
+    },
+
+    // Sync MCP manually
+    syncMCP: async (id) => {
+        const response = await apiClient.post(`/mcp-servers/${id}/sync`)
+        return response.data
     }
 }

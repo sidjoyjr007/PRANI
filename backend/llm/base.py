@@ -19,8 +19,23 @@ class LLMProvider(ABC):
 
     def __init__(self, model: str, headers: Dict[str, Any], config: Dict[str, Any]):
         self.model = model
-        self.headers = headers
         self.config = config
+        
+        # Auto-resolve {{env.KEY}} placeholders in headers
+        import re
+        self.headers = {}
+        for k, v in headers.items():
+            val_str = str(v)
+            # Find all {{env.KEY}} patterns
+            matches = re.findall(r"\{\{env\.(.*?)\}\}", val_str)
+            for key in matches:
+                # Replace with secret if exists in config, else empty string
+                secret_val = config.get(key, "")
+                val_str = val_str.replace(f"{{{{env.{key}}}}}", secret_val)
+            self.headers[k] = val_str
+            
+        print(f"DEBUG: Initialized {self.model} with resolved headers: {self.headers}")
+
 
     def sanitize_tool_schema(self, schema: Any) -> Any:
         """

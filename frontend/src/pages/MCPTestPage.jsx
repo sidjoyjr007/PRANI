@@ -24,6 +24,7 @@ export default function MCPTestPage() {
     const [isTesting, setIsTesting] = useState(false)
     const [testResult, setTestResult] = useState(null)
     const [testError, setTestError] = useState(null)
+    const [isToolsExpanded, setIsToolsExpanded] = useState(false)
 
     // Config loaded from Redux/Backend (Read-only for test)
     const [config, setConfig] = useState(null)
@@ -107,6 +108,7 @@ export default function MCPTestPage() {
             addToast("Error", "Test execution failed", "destructive")
         } finally {
             setIsTesting(false)
+            setIsToolsExpanded(false)
         }
     }
 
@@ -255,29 +257,49 @@ export default function MCPTestPage() {
                                     </div>
 
                                     {/* Tools List */}
-                                    <div style={{ flex: 1, overflowY: "auto" }}>
+                                    <div style={{ flex: 1, overflowY: "auto", maxHeight: "350px", paddingRight: theme.spacing[2] }}>
                                         <div style={{ color: "#e2e8f0", fontWeight: "bold", marginBottom: theme.spacing[3] }}>
                                             Available Tools ({testResult.data.tools?.length || 0}):
                                         </div>
 
                                         {testResult.data.tools && testResult.data.tools.length > 0 ? (
-                                            <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: theme.spacing[3] }}>
-                                                {testResult.data.tools.map((tool, index) => (
-                                                    <li key={index} style={{
-                                                        backgroundColor: "rgba(255,255,255,0.05)",
-                                                        borderRadius: "4px",
-                                                        padding: theme.spacing[3],
-                                                        border: "1px solid rgba(255,255,255,0.1)"
-                                                    }}>
-                                                        <div style={{ color: "#38bdf8", fontWeight: "bold", marginBottom: "4px" }}>
-                                                            {tool.name}
-                                                        </div>
-                                                        <div style={{ color: "#94a3b8", fontSize: "0.9em", lineHeight: 1.4 }}>
-                                                            {tool.description || "No description provided."}
-                                                        </div>
-                                                    </li>
-                                                ))}
-                                            </ul>
+                                            <>
+                                                <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: theme.spacing[3] }}>
+                                                    {(() => {
+                                                        const allTools = testResult.data.tools;
+                                                        const showTools = isToolsExpanded ? allTools : allTools.slice(0, 5);
+
+                                                        return showTools.map((tool, index) => (
+                                                            <li key={index} style={{
+                                                                backgroundColor: "rgba(255,255,255,0.05)",
+                                                                borderRadius: "4px",
+                                                                padding: theme.spacing[3],
+                                                                border: "1px solid rgba(255,255,255,0.1)"
+                                                            }}>
+                                                                <div style={{ color: theme.colors.primary[300], fontWeight: "bold", marginBottom: "4px" }}>
+                                                                    {tool.name}
+                                                                </div>
+                                                                <div style={{ color: "#94a3b8", fontSize: "0.9em", lineHeight: 1.4 }}>
+                                                                    {tool.description || "No description provided."}
+                                                                </div>
+                                                            </li>
+                                                        ));
+                                                    })()}
+                                                </ul>
+
+                                                {testResult.data.tools.length > 5 && (
+                                                    <div style={{ paddingTop: theme.spacing[4], textAlign: "center" }}>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => setIsToolsExpanded(!isToolsExpanded)}
+                                                            style={{ color: theme.colors.primary[300], padding: 0, height: "auto" }}
+                                                        >
+                                                            {isToolsExpanded ? "...Show Less" : `...Show More (${testResult.data.tools.length - 5} more tools)`}
+                                                        </Button>
+                                                    </div>
+                                                )}
+                                            </>
                                         ) : (
                                             <div style={{ color: "#64748b", fontStyle: "italic" }}>No tools found on this server.</div>
                                         )}
