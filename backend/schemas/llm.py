@@ -12,8 +12,7 @@ class LLMEnvVar(BaseModel):
 
 class LLMBase(BaseModel):
     """Base schema for LLM"""
-    name: str = Field(..., min_length=3, max_length=255)
-    description: Optional[str] = None
+    name: str = Field(..., min_length=3, max_length=255, pattern=r"^[A-Za-z0-9 _-]+$")
     provider: str
     model: str
     headers: str # JSON string from Monaco editor
@@ -36,8 +35,7 @@ class LLMCreate(LLMBase):
 
 class LLMUpdate(BaseModel):
     """Schema for updating an LLM"""
-    name: Optional[str] = Field(None, min_length=3, max_length=255)
-    description: Optional[str] = None
+    name: Optional[str] = Field(None, min_length=3, max_length=255, pattern=r"^[A-Za-z0-9 _-]+$")
     provider: Optional[str] = None
     model: Optional[str] = None
     headers: Optional[str] = None

@@ -127,18 +127,22 @@ export default function LLMCard({ llm, addToast }) {
         )}
 
         {/* LLM Name */}
-        <Text
-          as="h3"
-          variant="label"
-          size="md"
+        <h3
           style={{
             margin: 0,
+            fontSize: theme.typography.fontSize.md,
             color: theme.colors.foreground,
             fontWeight: theme.typography.fontWeight.semibold,
+            paddingRight: `calc(2 * ${theme.spacing[12]})`, // Space for 2 buttons
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            width: "100%",
           }}
+          title={llm.name}
         >
           {llm.name}
-        </Text>
+        </h3>
 
         {/* Provider Badge */}
         <Badge

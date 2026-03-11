@@ -161,8 +161,13 @@ export default function ToolCard({ tool, addToast }) {
           fontWeight: theme.typography.fontWeight.bold,
           color: theme.colors.foreground,
           margin: 0,
-          marginBottom: theme.spacing[2]
-        }}>
+          marginBottom: theme.spacing[2],
+          paddingRight: `calc(3 * ${theme.spacing[10]} + ${theme.spacing[4]})`, // Dynamic space for actions
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          width: "100%",
+        }} title={tool.name}>
           {tool.name}
         </h3>
 

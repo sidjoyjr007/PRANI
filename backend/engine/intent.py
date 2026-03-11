@@ -91,7 +91,7 @@ class IntentParser:
         )
 
     async def _get_plan(self, goal: str, agent: Any, loop_instance: 'AgenticLoop', max_retries: int = 3) -> Dict[str, Any]:
-        agent_info = f"Name: {agent.name}\nDescription: {agent.description}\nCapabilities: {agent.capabilities}"
+        agent_info = f"Name: {agent.name}\nInstructions: {agent.instructions}\nCapabilities: {agent.capabilities}"
         planning_error = None
 
         for attempt in range(max_retries):

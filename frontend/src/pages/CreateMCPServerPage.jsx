@@ -107,6 +107,24 @@ export default function CreateMCPServerPage() {
       addToast("Validation Error", "MCP Name is required", "destructive")
       return
     }
+    // Name Validation
+    const trimmedName = mcpData.name.trim()
+    if (!trimmedName || trimmedName.length < 3 || trimmedName.length > 30) {
+      addToast("Validation Error", "Server name must be between 3 and 30 characters.", "error")
+      return
+    }
+
+    // Strict Name Validation (letters, numbers, spaces, hyphens, underscores)
+    const nameRegex = /^[A-Za-z0-9 _-]+$/
+    if (!nameRegex.test(trimmedName)) {
+      addToast(
+        "Invalid Name Format",
+        "Name can only contain letters, numbers, spaces, hyphens, and underscores",
+        "error"
+      )
+      return
+    }
+
     if (!mcpData.url.trim()) {
       addToast("Validation Error", "Server URL is required", "destructive")
       return
@@ -251,10 +269,23 @@ export default function CreateMCPServerPage() {
                   Server Name *
                 </label>
                 <Input
-                  placeholder="e.g. Local File Server"
+                  placeholder="e.g. my_local_server"
                   value={mcpData.name}
                   onChange={(e) => setMcpData({ ...mcpData, name: e.target.value })}
+                  maxLength={30}
                 />
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: theme.spacing[2] }}>
+                  <Text size="xs" variant="muted" style={{ display: "block" }}>
+                    Only use letters, numbers, spaces, hyphens, and underscores
+                  </Text>
+                  <p style={{
+                    fontSize: theme.typography.fontSize.xs,
+                    color: theme.colors.muted_foreground,
+                    margin: 0,
+                  }}>
+                    {mcpData.name?.length || 0}/30 characters
+                  </p>
+                </div>
               </div>
 
               <div>
@@ -266,9 +297,6 @@ export default function CreateMCPServerPage() {
                   value={mcpData.url}
                   onChange={(e) => setMcpData({ ...mcpData, url: e.target.value })}
                 />
-                <Text size="xs" variant="muted" style={{ marginTop: theme.spacing[1], display: "block" }}>
-                  Supported schemes: http, https, redis, postgresql
-                </Text>
               </div>
             </div>
           </Card>

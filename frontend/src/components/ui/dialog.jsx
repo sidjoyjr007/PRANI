@@ -161,9 +161,13 @@ const DialogContent = React.forwardRef(({
           borderRadius: theme.borderRadius.lg,
           ...style,
           animation: isOpen ? "slideIn 0.3s ease-out" : "slideOut 0.2s ease-in",
+          ...props.style,
         }}
         className={cn(className)}
-        {...props}
+        {...(() => {
+          const { style: _style, ...rest } = props;
+          return rest;
+        })()}
       />
     </>
   )

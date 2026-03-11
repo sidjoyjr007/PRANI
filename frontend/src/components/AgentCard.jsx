@@ -123,26 +123,17 @@ export default function AgentCard({ agent, addToast }) {
           fontWeight: theme.typography.fontWeight.bold,
           color: theme.colors.foreground,
           margin: 0,
-          marginBottom: theme.spacing[2]
-        }}>
+          marginBottom: theme.spacing[2],
+          paddingRight: `calc(2 * ${theme.spacing[10]} + ${theme.spacing[4]})`, // Dynamic space for actions
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          width: "100%",
+        }} title={agent.name}>
           {agent.name}
         </h3>
 
-        {/* Agent Description */}
-        <p style={{
-          fontSize: theme.typography.fontSize.base,
-          color: theme.colors.muted_foreground,
-          margin: 0,
-          marginBottom: theme.spacing[6],
-          lineHeight: 1.6,
-          maxWidth: "80%",
-          display: "-webkit-box",
-          WebkitLineClamp: 3,
-          WebkitBoxOrient: "vertical",
-          overflow: "hidden",
-        }}>
-          {agent.description}
-        </p>
+
 
         {/* Agent Capabilities */}
         {agent.capabilities && agent.capabilities.length > 0 && (

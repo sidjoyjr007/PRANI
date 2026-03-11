@@ -166,23 +166,22 @@ export default function MCPServerCard({ server, addToast }) {
           </div>
         )}
 
-        <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[3] }}>
-          <div>
-            {/* Server Name */}
-            <Text
-              as="h3"
-              variant="label"
-              size="md"
-              style={{
-                margin: 0,
-                color: theme.colors.foreground,
-                fontWeight: theme.typography.fontWeight.semibold,
-              }}
-            >
-              {server.name}
-            </Text>
-          </div>
-        </div>
+        <h3
+          style={{
+            margin: 0,
+            fontSize: theme.typography.fontSize.md, // ensuring consistency
+            color: theme.colors.foreground,
+            fontWeight: theme.typography.fontWeight.semibold,
+            paddingRight: `calc(3 * ${theme.spacing[10]} + ${theme.spacing[4]})`, // Space for 3 buttons + container offset
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            width: "100%",
+          }}
+          title={server.name}
+        >
+          {server.name}
+        </h3>
 
         {/* Sync Status Badge */}
         <div style={{ display: 'flex', alignItems: 'center', marginTop: theme.spacing[2], gap: theme.spacing[2] }}>

@@ -4,14 +4,23 @@ from uuid import UUID
 from datetime import datetime
 
 class AgentBase(BaseModel):
-    name: str
-    description: Optional[str] = None
+    name: str = Field(..., min_length=3, max_length=100, pattern=r"^[A-Za-z0-9 _-]+$")
+    instructions: Optional[str] = None
     capabilities: List[str] = []
     tool_ids: List[UUID] = []
     mcp_server_ids: List[UUID] = []
     llm_id: Optional[UUID] = None
     human_in_loop: bool = False
     is_active: bool = True
+
+    @field_validator('instructions')
+    @classmethod
+    def validate_instructions_word_count(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            word_count = len([w for w in v.split() if w.strip()])
+            if word_count > 250:
+                raise ValueError("Instructions cannot exceed 250 words.")
+        return v
 
     @field_validator('capabilities', mode='before')
     @classmethod
@@ -25,7 +34,7 @@ class AgentCreate(AgentBase):
 
 class AgentUpdate(BaseModel):
     name: Optional[str] = None
-    description: Optional[str] = None
+    instructions: Optional[str] = None
     capabilities: Optional[List[str]] = None
     tool_ids: Optional[List[UUID]] = None
     mcp_server_ids: Optional[List[UUID]] = None

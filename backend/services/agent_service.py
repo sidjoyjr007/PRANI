@@ -23,7 +23,7 @@ class AgentService:
             query = query.filter(
                 or_(
                     Agent.name.ilike(search_filter),
-                    Agent.description.ilike(search_filter)
+                    Agent.instructions.ilike(search_filter)
                 )
             )
 
@@ -91,7 +91,7 @@ class AgentService:
         
         db_agent = Agent(
             name=agent.name,
-            description=agent.description,
+            instructions=agent.instructions,
             capabilities=agent.capabilities,
             tool_ids=[str(id) for id in agent.tool_ids],
             mcp_server_ids=[str(id) for id in agent.mcp_server_ids],

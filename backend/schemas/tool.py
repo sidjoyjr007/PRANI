@@ -24,7 +24,7 @@ class ToolEnvVar(BaseModel):
 class ToolBase(BaseModel):
     """Base schema for Tool"""
     name: str = Field(..., min_length=3, max_length=20)
-    description: str = Field(..., min_length=10, max_length=75)
+    description: str = Field(..., min_length=10)
     code: str
     categories: Optional[List[str]] = Field(default_factory=list)
     input_fields: List[ToolInput] = Field(default_factory=list)
@@ -41,6 +41,14 @@ class ToolBase(BaseModel):
             raise ValueError(f"Invalid Python syntax: {str(e)}")
         return v
 
+    @field_validator('description')
+    @classmethod
+    def validate_description_word_count(cls, v: str) -> str:
+        word_count = len([w for w in v.split() if w.strip()])
+        if word_count > 50:
+            raise ValueError("Description cannot exceed 50 words.")
+        return v
+
 
 class ToolCreate(ToolBase):
     """Schema for creating a tool"""
@@ -51,7 +59,7 @@ class ToolCreate(ToolBase):
 class ToolUpdate(BaseModel):
     """Schema for updating a tool"""
     name: Optional[str] = Field(None, min_length=3, max_length=20)
-    description: Optional[str] = Field(None, min_length=10, max_length=75)
+    description: Optional[str] = Field(None, min_length=10)
     code: Optional[str] = None
     categories: Optional[List[str]] = Field(None)
     input_fields: Optional[List[ToolInput]] = None
@@ -69,6 +77,15 @@ class ToolUpdate(BaseModel):
                 compile(v, '<string>', 'exec')
             except SyntaxError as e:
                 raise ValueError(f"Invalid Python syntax: {str(e)}")
+        return v
+
+    @field_validator('description')
+    @classmethod
+    def validate_description_word_count(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            word_count = len([w for w in v.split() if w.strip()])
+            if word_count > 50:
+                raise ValueError("Description cannot exceed 50 words.")
         return v
 
 

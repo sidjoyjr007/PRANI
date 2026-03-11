@@ -19,7 +19,7 @@ router = APIRouter(
 def read_agents(
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(10, ge=1, le=100, description="Items per page"),
-    search: Optional[str] = Query(None, description="Search query for name or description"),
+    search: Optional[str] = Query(None, description="Search query for name or instructions"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

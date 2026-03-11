@@ -11,7 +11,7 @@ import { Text } from "@/components/ui/text"
 import { Card } from "@/components/ui/card"
 import { Chips } from "@/components/ui/chips"
 import { Toggle } from "@/components/ui/toggle"
-import { Combobox, ComboboxTrigger, ComboboxContent, ComboboxItem, ComboboxSearch } from "@/components/ui/combobox"
+import { CommandPalette } from "@/components/ui/command-palette"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { ChevronLeft, Check } from "lucide-react"
 import CapabilitiesInput from "@/components/CapabilitiesInput"
@@ -35,7 +35,7 @@ export default function CreateAgentPage() {
 
   const [agentData, setAgentData] = useState({
     name: "",
-    description: "",
+    instructions: "",
     capabilities: [],
     toolIds: [],
     mcpServerIds: [],
@@ -45,6 +45,10 @@ export default function CreateAgentPage() {
 
   const [originalData, setOriginalData] = useState(null)
   const [isLoading, setIsLoading] = useState(!!agentId)
+
+  // Command Palette State
+  const [isToolPaletteOpen, setIsToolPaletteOpen] = useState(false)
+  const [isServerPaletteOpen, setIsServerPaletteOpen] = useState(false)
 
   // Toast State
   const [toasts, setToasts] = useState([])
@@ -74,7 +78,7 @@ export default function CreateAgentPage() {
         .then((agent) => {
           const mapped = {
             name: agent.name || "",
-            description: agent.description || "",
+            instructions: agent.instructions || "",
             capabilities: agent.capabilities || [],
             toolIds: agent.tool_ids || [],
             mcpServerIds: agent.mcp_server_ids || [],
@@ -97,10 +101,31 @@ export default function CreateAgentPage() {
   }, [dispatch, agentId, navigate])
 
   const validateAgentData = () => {
-    if (!agentData.name || agentData.name.trim().length < 3) {
+    const trimmedName = (agentData.name || "").trim()
+
+    if (!trimmedName || trimmedName.length < 3) {
       addToast("Validation Error", "Agent name must be at least 3 characters.", "error")
       return false
     }
+
+    // Strict Name Validation (allow spaces, hyphens, underscores)
+    const nameRegex = /^[A-Za-z0-9 _-]+$/
+    if (!nameRegex.test(trimmedName)) {
+      addToast(
+        "Invalid Name Format",
+        "Name can only contain letters, numbers, spaces, hyphens, and underscores",
+        "error"
+      )
+      return false
+    }
+
+    // Word count validation
+    const instructionsWordCount = agentData.instructions ? agentData.instructions.trim().split(/\s+/).filter(Boolean).length : 0
+    if (instructionsWordCount > 250) {
+      addToast("Validation Error", "Agent instructions cannot exceed 250 words.", "error")
+      return false
+    }
+
     return true
   }
 
@@ -112,7 +137,7 @@ export default function CreateAgentPage() {
     if (agentId && originalData) {
       // UPDATE: Only send changed fields (like CreateToolPage)
       if (agentData.name !== originalData.name) payload.name = agentData.name
-      if (agentData.description !== originalData.description) payload.description = agentData.description
+      if (agentData.instructions !== originalData.instructions) payload.instructions = agentData.instructions
       if (agentData.humanInLoop !== originalData.humanInLoop) payload.human_in_loop = agentData.humanInLoop
 
       // Compare arrays using JSON stringify
@@ -142,7 +167,7 @@ export default function CreateAgentPage() {
       // CREATE: Send full payload
       payload = {
         name: agentData.name,
-        description: agentData.description,
+        instructions: agentData.instructions,
         capabilities: agentData.capabilities,
         tool_ids: agentData.toolIds,
         mcp_server_ids: agentData.mcpServerIds,
@@ -223,20 +248,34 @@ export default function CreateAgentPage() {
                 <Text as="h3" size="lg" variant="label" style={{ marginBottom: theme.spacing[6] }}>Agent Information</Text>
 
                 <div style={{ marginBottom: theme.spacing[6] }}>
-                  <label style={{ display: "block", fontSize: theme.typography.fontSize.sm, fontWeight: theme.typography.fontWeight.semibold, color: theme.colors.foreground, marginBottom: theme.spacing[2] }}>Agent Name *</label>
-                  <Input placeholder="e.g., Research Agent" value={agentData.name} onChange={(e) => setAgentData({ ...agentData, name: e.target.value })} maxLength={100} />
-                  <p style={{
-                    fontSize: theme.typography.fontSize.xs,
-                    color: theme.colors.muted_foreground,
-                    margin: `${theme.spacing[2]} 0 0 0`,
-                  }}>
-                    {agentData.name?.length || 0}/100 characters
-                  </p>
+                  <label style={{ display: "block", fontSize: theme.typography.fontSize.sm, fontWeight: theme.typography.fontWeight.semibold, color: theme.colors.foreground, marginBottom: theme.spacing[2] }}>
+                    Agent Name *
+                  </label>
+                  <Input placeholder="e.g., Research Agent" value={agentData.name} onChange={(e) => setAgentData({ ...agentData, name: e.target.value })} maxLength={30} />
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: theme.spacing[2] }}>
+                    <Text size="xs" variant="muted" style={{ display: "block" }}>
+                      Only use letters, numbers, spaces, hyphens, and underscores
+                    </Text>
+                    <p style={{
+                      fontSize: theme.typography.fontSize.xs,
+                      color: theme.colors.muted_foreground,
+                      margin: 0,
+                    }}>
+                      {agentData.name?.length || 0}/30 characters
+                    </p>
+                  </div>
                 </div>
 
                 <div style={{ marginBottom: theme.spacing[6] }}>
-                  <label style={{ display: "block", fontSize: theme.typography.fontSize.sm, fontWeight: theme.typography.fontWeight.semibold, color: theme.colors.foreground, marginBottom: theme.spacing[2] }}>Description</label>
-                  <Textarea placeholder="Describe what this agent does" value={agentData.description} onChange={(e) => setAgentData({ ...agentData, description: e.target.value })} rows={3} />
+                  <label style={{ display: "block", fontSize: theme.typography.fontSize.sm, fontWeight: theme.typography.fontWeight.semibold, color: theme.colors.foreground, marginBottom: theme.spacing[2] }}>Instructions</label>
+                  <Textarea placeholder="Provide detailed instructions for this agent" value={agentData.instructions} onChange={(e) => setAgentData({ ...agentData, instructions: e.target.value })} rows={5} />
+                  <p style={{
+                    fontSize: theme.typography.fontSize.xs,
+                    color: (agentData.instructions ? agentData.instructions.trim().split(/\s+/).filter(Boolean).length : 0) > 250 ? theme.colors.destructive[600] : theme.colors.muted_foreground,
+                    margin: `${theme.spacing[2]} 0 0 0`,
+                  }}>
+                    {agentData.instructions ? agentData.instructions.trim().split(/\s+/).filter(Boolean).length : 0}/250 words
+                  </p>
                 </div>
 
                 <div>
@@ -253,51 +292,16 @@ export default function CreateAgentPage() {
                   </Text>
 
                   <div style={{ width: "fit-content" }}>
-                    <Combobox
-                      value=""
-                      onValueChange={(toolId) => {
-                        if (toolId) {
-                          if (agentData.toolIds.includes(toolId)) {
-                            setAgentData({ ...agentData, toolIds: agentData.toolIds.filter(id => id !== toolId) })
-                          } else {
-                            setAgentData({ ...agentData, toolIds: [...agentData.toolIds, toolId] })
-                          }
-                        }
-                      }}
-                      variant="default"
+                    <Button
+                      variant="outline"
                       size="md"
-                      multiselect={true}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        setIsToolPaletteOpen(true)
+                      }}
                     >
-                      <div style={{ display: "contents" }}>
-                        <Button
-                          variant="outline"
-                          size="md"
-                          onClick={(e) => {
-                            e.preventDefault()
-                            document.querySelector('[data-combobox-trigger="tools"]')?.click()
-                          }}
-                        >
-                          + Add Tool
-                        </Button>
-                        <div style={{ visibility: "hidden", height: 0, width: 0, overflow: "hidden" }}>
-                          <ComboboxTrigger data-combobox-trigger="tools">
-                            Select a tool
-                          </ComboboxTrigger>
-                        </div>
-                      </div>
-                      <ComboboxContent>
-                        <ComboboxSearch placeholder="Search tools..." />
-                        {tools.map((tool) => (
-                          <ComboboxItem key={tool.id} value={tool.id} searchableText={tool.name}>
-                            <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[2], justifyContent: "space-between", width: "100%" }}>
-                              <span>{tool.name}</span>
-                              {agentData.toolIds.includes(tool.id) && <Check size={14} style={{ color: theme.colors.primary[600] }} />}
-                            </div>
-                          </ComboboxItem>
-                        ))}
-                        {tools.length === 0 && <div style={{ padding: '8px', color: theme.colors.muted_foreground }}>No tools found</div>}
-                      </ComboboxContent>
-                    </Combobox>
+                      + Add Tool
+                    </Button>
                   </div>
                 </div>
 
@@ -329,51 +333,16 @@ export default function CreateAgentPage() {
                   </Text>
 
                   <div style={{ width: "fit-content" }}>
-                    <Combobox
-                      value=""
-                      onValueChange={(serverId) => {
-                        if (serverId) {
-                          if (agentData.mcpServerIds.includes(serverId)) {
-                            setAgentData({ ...agentData, mcpServerIds: agentData.mcpServerIds.filter(id => id !== serverId) })
-                          } else {
-                            setAgentData({ ...agentData, mcpServerIds: [...agentData.mcpServerIds, serverId] })
-                          }
-                        }
-                      }}
-                      variant="default"
+                    <Button
+                      variant="outline"
                       size="md"
-                      multiselect={true}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        setIsServerPaletteOpen(true)
+                      }}
                     >
-                      <div style={{ display: "contents" }}>
-                        <Button
-                          variant="outline"
-                          size="md"
-                          onClick={(e) => {
-                            e.preventDefault()
-                            document.querySelector('[data-combobox-trigger="servers"]')?.click()
-                          }}
-                        >
-                          + Add Server
-                        </Button>
-                        <div style={{ visibility: "hidden", height: 0, width: 0, overflow: "hidden" }}>
-                          <ComboboxTrigger data-combobox-trigger="servers">
-                            Select a server
-                          </ComboboxTrigger>
-                        </div>
-                      </div>
-                      <ComboboxContent>
-                        <ComboboxSearch placeholder="Search MCP servers..." />
-                        {mcpServers.map((server) => (
-                          <ComboboxItem key={server.id} value={server.id} searchableText={server.name}>
-                            <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[2], justifyContent: "space-between", width: "100%" }}>
-                              <span>{server.name}</span>
-                              {agentData.mcpServerIds.includes(server.id) && <Check size={14} style={{ color: theme.colors.primary[600] }} />}
-                            </div>
-                          </ComboboxItem>
-                        ))}
-                        {mcpServers.length === 0 && <div style={{ padding: '8px', color: theme.colors.muted_foreground }}>No servers found</div>}
-                      </ComboboxContent>
-                    </Combobox>
+                      + Add Server
+                    </Button>
                   </div>
                 </div>
 
@@ -452,6 +421,37 @@ export default function CreateAgentPage() {
               </Button>
             </div>
 
+          </>
+        )}
+
+        {/* Render Command Palettes at the root level to escape CSS positioning traps */}
+        {agentData && (
+          <>
+            <CommandPalette
+              isOpen={isToolPaletteOpen}
+              onClose={() => setIsToolPaletteOpen(false)}
+              title="Add Tools"
+              description="Search and select tools to equip this agent with."
+              placeholder="Search available tools..."
+              items={tools.map(t => ({ id: t.id, label: t.name, description: t.description }))}
+              selectedIds={agentData.toolIds}
+              onSelect={(id) => setAgentData({ ...agentData, toolIds: [...agentData.toolIds, id] })}
+              onDeselect={(id) => setAgentData({ ...agentData, toolIds: agentData.toolIds.filter(tid => tid !== id) })}
+              emptyMessage="No available tools found."
+            />
+
+            <CommandPalette
+              isOpen={isServerPaletteOpen}
+              onClose={() => setIsServerPaletteOpen(false)}
+              title="Add MCP Servers"
+              description="Select MCP servers to provide access to external systems."
+              placeholder="Search available servers..."
+              items={mcpServers.map(s => ({ id: s.id, label: s.name }))}
+              selectedIds={agentData.mcpServerIds}
+              onSelect={(id) => setAgentData({ ...agentData, mcpServerIds: [...agentData.mcpServerIds, id] })}
+              onDeselect={(id) => setAgentData({ ...agentData, mcpServerIds: agentData.mcpServerIds.filter(sid => sid !== id) })}
+              emptyMessage="No available MCP servers found."
+            />
           </>
         )}
       </Container>

@@ -9,7 +9,7 @@ class Agent(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
-    description = Column(String, nullable=True)
+    instructions = Column(String, nullable=True)
     
     # Capabilities as a list of strings
     capabilities = Column(JSONB, default=list, nullable=False)

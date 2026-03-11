@@ -31,7 +31,6 @@ export default function CreateLLMPage() {
   // Form state
   const [llmData, setLLMData] = useState({
     name: "",
-    description: "",
     provider: "",
     model: "",
     headers: "{\n  \"Authorization\": \"Bearer {{env.API_KEY}}\"\n}",
@@ -67,7 +66,6 @@ export default function CreateLLMPage() {
 
           const mapped = {
             name: data.name || "",
-            description: data.description || "",
             provider: data.provider || "",
             model: data.model || "",
             headers: data.headers || "{}",
@@ -106,10 +104,22 @@ export default function CreateLLMPage() {
 
   const handleSave = async () => {
     // Validation
-    if (!llmData.name.trim()) {
-      addToast("Validation Error", "LLM Name is required", "destructive")
+    const trimmedName = llmData.name.trim()
+    if (!trimmedName || trimmedName.length < 3 || trimmedName.length > 30) {
+      addToast("Validation Error", "LLM Name must be between 3 and 30 characters.", "destructive")
       return
     }
+
+    const nameRegex = /^[A-Za-z0-9 _-]+$/
+    if (!nameRegex.test(trimmedName)) {
+      addToast(
+        "Invalid Name Format",
+        "Name can only contain letters, numbers, spaces, hyphens, and underscores",
+        "destructive"
+      )
+      return
+    }
+
     if (!llmData.provider) {
       addToast("Validation Error", "Provider is required", "destructive")
       return
@@ -128,7 +138,6 @@ export default function CreateLLMPage() {
     if (isEditMode && originalData) {
       // UPDATE: Only send changed fields (diff-based like Tools page)
       if (llmData.name !== originalData.name) payload.name = llmData.name
-      if (llmData.description !== originalData.description) payload.description = llmData.description
       if (llmData.provider !== originalData.provider) payload.provider = llmData.provider
       if (llmData.model !== originalData.model) payload.model = llmData.model
       if (llmData.headers !== originalData.headers) payload.headers = llmData.headers
@@ -160,7 +169,6 @@ export default function CreateLLMPage() {
       // CREATE: Send full payload
       payload = {
         name: llmData.name,
-        description: llmData.description,
         provider: llmData.provider,
         model: llmData.model,
         headers: llmData.headers,
@@ -247,13 +255,22 @@ export default function CreateLLMPage() {
             <Text as="h3" size="lg" variant="label" style={{ marginBottom: theme.spacing[6] }}>LLM Information</Text>
 
             <div style={{ marginBottom: theme.spacing[6] }}>
-              <label style={{ display: "block", fontSize: theme.typography.fontSize.sm, fontWeight: theme.typography.fontWeight.semibold, marginBottom: theme.spacing[2], color: theme.colors.foreground }}>LLM Name *</label>
-              <Input placeholder="e.g., Production GPT-4" value={llmData.name} onChange={(e) => setLLMData({ ...llmData, name: e.target.value })} />
-            </div>
-
-            <div>
-              <label style={{ display: "block", fontSize: theme.typography.fontSize.sm, fontWeight: theme.typography.fontWeight.semibold, marginBottom: theme.spacing[2], color: theme.colors.foreground }}>Description</label>
-              <Textarea placeholder="Describe this configuration" value={llmData.description || ""} onChange={(e) => setLLMData({ ...llmData, description: e.target.value })} rows={3} />
+              <label style={{ display: "block", fontSize: theme.typography.fontSize.sm, fontWeight: theme.typography.fontWeight.semibold, marginBottom: theme.spacing[2], color: theme.colors.foreground }}>
+                LLM Name *
+              </label>
+              <Input placeholder="e.g., Production GPT-4" value={llmData.name} onChange={(e) => setLLMData({ ...llmData, name: e.target.value })} maxLength={30} />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: theme.spacing[2] }}>
+                <Text size="xs" variant="muted" style={{ display: "block" }}>
+                  Only use letters, numbers, spaces, hyphens, and underscores
+                </Text>
+                <p style={{
+                  fontSize: theme.typography.fontSize.xs,
+                  color: theme.colors.muted_foreground,
+                  margin: 0,
+                }}>
+                  {llmData.name?.length || 0}/30 characters
+                </p>
+              </div>
             </div>
           </Card>
 

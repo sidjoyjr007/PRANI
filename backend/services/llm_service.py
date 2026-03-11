@@ -23,7 +23,6 @@ class LLMService:
         db_llm = LLM(
             owner_id=user_id,
             name=data["name"],
-            description=data.get("description"),
             provider=data["provider"],
             model=data["model"],
             headers=json.loads(data["headers"]) if isinstance(data["headers"], str) else data["headers"],
@@ -265,7 +264,6 @@ class LLMService:
             "id": llm.id,
             "owner_id": llm.owner_id,
             "name": llm.name,
-            "description": llm.description,
             "provider": llm.provider,
             "model": llm.model,
             "headers": headers_str,

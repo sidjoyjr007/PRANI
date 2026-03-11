@@ -22,10 +22,10 @@ USER GOAL:
 "{goal}"
 {error_section}
 INSTRUCTIONS:
-1. ALIGNMENT CHECK: Does the Goal align with the Agent's description and capabilities?
+1. ALIGNMENT CHECK: Does the Goal align with the Agent's instructions and capabilities?
 2. IF NOT ALIGNED: Return strict JSON with `is_complete: true` and a `final_answer`.
 3. IF ALIGNED: Decompose the goal into a logical sequence of subtasks.
-4. VECTOR OPTIMIZATION: Subtask descriptions are used to query a Vector Database to find appropriate tools.
+4. VECTOR OPTIMIZATION: Subtask instructions are used to query a Vector Database to find appropriate tools.
    - Describe WHAT needs to be done, not HOW.
    - Use precise, action-oriented natural language. 
    - Instead of "Check DB", use "Retrieve user profile data from the PostgreSQL database".
@@ -54,8 +54,11 @@ IF NON-ALIGNED OR IMPOSSIBLE:
 }}
 """
 
-def get_action_system_prompt(agent_role: str, tools_desc: str, status_report: str, current_subtask: str, session_history: str = "", parse_error: str = "", global_goal: str = "") -> str:
+def get_action_system_prompt(agent_role: str, agent_instructions: str, tools_desc: str, status_report: str, current_subtask: str, session_history: str = "", parse_error: str = "", global_goal: str = "") -> str:
+    instructions_section = f"\nCUSTOM INSTRUCTIONS:\n{agent_instructions}\n" if agent_instructions else ""
+    
     prompt = f"""You are {agent_role}.
+    {instructions_section}
 Your goal is to execute the user's request by intelligently using the tools provided to you.
 
 OVERALL GOAL: {global_goal}

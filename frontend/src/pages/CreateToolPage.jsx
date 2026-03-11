@@ -133,31 +133,35 @@ export default function CreateToolPage() {
   }, [toolId, dispatch, navigate])
 
   const validateToolData = () => {
-    // Format Name and Description before validation
-    const formatToolName = (nameStr) => {
-      const trimmed = nameStr.trim()
-      // If it has spaces, dashes, or special characters, let's treat it as needing snake_case
-      if (/[\s-]/.test(trimmed)) {
-        return trimmed
-          .replace(/[\s-]/g, '_')
-          .replace(/[^A-Za-z0-z_]/g, '')
-          .toLowerCase()
-      }
-      return trimmed
-    }
-
-    const formattedName = formatToolName(toolData.name || "")
+    const trimmedName = (toolData.name || "").trim()
     const trimmedDescription = (toolData.description || "").trim()
 
-    // 1. Name Required
-    if (!formattedName || formattedName.length < 3) {
-      addToast("Validation Error", "Tool name is required and should be at least 3 characters.", "error")
+    // 1. Name Required and Length
+    if (!trimmedName || trimmedName.length < 3 || trimmedName.length > 30) {
+      addToast("Validation Error", "Tool name must be between 3 and 30 characters.", "error")
       return false
     }
 
-    // 2. Description Required
+    // 2. Strict Name Validation (letters, numbers, spaces, hyphens, underscores)
+    const nameRegex = /^[A-Za-z0-9 _-]+$/
+    if (!nameRegex.test(trimmedName)) {
+      addToast(
+        "Invalid Name Format",
+        "Name can only contain letters, numbers, spaces, hyphens, and underscores",
+        "error"
+      )
+      return false
+    }
+
+    // 3. Description Required
     if (!trimmedDescription || trimmedDescription.length < 10) {
       addToast("Validation Error", "Description must be at least 10 characters.", "error")
+      return false
+    }
+
+    const descriptionWordCount = trimmedDescription.split(/\s+/).filter(Boolean).length
+    if (descriptionWordCount > 50) {
+      addToast("Validation Error", "Description cannot exceed 50 words.", "error")
       return false
     }
 
@@ -227,20 +231,7 @@ export default function CreateToolPage() {
       return
     }
 
-    // Format Name and Description before validation
-    const formatToolName = (nameStr) => {
-      const trimmed = nameStr.trim()
-      // If it has spaces, dashes, or special characters, let's treat it as needing snake_case
-      if (/[\s-]/.test(trimmed)) {
-        return trimmed
-          .replace(/[\s-]/g, '_')
-          .replace(/[^A-Za-z0-z_]/g, '')
-          .toLowerCase()
-      }
-      return trimmed
-    }
-
-    const formattedName = formatToolName(toolData.name || "")
+    const unformattedName = (toolData.name || "").trim()
     const trimmedDescription = (toolData.description || "").trim()
 
     let payload = {}
@@ -275,15 +266,18 @@ export default function CreateToolPage() {
 
     if (isEditing) {
       // Delta generation
-      const payload = {}
-      if (formattedName !== originalData.name) payload.name = formattedName
+      if (unformattedName !== originalData.name) payload.name = unformattedName
       if (trimmedDescription !== originalData.description) payload.description = trimmedDescription
       if (toolData.code !== originalData.code) payload.code = toolData.code
 
-      // We no longer strictly compare categories since it's removed from UI, but keep the field if present
-      if (toolData.categories) payload.categories = toolData.categories
+      // Compare categories
+      const originalCategories = originalData.categories || []
+      const currentCategories = toolData.categories || []
+      if (JSON.stringify(currentCategories) !== JSON.stringify(originalCategories)) {
+        payload.categories = currentCategories
+      }
 
-      // Compare Input Fields (ignore internal UI IDs)
+      // Compare Input Fields
       const originalInputs = originalData.inputFields.map(f => ({
         name: f.name, type: f.dataType, description: f.description, default: f.defaultValue, required: f.required
       }))
@@ -291,7 +285,7 @@ export default function CreateToolPage() {
         payload.input_fields = inputFieldsMapped
       }
 
-      // Compare Env Var Defs (ignore values/secrets, just keys/descriptions)
+      // Compare Env Var Defs
       const originalEnvDefs = originalData.environmentVariables.map(e => ({
         name: e.key, description: e.description || "Required environment variable", required: true
       }))
@@ -304,13 +298,6 @@ export default function CreateToolPage() {
         payload.secrets = secretsMapped
       }
 
-      // If no changes, warn user? Or just return?
-      if (Object.keys(payload).length === 0) {
-        addToast("Info", "No changes detected.", "info")
-        return
-      }
-
-      // If no changes, warn user? Or just return?
       if (Object.keys(payload).length === 0) {
         addToast("Info", "No changes detected.", "info")
         return
@@ -318,8 +305,8 @@ export default function CreateToolPage() {
 
     } else {
       // CREATE: Send full payload
-      const payload = {
-        name: formattedName,
+      payload = {
+        name: unformattedName,
         description: trimmedDescription,
         code: toolData.code || "def execute_tool():\n    pass",
         categories: toolData.categories || [],
@@ -443,18 +430,23 @@ export default function CreateToolPage() {
                     Tool Name *
                   </label>
                   <Input
-                    placeholder="e.g., Web Search, Code Executor"
+                    placeholder="e.g., web_search, code_executor"
                     value={toolData.name || ""}
                     onChange={(e) => setToolData({ ...toolData, name: e.target.value })}
-                    maxLength={20}
+                    maxLength={30}
                   />
-                  <p style={{
-                    fontSize: theme.typography.fontSize.xs,
-                    color: theme.colors.muted_foreground,
-                    margin: `${theme.spacing[2]} 0 0 0`,
-                  }}>
-                    {toolData.name?.length || 0}/20 characters
-                  </p>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: theme.spacing[2] }}>
+                    <Text size="xs" variant="muted" style={{ display: "block" }}>
+                      Only use letters, numbers, spaces, hyphens, and underscores
+                    </Text>
+                    <p style={{
+                      fontSize: theme.typography.fontSize.xs,
+                      color: theme.colors.muted_foreground,
+                      margin: 0,
+                    }}>
+                      {toolData.name?.length || 0}/30 characters
+                    </p>
+                  </div>
                 </div>
                 <div>
                   <label style={{
@@ -471,15 +463,14 @@ export default function CreateToolPage() {
                     value={toolData.description || ""}
                     onChange={(e) => setToolData({ ...toolData, description: e.target.value })}
                     rows={3}
-                    maxLength={200}
                     showCharCount={false}
                   />
                   <p style={{
                     fontSize: theme.typography.fontSize.xs,
-                    color: theme.colors.muted_foreground,
+                    color: ((toolData.description || "").trim().split(/\s+/).filter(Boolean).length) > 50 ? theme.colors.destructive[600] : theme.colors.muted_foreground,
                     margin: `${theme.spacing[2]} 0 0 0`,
                   }}>
-                    {toolData.description?.length || 0}/200 characters
+                    {(toolData.description || "").trim().split(/\s+/).filter(Boolean).length}/50 words
                   </p>
                 </div>
 
@@ -534,7 +525,7 @@ export default function CreateToolPage() {
                               value={field.name || ""}
                               onChange={(e) => {
                                 const newFields = [...toolData.inputFields]
-                                newFields[idx].name = e.target.value
+                                newFields[idx] = { ...newFields[idx], name: e.target.value }
                                 setToolData({ ...toolData, inputFields: newFields })
                               }}
                             />
@@ -554,7 +545,7 @@ export default function CreateToolPage() {
                               value={field.description || ""}
                               onChange={(e) => {
                                 const newFields = [...toolData.inputFields]
-                                newFields[idx].description = e.target.value
+                                newFields[idx] = { ...newFields[idx], description: e.target.value }
                                 setToolData({ ...toolData, inputFields: newFields })
                               }}
                             />
@@ -575,7 +566,7 @@ export default function CreateToolPage() {
                             </label>
                             <Select value={field.dataType || "str"} onValueChange={(value) => {
                               const newFields = [...toolData.inputFields]
-                              newFields[idx].dataType = value
+                              newFields[idx] = { ...newFields[idx], dataType: value }
                               setToolData({ ...toolData, inputFields: newFields })
                             }}>
                               <SelectTrigger size="lg">
@@ -604,7 +595,7 @@ export default function CreateToolPage() {
                               value={field.defaultValue || ""}
                               onChange={(e) => {
                                 const newFields = [...toolData.inputFields]
-                                newFields[idx].defaultValue = e.target.value
+                                newFields[idx] = { ...newFields[idx], defaultValue: e.target.value }
                                 setToolData({ ...toolData, inputFields: newFields })
                               }}
                             />
@@ -617,7 +608,7 @@ export default function CreateToolPage() {
                             checked={field.required || false}
                             onChange={(e) => {
                               const newFields = [...toolData.inputFields]
-                              newFields[idx].required = e.target.checked
+                              newFields[idx] = { ...newFields[idx], required: e.target.checked }
                               setToolData({ ...toolData, inputFields: newFields })
                             }}
                             label="Required"

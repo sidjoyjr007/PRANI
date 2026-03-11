@@ -298,7 +298,8 @@ class AgenticLoop:
         
         history_text = await self.memory.get_history_text(limit=10)
         system_prompt = get_action_system_prompt(
-            agent_role=self.agent.description or "Autonomous Agent",
+            agent_role=self.agent.name or "Autonomous Agent",
+            agent_instructions=self.agent.instructions or "",
             tools_desc="\n".join(tools_desc_list), 
             status_report=status_report,
             current_subtask=current_subtask_desc,

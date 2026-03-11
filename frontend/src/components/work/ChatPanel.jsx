@@ -878,14 +878,9 @@ export default function ChatPanel({
                                 <ComboboxContent>
                                     <ComboboxSearch placeholder="Search agents..." />
                                     {agents.map(agent => (
-                                        <ComboboxItem key={agent.id} value={String(agent.id)} searchableText={`${agent.name} ${agent.description || ""}`}>
+                                        <ComboboxItem key={agent.id} value={String(agent.id)} searchableText={agent.name}>
                                             <div style={{ display: "flex", flexDirection: "column" }}>
                                                 <span>{agent.name}</span>
-                                                {agent.description && (
-                                                    <span style={{ fontSize: "0.75rem", opacity: 0.6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "200px" }}>
-                                                        {agent.description}
-                                                    </span>
-                                                )}
                                             </div>
                                         </ComboboxItem>
                                     ))}

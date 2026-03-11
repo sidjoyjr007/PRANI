@@ -163,7 +163,7 @@ async def resume_execution(conversation_id: UUID, request: ApprovalRequest, db: 
     return {"status": "resumed"}
 
 @router.post("/{conversation_id}/abort", response_model=dict)
-def abort_execution(conversation_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def abort_execution(conversation_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
     Aborts an active agent execution loop for the given conversation.
     """
@@ -177,10 +177,9 @@ def abort_execution(conversation_id: UUID, db: Session = Depends(get_db), curren
     
     if success:
         from engine.events import EventBus, AgentEventType
-        import asyncio
         event_bus = EventBus()
-        asyncio.create_task(
-            event_bus.emit(event_bus.create_event(str(conversation_id), AgentEventType.ERROR, content="Agent execution aborted by user."))
+        await event_bus.emit(
+            event_bus.create_event(str(conversation_id), AgentEventType.ERROR, content="Agent execution aborted by user.")
         )
         return {"status": "aborted"}
     else:

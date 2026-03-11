@@ -62,9 +62,9 @@ class ContextManager:
         context = []
         current_tokens = 0
 
-        # 1. System Prompt
-        if self.agent.description:
-            sys_msg = ProviderMessage(role="system", content=self.agent.description)
+        # 1. System Prompt (Instructions)
+        if self.agent.instructions:
+            sys_msg = ProviderMessage(role="system", content=self.agent.instructions)
             context.append(sys_msg)
             current_tokens += self._get_message_tokens(sys_msg)
 
