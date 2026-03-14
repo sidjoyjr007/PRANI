@@ -2,23 +2,18 @@ import React, { useState } from "react"
 import { useTheme } from "@/context/ThemeContext"
 import { useNavigate } from "react-router-dom"
 import { useDispatch } from "react-redux"
-import { Card } from "@/components/ui/card"
-import { Text } from "@/components/ui/text"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Trash2, Play } from "lucide-react"
 import DeleteResourceDialog from "@/components/DeleteResourceDialog"
 import { deleteLLM } from "@/store/slices/llmSlice"
+import ResourceCard from "@/components/ui/ResourceCard"
+import { Brain, Trash2, Play, Sparkles } from "lucide-react"
 
 export default function LLMCard({ llm, addToast }) {
   const theme = useTheme()
   const navigate = useNavigate()
   const dispatch = useDispatch()
-  const [showActions, setShowActions] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
   const handleDeleteClick = (e) => {
-    e.stopPropagation()
     setShowDeleteDialog(true)
   }
 
@@ -36,146 +31,40 @@ export default function LLMCard({ llm, addToast }) {
   }
 
   const handleTest = (e) => {
-    e.stopPropagation()
     navigate(`/test-llm/${llm.id}`)
   }
 
   if (!llm) return null
 
-  // Provider color mapping
-  const getProviderColor = (provider) => {
-    const colors = {
-      OpenAI: "secondary",
-      Anthropic: "secondary",
-      Gemini: "secondary",
-      HuggingFace: "secondary",
+  const badges = [
+    { label: llm.provider, variant: "filled", color: "secondary", icon: Sparkles }
+  ]
+
+  const actions = [
+    {
+      icon: Play,
+      title: "Test LLM",
+      color: theme.colors.primary[600],
+      onClick: handleTest
+    },
+    {
+      icon: Trash2,
+      title: "Delete LLM",
+      color: theme.colors.destructive[600],
+      onClick: handleDeleteClick
     }
-    return colors[provider] || "secondary"
-  }
+  ]
 
   return (
     <>
-      <Card
-        variant="default"
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          flex: 1,
-          height: "100%",
-          padding: theme.spacing[6],
-          gap: theme.spacing[4],
-          transition: `all ${theme.transitions.normal}`,
-          cursor: "pointer",
-          border: `${theme.borderWidth.sm} solid ${theme.colors.border}`,
-          borderRadius: theme.borderRadius.md,
-          backgroundColor: theme.colors.card,
-          boxShadow: `0 1px 3px 0 ${theme.colors.shadow}20`,
-          position: "relative",
-        }}
+      <ResourceCard
+        title={llm.name}
+        subtitle={llm.model}
+        icon={Brain}
+        badges={badges}
+        actions={actions}
         onClick={() => navigate(`/edit-llm/${llm.id}`)}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.boxShadow = theme.shadows.lg
-          e.currentTarget.style.transform = "translateY(-2px)"
-          setShowActions(true)
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.boxShadow = `0 1px 3px 0 ${theme.colors.shadow}20`
-          e.currentTarget.style.transform = "translateY(0)"
-          setShowActions(false)
-        }}
-      >
-        {/* Action Buttons - Visible on Hover */}
-        {showActions && (
-          <div
-            style={{
-              position: "absolute",
-              top: theme.spacing[4],
-              right: theme.spacing[4],
-              display: "flex",
-              gap: theme.spacing[2],
-              zIndex: 10,
-            }}
-          >
-            {/* Test Button */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleTest}
-              style={{
-                padding: theme.spacing[2],
-                color: theme.colors.primary[600],
-              }}
-              title="Test LLM"
-            >
-              <Play size={18} />
-            </Button>
-
-            {/* Delete Button */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleDeleteClick}
-              style={{
-                color: theme.colors.destructive[600],
-                padding: theme.spacing[2],
-              }}
-              title="Delete LLM"
-            >
-              <Trash2 size={18} />
-            </Button>
-          </div>
-        )}
-
-        {/* LLM Name */}
-        <h3
-          style={{
-            margin: 0,
-            fontSize: theme.typography.fontSize.md,
-            color: theme.colors.foreground,
-            fontWeight: theme.typography.fontWeight.semibold,
-            paddingRight: `calc(2 * ${theme.spacing[12]})`, // Space for 2 buttons
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            width: "100%",
-          }}
-          title={llm.name}
-        >
-          {llm.name}
-        </h3>
-
-        {/* Provider Badge */}
-        <Badge
-          variant="outline"
-          color={getProviderColor(llm.provider)}
-          size="sm"
-          pill
-          style={{
-            alignSelf: "flex-start",
-          }}
-        >
-          {llm.provider}
-        </Badge>
-
-        {/* Model Name */}
-        <Text
-          as="p"
-          variant="body"
-          size="sm"
-          style={{
-            margin: 0,
-            color: theme.colors.muted_foreground,
-            flex: 1,
-            lineHeight: theme.typography.lineHeight.relaxed,
-            display: "-webkit-box",
-            WebkitLineClamp: 3,
-            WebkitBoxOrient: "vertical",
-            overflow: "hidden",
-          }}
-        >
-          {llm.model}
-        </Text>
-      </Card>
+      />
 
       <DeleteResourceDialog
         isOpen={showDeleteDialog}

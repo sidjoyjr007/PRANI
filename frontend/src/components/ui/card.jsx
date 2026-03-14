@@ -11,11 +11,13 @@ import { useTheme } from "@/context/ThemeContext"
 const getCardStyles = (variant, theme) => {
   const styles = {
     default: {
-      backgroundColor: "white",
-      borderColor: theme.colors.neutral[200],
-      borderWidth: "2px",
+      backgroundColor: "rgba(255, 255, 255, 0.7)",
+      backdropFilter: "blur(12px)",
+      WebkitBackdropFilter: "blur(12px)",
+      borderColor: "rgba(228, 232, 236, 0.5)",
+      borderWidth: "1px",
       borderStyle: "solid",
-      boxShadow: `0 1px 3px 0 ${theme.colors.shadow}20`,
+      boxShadow: "none",
     },
     outline: {
       backgroundColor: "white",
@@ -62,23 +64,30 @@ const Card = React.forwardRef(({
       ref={ref}
       style={{
         ...styles,
-        borderRadius: theme.borderRadius.lg,
+        borderRadius: "20px",
         padding: theme.spacing[6],
-        transition: hoverable ? `all ${theme.transitions.normal}` : "none",
+        transition: "all 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
         cursor: hoverable ? "pointer" : "default",
         position: "relative",
         overflow: "visible",
-        ...callerStyle,  // Caller styles override base (allows height: 100%, display: flex, etc.)
+        zIndex: 1,
+        ...callerStyle,
       }}
       className={cn(className)}
       onMouseEnter={hoverable ? (e) => {
-        e.currentTarget.style.boxShadow = `0 20px 25px -5px ${theme.colors.shadow}20`
-        e.currentTarget.style.transform = `translateY(-${theme.spacing[1]})`
-      } : undefined}
+        e.currentTarget.style.boxShadow = `0 20px 40px -12px rgba(0, 0, 0, 0.1)`
+        e.currentTarget.style.transform = "translateY(-4px)"
+        e.currentTarget.style.borderColor = theme.colors.primary[500]
+        e.currentTarget.style.zIndex = "10"
+        if (props.onMouseEnter) props.onMouseEnter(e)
+      } : props.onMouseEnter}
       onMouseLeave={hoverable ? (e) => {
         e.currentTarget.style.boxShadow = styles.boxShadow
         e.currentTarget.style.transform = "translateY(0px)"
-      } : undefined}
+        e.currentTarget.style.borderColor = styles.borderColor
+        e.currentTarget.style.zIndex = "1"
+        if (props.onMouseLeave) props.onMouseLeave(e)
+      } : props.onMouseLeave}
       {...props}
     />
   )

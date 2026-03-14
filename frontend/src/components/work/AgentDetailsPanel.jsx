@@ -85,9 +85,9 @@ export default function AgentDetailsPanel({ selectedAgent, allTools = [], allLLM
                                 Tools
                             </Text>
                             {agentTools.length > 0 ? (
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: theme.spacing[2], flexDirection: "column" }}>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: theme.spacing[2] }}>
                                     {agentTools.map((tool, idx) => (
-                                        <div key={idx} style={{ display: "flex", width: "100%" }}>
+                                        <div key={idx} style={{ display: "flex" }}>
                                             {tool.sync_status === "FAILED" ? (
                                                 <HoverCardContent
                                                     side="bottom"
@@ -141,9 +141,9 @@ export default function AgentDetailsPanel({ selectedAgent, allTools = [], allLLM
                                 MCP Servers
                             </Text>
                             {agentMCPServers.length > 0 ? (
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: theme.spacing[2], flexDirection: "column" }}>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: theme.spacing[2] }}>
                                     {agentMCPServers.map((server, idx) => (
-                                        <div key={idx} style={{ display: "flex", width: "100%" }}>
+                                        <div key={idx} style={{ display: "flex" }}>
                                             {server.sync_status === "FAILED" ? (
                                                 <HoverCardContent
                                                     side="bottom"

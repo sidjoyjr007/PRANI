@@ -11,6 +11,7 @@ import {
 } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
+import logo from "@/assets/prani-logo.svg"
 
 // ─── Markdown Renderer ───────────────────────────────────────────────────────
 // ─── Markdown Renderer ───────────────────────────────────────────────────────
@@ -400,11 +401,10 @@ const MessageRow = memo(({ msg, showLabel, onApprove, onReject, approvalDecision
             marginBottom: showLabel ? "6px" : "0",
         }}>
             {!isUser && showLabel && (
-                <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "2px" }}>
-                    <div style={{ width: "20px", height: "20px", borderRadius: "50%", backgroundColor: theme.colors.neutral[800], display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${theme.colors.neutral[700]}` }}>
-                        <Bot size={12} style={{ color: theme.colors.primary[400] }} />
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <img src={logo} alt="Prani Logo" style={{ height: "16px", width: "auto", display: "block" }} />
                     </div>
-                    <span style={{ fontSize: "0.72em", fontWeight: 700, color: theme.colors.foreground, textTransform: "uppercase", letterSpacing: "0.05em" }}>Prani</span>
                 </div>
             )}
 
@@ -783,7 +783,7 @@ export default function ChatPanel({
                         size="sm"
                         style={{
                             position: "absolute",
-                            bottom: "130px", // Higher elevation to clear the input box
+                            bottom: "160px", // Moved higher to ensure it doesn't block the input area
                             left: "50%",
                             transform: "translateX(-50%)",
                             borderRadius: "50%",

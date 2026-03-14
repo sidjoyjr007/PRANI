@@ -82,14 +82,18 @@ const DropdownContent = React.forwardRef(({
   if (!isOpen) return null
 
   const alignmentStyles = {
-    start: { left: 0 },
-    center: { left: "50%", transform: "translateX(-50%)" },
-    end: { right: 0 },
+    start: side === "right" || side === "left" ? { top: 0 } : { left: 0 },
+    center: side === "right" || side === "left" 
+      ? { top: "50%", transform: "translateY(-50%)" }
+      : { left: "50%", transform: "translateX(-50%)" },
+    end: side === "right" || side === "left" ? { bottom: 0 } : { right: 0 },
   }
 
   const sideStyles = {
     top: { bottom: "100%", marginBottom: theme.spacing[2] },
     bottom: { top: "100%", marginTop: theme.spacing[2] },
+    right: { left: "100%", marginLeft: theme.spacing[2] },
+    left: { right: "100%", marginRight: theme.spacing[2] },
   }
 
   return (
