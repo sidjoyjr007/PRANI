@@ -20,6 +20,7 @@ from utils.encryption import decrypt_value
 from engine.loop import AgenticLoop
 from engine.events import EventBus, AgentEventType
 from services.state_service import StateService
+from utils.cache import MessageCache
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,13 @@ class ExecutionService:
         """
         Launches the background agent loop and stores a strong reference to prevent GC.
         """
+        # 1. Concurrency Control: Ensure only one agent loop runs per session
+        existing_task = self.__class__._active_tasks.get(session_id)
+        if existing_task and not existing_task.done():
+            logger.debug(f"ExecutionService: Cancelling existing task for session {session_id} to avoid concurrent loops.")
+            existing_task.cancel()
+
+        # 2. Launch new task
         task = asyncio.create_task(
             self.run_agent_background(
                 agent_id=agent_id,
@@ -137,20 +145,14 @@ class ExecutionService:
 
             state_service = StateService()
                 
-            # 3. Handle Subtask State
-            # If there's new user_content (a new request), clear any old state to start fresh
-            if user_content and not approved_tool_calls:
-                await state_service.clear_plan(str(session_id))
-                subtask_state = None
-                # Explicitly notify frontend to clear the plan UI
-                await self.event_bus.emit(self.event_bus.create_event(
-                    str(session_id), 
-                    AgentEventType.PLAN, 
-                    metadata={"plan": {"subtasks": {}, "execution_order": []}}
-                ))
-            else:
-                # If it's a resume (or no new text), try to load state
-                subtask_state = await state_service.load_plan(str(session_id))
+            # Load existing plan state (if any)
+            subtask_state = await state_service.load_plan(str(session_id))
+
+            # 3.5. Cache Inconsistency Fix
+            # ALWAYS invalidate the Redis message cache when starting a new background run
+            # so the loop pulls the latest state (the ground truth) from the DB.
+            msg_cache = MessageCache()
+            await msg_cache.clear_cache(session_id)
 
             # 4. Instantiate Engine
             loop = AgenticLoop(

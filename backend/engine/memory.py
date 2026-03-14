@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import os
 from utils.llm_token import estimate_tokens
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ from models.conversation import Message, Conversation
 from models.agent import Agent
 from services.conversation_service import ConversationService
 from engine.prompts import get_compression_prompt
+from utils.cache import MessageCache
 
 class ContextManager:
     """
@@ -31,12 +33,14 @@ class ContextManager:
         self.user_id = user_id
         self.conversation_service = ConversationService(db)
         
-        # Token Configuration
-        self.max_context_tokens = 80_000
-        self.compaction_threshold_pct = 0.9
-        self.prune_threshold_chars = 1000
+        # Context Pressure Configuration
+        self.context_pressure_threshold = int(os.getenv("PRUNING_THRESHOLD", 30_000))
+        self.virtual_prune_char_limit = int(os.getenv("VIRTUAL_PRUNE_CHAR_LIMIT", 2000))
+        self.max_context_tokens = int(os.getenv("MAX_CONTEXT_TOKENS", 80_000))
+        self.compaction_threshold_pct = float(os.getenv("COMPACTION_THRESHOLD_PCT", 0.9))
         
         # Caching & Optimization
+        self.cache = MessageCache()
         self._db_messages_cache: Optional[List[Message]] = None
         self._last_compact_msg_count = 0
 
@@ -46,71 +50,122 @@ class ContextManager:
             
         return estimate_tokens(msg.role) + estimate_tokens(msg.content) + 4
 
-    def _get_db_messages(self, force_refresh=False) -> List[Message]:
-        if force_refresh or self._db_messages_cache is None:
-            self._db_messages_cache = self.conversation_service.get_messages(self.session_id, user_id=self.user_id)
-        return self._db_messages_cache
+    async def _get_db_messages(self, force_refresh=False) -> List[Message]:
+        if not force_refresh and self._db_messages_cache is not None:
+            return self._db_messages_cache
+            
+        # 1. Try Redis Cache first
+        if not force_refresh:
+            cached_data = await self.cache.get_messages(self.session_id)
+            if cached_data:
+                # Convert dicts back to Message models
+                messages = []
+                for m in cached_data:
+                    messages.append(Message(
+                        id=UUID(m["id"]),
+                        role=m["role"],
+                        content=m["content"],
+                        tokens=m["tokens"],
+                        conversation_id=self.session_id,
+                        created_at=datetime.fromisoformat(m["created_at"]) if isinstance(m.get("created_at"), str) else m.get("created_at")
+                    ))
+                self._db_messages_cache = messages
+                return messages
+
+        # 2. Fallback to SQL
+        db_messages = await asyncio.to_thread(self.conversation_service.get_messages, self.session_id, user_id=self.user_id)
+        self._db_messages_cache = db_messages
+        
+        # 3. Background update Redis
+        if db_messages:
+            asyncio.create_task(self.cache.set_messages(self.session_id, db_messages))
+            
+        return db_messages
 
     async def get_active_context(self) -> List[ProviderMessage]:
         """
-        Assembles a token-aware context window.
-        Order: [System Prompt] -> [Goal] -> [Summary/Restoration] -> [Recent History]
+        Assembles a token-aware context window using Pivot Logic:
+        [System Prompt] + [Latest Summary Fact] + [Messages AFTER Summary]
         """
-        # Run DB retrieval in background thread
-        db_messages = await asyncio.to_thread(self._get_db_messages)
+        db_messages = await self._get_db_messages()
         
         context = []
-        current_tokens = 0
-
-        # 1. System Prompt (Instructions)
+        
+        # 1. System Prompt (Highest Priority)
         if self.agent.instructions:
             sys_msg = ProviderMessage(role="system", content=self.agent.instructions)
             context.append(sys_msg)
-            current_tokens += self._get_message_tokens(sys_msg)
 
         if not db_messages:
             return context
 
-        # 3. Component Extraction
-        goal_msg = next((m for m in db_messages if m.role == "user"), None)
-        
-        # Find latest summary/restoration
-        restoration_msg = None
-        for m in reversed(db_messages):
+        # 2. Find Pivot Point (Latest Summary)
+        # We look for context_restoration messages
+        summary_msg = None
+        pivot_index = -1
+        for i, m in enumerate(reversed(db_messages)):
             if m.role == "system" and isinstance(m.content, dict) and m.content.get("type") == "context_restoration":
-                restoration_msg = m
+                summary_msg = m
+                pivot_index = len(db_messages) - 1 - i
                 break
         
-        # 4. Assemble Fixed Components
-        seen_ids = set()
-        if goal_msg:
-            p_goal = self._to_provider_msg(goal_msg)
-            context.append(p_goal)
-            current_tokens += self._get_message_tokens(p_goal)
-            seen_ids.add(goal_msg.id)
+        if summary_msg:
+            # Assembly Case B: Summary + Delta
+            p_summary = self._to_provider_msg(summary_msg)
+            context.append(p_summary)
             
-        if restoration_msg:
-            p_rest = self._to_provider_msg(restoration_msg)
-            context.append(p_rest)
-            current_tokens += self._get_message_tokens(p_rest)
-            seen_ids.add(restoration_msg.id)
-
-        # 5. Fill remaining window with recent history from newest to oldest
-        history_pool = [m for m in reversed(db_messages) if m.id not in seen_ids]
-        recent_context = []
+            # Add all messages created strictly after the summary
+            recent_deltas = db_messages[pivot_index + 1:]
+            for m in recent_deltas:
+                context.append(self._to_provider_msg(m))
+        else:
+            # Assembly Case A: Standard History (usually at start of session)
+            # Find original goal (first user message)
+            goal_msg = next((m for m in db_messages if m.role == "user"), None)
+            seen_ids = set()
+            
+            if goal_msg:
+                p_goal = self._to_provider_msg(goal_msg)
+                context.append(p_goal)
+                seen_ids.add(goal_msg.id)
+            
+            # Add remaining history until max tokens
+            current_tokens = sum(self._get_message_tokens(m) for m in context)
+            history_pool = [m for m in db_messages if m.id not in seen_ids]
+            
+            # Fill remaining window with the history tail
+            for m in history_pool:
+                p_msg = self._to_provider_msg(m)
+                msg_tokens = self._get_message_tokens(p_msg)
+                if current_tokens + msg_tokens > self.max_context_tokens:
+                    break
+                context.append(p_msg)
+                current_tokens += msg_tokens
+        # 3. Apply Adaptive Hybrid Pruning (Conditional Surgical Mode)
+        total_tokens = sum(self._get_message_tokens(m) for m in context)
         
-        for m in history_pool:
-            p_msg = self._to_provider_msg(m)
-            msg_tokens = self._get_message_tokens(p_msg)
-            
-            if current_tokens + msg_tokens > self.max_context_tokens:
-                break
-                
-            recent_context.append(p_msg)
-            current_tokens += msg_tokens
+        if total_tokens >= self.context_pressure_threshold:
+            logger.info(f"Context pressure detected ({total_tokens} tokens). Applying virtual pruning.")
+            for msg in context:
+                # We only prune tool results to maintain surgical precision
+                # We look for large tool outputs (> 2000 chars)
+                if msg.role == "tool" and isinstance(msg.content, str) and len(msg.content) > self.virtual_prune_char_limit:
+                    original_len = len(msg.content)
+                    
+                    # Try to find the original message ID from db_messages for the surgical marker
+                    msg_id = "unknown"
+                    for db_m in db_messages:
+                        db_text = db_m.content.get("text") if isinstance(db_m.content, dict) else str(db_m.content)
+                        if db_text == msg.content:
+                            msg_id = str(db_m.id)
+                            break
+                    
+                    head = msg.content[:1000]
+                    tail = msg.content[-1000:]
+                    marker = f"\n\n[VIRTUAL PRUNE | ID: {msg_id} | TOTAL: {original_len} chars | Context Pressure Active. Use read_tool_results(message_id='{msg_id}', start_char=..., end_char=...) for surgical access]\n\n"
+                    msg.content = f"{head}{marker}{tail}"
+                    logger.info(f"Virtually pruned message {msg_id} from {original_len} to ~2000 chars")
 
-        # Reverse recent history back to chronological order and append
-        context.extend(reversed(recent_context))
         return context
 
     async def get_goal_text(self) -> str:
@@ -150,7 +205,7 @@ class ContextManager:
             tokens=db_msg.tokens
         )
 
-    async def add_message(self, role: str, content: Any, tool_calls: list = None, tool_call_id: str = None, name: str = None, metadata_type: str = None, thoughts: list = None, status: str = None) -> Message:
+    async def add_message(self, role: str, content: Any, tool_calls: list = None, tool_call_id: str = None, name: str = None, metadata_type: str = None, thoughts: list = None, status: str = None, display: bool = True) -> Message:
         if isinstance(content, list):
             rich_content = {"parts": content}
             rich_content["text"] = "\n".join([p.get("text", "") for p in content if p.get("type") == "text"])
@@ -165,14 +220,22 @@ class ContextManager:
         if name: rich_content["name"] = name
         if thoughts: rich_content["thoughts"] = thoughts
         if status: rich_content["status"] = status
+        
+        # Add display flag (defaults to True)
+        rich_content["display"] = display
 
         msg_data = MessageCreate(role=role, content=rich_content)
         
         # Run DB persist in background thread
         new_msg = await asyncio.to_thread(self.conversation_service.add_message, self.session_id, msg_data, user_id=self.user_id)
         
-        if self._db_messages_cache is not None and new_msg:
-            self._db_messages_cache.append(new_msg)
+        if new_msg:
+            # Update local cache
+            if self._db_messages_cache is not None:
+                self._db_messages_cache.append(new_msg)
+            
+            # Update Redis cache
+            asyncio.create_task(self.cache.add_message(self.session_id, new_msg))
             
         return new_msg
 
@@ -181,10 +244,9 @@ class ContextManager:
         Performs structural compaction if tokens exceed threshold.
         """
         logger.debug("ContextManager.compact_history: started")
-        await self.prune_tool_outputs()
 
         # Check total tokens (offload DB retrieval)
-        db_messages = await asyncio.to_thread(self._get_db_messages)
+        db_messages = await self._get_db_messages()
         
         # Optimization: Don't re-calculate everything if only a few messages added
         if len(db_messages) < self._last_compact_msg_count + 3:
@@ -213,16 +275,14 @@ class ContextManager:
             restoration_text = f"# Context Restoration\n\n{summary}\n\nResume from where we left off."
             await self.add_message("system", restoration_text, metadata_type="context_restoration")
             
-            # Identify messages to delete
-            db_messages = await asyncio.to_thread(self._get_db_messages, force_refresh=True)
-            ids_to_delete = [m.id for m in db_messages if m.role != "user" and (not isinstance(m.content, dict) or m.content.get("type") != "context_restoration")]
+            # Identify messages to archive (logic kept for future tagging, but DELETION IS REMOVED)
+            # We no longer delete from SQL to ensure 100% historical reliability.
+            # The get_active_context logic already ensures these older messages stay out of the LLM window.
+            logger.info(f"Summarization pivot created. Preservation mode active: 0 messages deleted.")
             
-            # Keep newest restoration
-            newest_ids = [m.id for m in db_messages][-1:]
-            ids_to_delete = [mid for mid in ids_to_delete if mid not in newest_ids]
-            
-            await asyncio.to_thread(self.conversation_service.delete_messages, ids_to_delete, user_id=self.user_id)
-            await asyncio.to_thread(self._get_db_messages, force_refresh=True)
+            # Invalidate Redis so next fetch pulls fresh state from DB
+            await self.cache.clear_cache(self.session_id)
+            await self._get_db_messages(force_refresh=True)
             
         except Exception as e:
             logger.error(f"Compaction error: {e}")
@@ -247,33 +307,12 @@ class ContextManager:
         logger.debug(f"ContextManager._call_llm_sync: complete, received {len(res)} chars")
         return res
 
-    async def prune_tool_outputs(self):
-        """
-        Aggressively prunes large tool outputs to save tokens using batch updates.
-        """
-        db_messages = await asyncio.to_thread(self._get_db_messages)
-        updates = []
-        for msg in db_messages:
-            if msg.role == "tool" and not (isinstance(msg.content, dict) and msg.content.get("pruned")):
-                text = msg.content["text"] if isinstance(msg.content, dict) else str(msg.content)
-                if len(text) > self.prune_threshold_chars:
-                    head = text[:self.prune_threshold_chars // 2]
-                    tail = text[-self.prune_threshold_chars // 2:]
-                    new_text = f"{head}\n... [PRUNED {len(text) - self.prune_threshold_chars} chars] ...\n{tail}"
-                    
-                    content = msg.content if isinstance(msg.content, dict) else {"text": text}
-                    content["text"] = new_text
-                    content["pruned"] = True
-                    updates.append({"id": msg.id, "content": content})
-        
-        if updates:
-            await asyncio.to_thread(self.conversation_service.bulk_update_messages, updates, user_id=self.user_id)
                     
     async def get_history_text(self, limit: int = 10) -> str:
         """
         Returns a plain text representation of recent history.
         """
-        db_messages = await asyncio.to_thread(self._get_db_messages)
+        db_messages = await self._get_db_messages()
         recent = db_messages[-limit:]
         
         lines = []

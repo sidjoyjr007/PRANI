@@ -107,7 +107,11 @@ class EventBus:
 
     def __init__(self):
         if EventBus._redis_client is None:
-            EventBus._redis_client = redis.from_url(settings.redis_url)
+            EventBus._redis_client = redis.from_url(
+                settings.redis_url,
+                health_check_interval=30,
+                retry_on_timeout=True
+            )
         self.redis_client = EventBus._redis_client
 
     async def emit(self, event: AgentEvent):

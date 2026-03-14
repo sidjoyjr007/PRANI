@@ -1,58 +1,5 @@
 from typing import List, Dict
 
-def get_decomposer_prompt(goal: str, agent_info: str, planning_error: str = None) -> str:
-    """
-    Prompt for decomposing a goal into subtasks, with a strict alignment check and guidance 
-    for optimizing subtasks for vector database tool retrieval.
-    """
-    error_section = f"""
-PREVIOUS ERROR:
-Your last attempt failed with the following error:
-{planning_error}
-You are not sending output in strict json format as we expect. Please fix the JSON to ensure it is valid, contains 'is_complete', and if 'is_complete' is false, contains a valid 'subtasks' array.
-""" if planning_error else ""
-
-    return f"""You are a high-level Goal Decomposer and Planner.
-Your task is to analyze a User Goal and determine if it aligns with the Agent's capabilities.
-
-AGENT INFORMATION:
-{agent_info}
-
-USER GOAL:
-"{goal}"
-{error_section}
-INSTRUCTIONS:
-1. ALIGNMENT CHECK: Does the Goal align with the Agent's instructions and capabilities?
-2. IF NOT ALIGNED: Return strict JSON with `is_complete: true` and a `final_answer`.
-3. IF ALIGNED: Decompose the goal into a logical sequence of subtasks.
-4. VECTOR OPTIMIZATION: Subtask instructions are used to query a Vector Database to find appropriate tools.
-   - Describe WHAT needs to be done, not HOW.
-   - Use precise, action-oriented natural language. 
-   - Instead of "Check DB", use "Retrieve user profile data from the PostgreSQL database".
-   - Instead of "Do API call", use "Fetch the current weather for San Francisco using the weather API".
-5. Output MUST be a single valid JSON block.
-
-STRICT JSON STRUCTURE:
-{{
-  "is_complete": false,
-  "thought": "Internal reasoning about how the user goal was broken down into subtasks",
-  "subtasks": [
-    {{ "id": "task_1", "description": "Highly descriptive, action-oriented phrasing optimized for semantic tool search" }},
-    ...
-  ],
-  "execution_order": ["task_1", "task_2", ...],
-  "dependencies": {{ "task_2": ["task_1"] }}
-}}
-
-IF NON-ALIGNED OR IMPOSSIBLE:
-{{
-  "is_complete": true,
-  "final_answer": "I am an [Agent Name] specialized in [Capabilities]. I cannot assist with [User Request] as it falls outside my scope.",
-  "subtasks": [],
-  "execution_order": [],
-  "dependencies": {{}}
-}}
-"""
 
 def get_action_system_prompt(agent_role: str, agent_instructions: str, tools_desc: str, status_report: str, current_subtask: str, session_history: str = "", parse_error: str = "", global_goal: str = "") -> str:
     instructions_section = f"\nCUSTOM INSTRUCTIONS:\n{agent_instructions}\n" if agent_instructions else ""
@@ -104,25 +51,29 @@ The current price of Bitcoin is $60,000.
     return prompt
 
 def get_compression_prompt() -> str:
-    return """You are a conversation summarizer. Your task is to create a structural summary of a conversation to rescue the context for an autonomous agent.
-
+    return """You are a High-Fidelity Context Restorer. Your task is to synthesize a 'State of the World' summary to rescue an autonomous agent's context window.
+    
 CRITICAL INSTRUCTIONS:
-1. Preserve the ORIGINAL USER GOAL at the top.
-2. List ALL COMPLETED ACTIONS (mark with ✓).
-3. Describe the CURRENT STATE clearly.
-4. Identify REMAINING TASKS.
-5. Use markdown formatting.
+1. COMPREHENSIVE RESTORATION: Do not just summarize. You must extract and preserve ALL verified facts, data points, and values found during technical execution.
+2. STATE CAPTURE: Clearly document active constraints, user preferences, and the exact status of the global goal.
+3. NUANCE PRESERVATION: If the agent found conflicting data, preserve the conflict so the agent can resolve it.
+4. NO TECHNICAL NOISE: Do not include tool retry logs, JSON structures, or formatting errors. Only the factual outcomes.
 
 Output Format:
-## Original Goal
-[What the user originally asked for]
+## [!] COMPREHENSIVE STATE RESTORATION
+**Goal**: [Original Goal]
+**Status**: [e.g. 60% Complete]
 
-## COMPLETED ACTIONS
-1. ✓ [Action details]
+### 1. Verified Facts & Data
+- [List every specific data point found, e.g. "HPE Revenue 2024: $29.1B"]
 
-## Current State
-[Key data and accomplishments]
+### 2. Active Constraints & Preferences
+- [e.g. "User prefers Markdown tables", "Environment: Production"]
 
-## REMAINING TASKS
-- [Next steps]
+### 3. Execution History (Consolidated)
+- ✓ [Action 1: Results]
+- ✓ [Action 2: Results]
+
+### 4. Remaining Subtasks
+- [ ] [Next Step 1]
 """

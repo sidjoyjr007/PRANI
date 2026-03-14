@@ -1,4 +1,5 @@
 import asyncio
+import os
 import uuid
 import json
 import logging
@@ -28,8 +29,15 @@ RE_TECH_CHARS = re.compile(r"[\{\}\[\]\"\:,\\]")
 CHUNK_EMIT_INTERVAL = 0.05  # 50ms batching
 CHUNK_MAX_SIZE = 40        # or 40 characters
 from engine.subtasks import SubtaskManager, Subtask, SubtaskStatus
-from engine.intent import IntentParser
-from engine.prompts import get_action_system_prompt
+from engine.prompts import get_action_system_prompt, get_compression_prompt
+from engine.tool_defs import (
+    BUILTIN_TOOL_DEFS, 
+    BUILTIN_TOOL_DESCRIPTIONS,
+    TOOL_ADD_SUBTASKS, 
+    TOOL_UPDATE_SUBTASK_STATUS,
+    TOOL_READ_TOOL_RESULTS,
+    TOOL_READ_TOOL_RESULTS_DEF
+)
 from models.agent import Agent
 from models.secret import UserToolSecret
 from utils.encryption import decrypt_value
@@ -38,6 +46,8 @@ from llm.factory import LLMFactory
 from llm.types import ProviderMessage, LLMStreamChunk, ToolCall
 
 logger = logging.getLogger(__name__)
+
+SUMMARIZATION_THRESHOLD = int(os.getenv("SUMMARIZATION_THRESHOLD", "60000"))
 
 class AgenticLoop:
     def __init__(
@@ -59,7 +69,7 @@ class AgenticLoop:
         self.memory = ContextManager(db, uuid.UUID(session_id), agent, user_id)
         self.tool_registry = ToolRegistry(db)
         self.executor = DockerExecutor()
-        self.intent_parser = IntentParser(llm_provider)
+
         
         from services.state_service import StateService
         self.state_service = StateService()
@@ -91,8 +101,10 @@ class AgenticLoop:
             # 0. Start execution immediately for UI responsiveness
             await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.LOOP_START, metadata={"run_id": self.run_id}, run_id=self.run_id))
             
-            # 1. Compact History & Goal Recovery (Sequential to avoid session race conditions)
-            await self.memory.compact_history(self.llm)
+            # 1. Automated Context Summarization (Threshold-based)
+            if await self._should_summarize():
+                await self._execute_summarization()
+                
             if not user_input:
                 user_input = await self.memory.get_goal_text()
             
@@ -151,8 +163,17 @@ class AgenticLoop:
                 subtask_status = turn_data.get("current_subtask_status")
 
                 if self._detect_loop(full_content, tool_calls_buffer):
-                    await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.ERROR, content="Loop detected.", run_id=self.run_id))
-                    break
+                    # 1. Set transient flag
+                    self.loop_warning_triggered = True
+                    
+                    # 2. Emit a non-error status to the user so they know the agent is self-correcting
+                    await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.STATUS, content="Loop detected. Self-correcting...", run_id=self.run_id))
+                    
+                    # 3. Clear the tools so they don't execute
+                    tool_calls_buffer = []
+                    
+                    # 4. Continue to the next loop iteration so the LLM reads the warning and tries again
+                    continue
 
                 # 1. Execute Actions (Highest priority)
                 if tool_calls_buffer:
@@ -235,67 +256,23 @@ class AgenticLoop:
             if name not in unique_tools:
                 unique_tools[name] = t
         
-        tool_defs = [
-            {
-                "type": "function",
-                "function": {
-                    "name": "add_subtasks",
-                    "description": "Add one or more steps/subtasks to your execution plan. Use this when you need to break down a complex goal.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "tasks": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "description": {
-                                            "type": "string",
-                                            "description": "A clear, action-oriented description of the task."
-                                        }
-                                    },
-                                    "required": ["description"]
-                                }
-                            }
-                        },
-                        "required": ["tasks"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "update_subtask_status",
-                    "description": "Update the status of the currently active subtask (e.g., mark as COMPLETED or FAILED) along with a result message.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "status": {
-                                "type": "string",
-                                "enum": ["COMPLETED", "FAILED"],
-                                "description": "The new status of the task."
-                            },
-                            "result": {
-                                "type": "string",
-                                "description": "A message describing the outcome, or the error if it failed."
-                            }
-                        },
-                        "required": ["status", "result"]
-                    }
-                }
-            }
-        ]
-        
-        tools_desc_list = [
-            "- add_subtasks: Add one or more steps/subtasks to your execution plan. Use this when you need to break down a complex goal.",
-            "- update_subtask_status: Update the status of the currently active subtask (e.g., mark as COMPLETED or FAILED) along with a result message."
-        ]
+        tool_defs = list(BUILTIN_TOOL_DEFS)
+        tools_desc_list = list(BUILTIN_TOOL_DESCRIPTIONS)
         
         for name, t in unique_tools.items():
             t_func = {"name": name, "description": t.get("description", ""), "parameters": t.get("schema", {})}
             tool_defs.append({"type": "function", "function": t_func})
             tools_desc_list.append(f"- {name}: {t_func.get('description', '')}\n  Schema: {json.dumps(t_func.get('parameters', {}), indent=2)}")
         
+        # Dynamic Tool Injection: Only add read_tool_results if context contains virtual pruning markers
+        context = await self.memory.get_active_context()
+        has_pruning = any("[VIRTUAL PRUNE" in m.content for m in context if isinstance(m.content, str))
+        if has_pruning:
+            tool_defs.append(TOOL_READ_TOOL_RESULTS_DEF)
+            t_func = TOOL_READ_TOOL_RESULTS_DEF["function"]
+            tools_desc_list.append(f"- {t_func['name']}: {t_func['description']}\n  Schema: {json.dumps(t_func['parameters'], indent=2)}")
+            logger.debug("Surgical read tool injected into LLM context.")
+
         history_text = await self.memory.get_history_text(limit=10)
         system_prompt = get_action_system_prompt(
             agent_role=self.agent.name or "Autonomous Agent",
@@ -323,9 +300,23 @@ class AgenticLoop:
                 # Insert after main system prompt
                 context.insert(1, ProviderMessage(role="system", content=hint))
 
+        # 3. Handle loop guardrail ephemerally
+        if getattr(self, 'loop_warning_triggered', False):
+            warning_msg = "SYSTEM GUARDRAIL: You are caught in a repeating loop. You have attempted the exact same action/tool_call multiple times without success. You MUST completely change your approach, use different tools, or ask the user for clarification. Do not repeat the previous action."
+            if not any(m.role == "system" and m.content == warning_msg for m in context):
+                context.insert(1, ProviderMessage(role="system", content=warning_msg))
+            # Reset after injection to prevent sticky warnings if they break out of the loop
+            self.loop_warning_triggered = False
+
     async def _get_turn_action(self, result: dict, approved_calls, tool_defs, context, current_task, status_report, user_input) -> None:
         if self.loop_count == 1 and approved_calls:
             logger.debug(f"_get_turn_action: Resuming with {len(approved_calls)} calls")
+            # Provide immediate feedback for resumed tools
+            for tc in approved_calls:
+                t_name = tc.get("function", {}).get("name")
+                display_name = f"Executing {t_name}..."
+                await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.STATUS, content=display_name, run_id=self.run_id))
+                
             result.update({"full_content": "Resuming...", "tool_calls": [ToolCall(**atc) for atc in approved_calls], "thoughts": ["Approved."], "is_complete": False})
             return
 
@@ -466,7 +457,7 @@ class AgenticLoop:
     async def _execute_tool_calls(self, tool_calls, content, thoughts, is_approved) -> bool:
         display_text = content.strip()
         
-        internal_tools = {"add_subtasks", "update_subtask_status"}
+        internal_tools = {TOOL_ADD_SUBTASKS, TOOL_UPDATE_SUBTASK_STATUS}
         requires_approval = any(self.clean_tool_name(tc.function["name"]) not in internal_tools for tc in tool_calls)
         is_internal_only = all(self.clean_tool_name(tc.function["name"]) in internal_tools for tc in tool_calls)
         
@@ -502,7 +493,8 @@ class AgenticLoop:
             t_name = tc.function["name"]
             
             # 1. Handle Built-in Universal Tools first
-            if t_name == "add_subtasks":
+            if t_name == TOOL_ADD_SUBTASKS:
+                await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.TOOL_START, metadata={"tool": t_name, "args": tc.function.get("arguments")}, run_id=self.run_id))
                 try:
                     args = json.loads(tc.function["arguments"])
                     tasks = args.get("tasks", [])
@@ -518,11 +510,13 @@ class AgenticLoop:
                 except Exception as e:
                     res = f"Error adding subtasks: {e}"
                     
-                await self.memory.add_message(role="tool", content=res, tool_call_id=tc.id, name=t_name)
-                self.pending_tool_refinement = {"tool": t_name, "error": str(res)} if "Error" in str(res) else None
+                is_error = isinstance(res, str) and res.startswith("Error")
+                await self.memory.add_message(role="tool", content=res, tool_call_id=tc.id, name=t_name, display=not is_error)
+                self.pending_tool_refinement = {"tool": t_name, "error": str(res)} if is_error else None
                 continue
                 
-            if t_name == "update_subtask_status":
+            if t_name == TOOL_UPDATE_SUBTASK_STATUS:
+                await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.TOOL_START, metadata={"tool": t_name, "args": tc.function.get("arguments")}, run_id=self.run_id))
                 try:
                     args = json.loads(tc.function["arguments"])
                     status = args.get("status")
@@ -546,8 +540,42 @@ class AgenticLoop:
                 except Exception as e:
                     res = f"Error updating subtask: {e}"
                     
-                await self.memory.add_message(role="tool", content=res, tool_call_id=tc.id, name=t_name)
-                self.pending_tool_refinement = {"tool": t_name, "error": str(res)} if "Error" in str(res) else None
+                is_error = isinstance(res, str) and res.startswith("Error")
+                await self.memory.add_message(role="tool", content=res, tool_call_id=tc.id, name=t_name, display=not is_error)
+                self.pending_tool_refinement = {"tool": t_name, "error": str(res)} if is_error else None
+                continue
+            
+            if t_name == TOOL_READ_TOOL_RESULTS:
+                await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.TOOL_START, metadata={"tool": t_name, "args": tc.function.get("arguments")}, run_id=self.run_id))
+                try:
+                    args = json.loads(tc.function["arguments"])
+                    msg_id = args.get("message_id")
+                    start_char = max(0, int(args.get("start_char", 0)))
+                    # Default end_char is 2000 chars from start, capped at a reasonable limit for return
+                    default_end = start_char + 2000
+                    end_char = int(args.get("end_char", default_end))
+                    
+                    # Hard cap on surgical read length to prevent context bloat
+                    if end_char - start_char > 3000:
+                        end_char = start_char + 3000
+
+                    # 1. Fetch from DB
+                    msg = await asyncio.to_thread(self.memory.conversation_service.get_message, uuid.UUID(msg_id), user_id=self.user_id)
+                    
+                    if not msg or str(msg.conversation_id) != self.session_id:
+                        res = "Error: Message ID not found in this session."
+                    else:
+                        full_text = msg.content.get("text") if isinstance(msg.content, dict) else str(msg.content)
+                        # 2. Slice (Clamping)
+                        actual_end = min(len(full_text), end_char)
+                        res = full_text[start_char:actual_end]
+                        if not res:
+                            res = "[No content at this offset range]"
+                except Exception as e:
+                    res = f"Error performing surgical read: {e}"
+                
+                # Surgical reads are ALWAYS stealth (display=False)
+                await self.memory.add_message(role="tool", content=res, tool_call_id=tc.id, name=t_name, display=False)
                 continue
 
             logger.debug(f"_execute_tool_calls: executing {t_name}")
@@ -555,11 +583,7 @@ class AgenticLoop:
             
             if not is_internal_only:
                 # 0. Mission Control Status: Provide immediate feedback to the UI
-                display_name = {
-                    "Coinstats": "Fetching crypto data...",
-                    "web-search": "Searching the web...",
-                    "send_email": "Sending results via email..."
-                }.get(t_name, f"Executing {t_name}...")
+                display_name = f"Executing {t_name}..."
                 
                 await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.STATUS, content=display_name, run_id=self.run_id))
                 
@@ -579,10 +603,18 @@ class AgenticLoop:
                 logger.error(f"_execute_tool_calls: exception during {t_name}: {e}", exc_info=True)
                 res = f"Error: {e}"
 
+            is_error = isinstance(res, str) and res.startswith("Error")
+
             if not is_internal_only:
-                await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.TOOL_OUTPUT, content=str(res), metadata={"tool": t_name}, run_id=self.run_id))
-            await self.memory.add_message(role="tool", content=res, tool_call_id=tc.id, name=t_name)
-            self.pending_tool_refinement = {"tool": t_name, "error": str(res)} if "Error" in str(res) else None
+                if is_error:
+                    # Emit a volatile status update instead of a permanent red error block
+                    await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.STATUS, content=f"{t_name} error. Self-correcting...", run_id=self.run_id))
+                else:
+                    await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.TOOL_OUTPUT, content=str(res), metadata={"tool": t_name}, run_id=self.run_id))
+            
+            # Save to SQL but hide from UI if it's an error to keep the user experience clean
+            await self.memory.add_message(role="tool", content=res, tool_call_id=tc.id, name=t_name, display=not is_error)
+            self.pending_tool_refinement = {"tool": t_name, "error": str(res)} if is_error else None
             
         return False
 
@@ -600,12 +632,20 @@ class AgenticLoop:
         return res.get("result") if res.get("success") else f"Error: {res.get('error')}"
 
     def _detect_loop(self, content, tools):
-        sig = f"{content}|{sorted([t.function['name'] for t in tools])}"
+        if tools:
+            # If tools are used, signature is based purely on the exact tools and their arguments
+            sig = str(sorted([(t.function['name'], t.function.get('arguments', '')) for t in tools]))
+        else:
+            # If no tools, signature is the text content
+            sig = content.strip()
+
         self.action_history.append(sig)
         # PRANI-PERF: Cap history to prevent memory leak
-        if len(self.action_history) > 10:
-            self.action_history = self.action_history[-10:]
-        return len(self.action_history) >= 3 and all(s == sig for s in self.action_history[-3:])
+        if len(self.action_history) > 15:
+            self.action_history = self.action_history[-15:]
+            
+        # Detect cyclic loops: if this EXACT signature appears 3 or more times in the whole history
+        return self.action_history.count(sig) >= 3
 
     def _resolve_tool_secrets(self, tool_id: str) -> Dict[str, str]:
         if not tool_id: return {}
@@ -680,6 +720,52 @@ class AgenticLoop:
             await self.state_service.save_plan(self.session_id, plan_dict)
             await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.PLAN, metadata={"plan": plan_dict}, run_id=self.run_id))
             self._last_emitted_plan_hash = plan_hash
+
+    async def _should_summarize(self) -> bool:
+        """
+        Checks if the tokens added since the last summary exceed the threshold.
+        """
+        db_messages = await self.memory._get_db_messages()
+        
+        # Calculate tokens since last context_restoration
+        delta_tokens = 0
+        for m in reversed(db_messages):
+            if m.role == "system" and isinstance(m.content, dict) and m.content.get("type") == "context_restoration":
+                break
+            delta_tokens += m.tokens or 0
+        
+        return delta_tokens > SUMMARIZATION_THRESHOLD
+
+    async def _execute_summarization(self):
+        """
+        Runs a distillation pass to compress current context into a Fact Node.
+        """
+        logger.info(f"Triggering Context Summarization for session {self.session_id}")
+        
+        # 1. Get full history for the summarizer
+        full_context = await self.memory.get_active_context()
+        
+        # 2. Call LLM with Compression Prompt
+        compression_prompt = get_compression_prompt()
+        summary_messages = full_context + [ProviderMessage(role="user", content=compression_prompt)]
+        
+        summary_text = ""
+        # We use a non-streaming call or collect the stream for the summary
+        async for chunk in self._call_llm_stream(summary_messages):
+            # Support both chunk.text (Gemini) and chunk.content (OpenAI/HF)
+            val = getattr(chunk, 'text', None) or getattr(chunk, 'content', None)
+            if val:
+                summary_text += val
+        
+        if summary_text:
+            # 3. Save as a Hidden Fact Node
+            await self.memory.add_message(
+                role="system",
+                content=summary_text,
+                metadata_type="context_restoration",
+                display=False
+            )
+            logger.info("Context Summarization completed and saved to SQL.")
 
     async def _call_llm_stream(self, messages: List[ProviderMessage], tools: List[Dict] = None) -> AsyncIterator[Any]:
         loop = asyncio.get_running_loop()

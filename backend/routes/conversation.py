@@ -112,8 +112,12 @@ def get_messages(conversation_id: UUID, db: Session = Depends(get_db), current_u
         raise HTTPException(status_code=404, detail="Conversation not found")
         
     messages = service.get_messages(conversation_id, user_id=current_user.id)
-    # Filter out technical "garbage" (tool results and internal system prompts) for the UI
-    return [m for m in messages if m.role not in ["tool", "system"]]
+    # Filter out technical "garbage" and hidden fact nodes
+    return [
+        m for m in messages 
+        if m.role not in ["tool", "system"] 
+        and (m.content.get("display") if isinstance(m.content, dict) else True) != False
+    ]
 
 from services.state_service import StateService
 

@@ -12,7 +12,11 @@ class StateService:
     def __init__(self):
         if StateService._redis_client is None:
             try:
-                StateService._redis_client = redis.from_url(settings.redis_url)
+                StateService._redis_client = redis.from_url(
+                    settings.redis_url, 
+                    health_check_interval=30, 
+                    retry_on_timeout=True
+                )
                 logger.debug("Initialized shared Redis client for StateService")
             except Exception as e:
                 logger.error(f"Failed to connect to Redis: {e}")
