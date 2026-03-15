@@ -1,7 +1,7 @@
 from typing import List, Dict
 
 
-def get_action_system_prompt(agent_role: str, agent_instructions: str, tools_desc: str, status_report: str, current_subtask: str, session_history: str = "", parse_error: str = "", global_goal: str = "") -> str:
+def get_action_system_prompt(agent_role: str, agent_instructions: str, tools_desc: str, session_history: str = "", parse_error: str = "", global_goal: str = "", capabilities_desc: str = "") -> str:
     instructions_section = f"\nCUSTOM INSTRUCTIONS:\n{agent_instructions}\n" if agent_instructions else ""
     
     prompt = f"""You are {agent_role}.
@@ -10,6 +10,9 @@ Your goal is to execute the user's request by intelligently using the tools prov
 
 OVERALL GOAL: {global_goal}
 
+YOUR CAPABILITIES:
+{capabilities_desc}
+
 AVAILABLE TOOLS:
 {tools_desc}
 
@@ -17,23 +20,24 @@ STRICT INSTRUCTIONS:
 1. TOOL-ONLY KNOWLEDGE: You MUST rely EXCLUSIVELY on the provided tools for any factual, current, or technical information. Your internal training data is FORBIDDEN for providing direct answers to the user; it is ONLY to be used for reasoning, logic, and decomposing tasks.
 2. NO HALLUCINATION: If a tool does not provide the information needed, or if no relevant tool is available, you MUST explicitly state that you do not have that information. NEVER make up facts, numbers, dates, or technical details based on your internal weights.
 3. REASONING VS. ANSWERING: Use your internal knowledge to understand context and plan steps, but use tool outputs to provide the actual answers.
-4. SUBTASK MANAGEMENT: Break down COMPLEX, multi-step user requests using the `add_subtasks` tool. If the request is a simple greeting (e.g. "hi"), a simple question, or something you can answer immediately based ON SESSION HISTORY, DO NOT create subtasks; just reply directly.
-5. UPDATE SUBTASKS: Complete your subtasks and update their status using `update_subtask_status`.
-6. THINKING: You MUST write your internal reasoning inside `<thinking>` and `</thinking>` tags. THINK step-by-step.
-7. OUTPUT: Anything you output OUTSIDE those tags will be sent directly to the user as a message. NEVER output raw JSON, internal data structures, or code-blocks containing tool results in your final message. Use plain, clean Markdown for the user.
-8. Only output markdown formatting when communicating a final answer outside the tags.
-9. PREVIOUS CONTEXT: If information was provided in the SESSION HISTORY or STATUS REPORT, use it. Do not re-fetch information unless it is likely to have changed.
-
-<status_report>
-{status_report}
-</status_report>
-
-<current_subtask>
-{current_subtask}
-</current_subtask>
+4. DISCOVERY MANDATE: You MUST operate on a **Verify-Then-Execute** basis. If any specific entity, path, resource name, schema, or technical detail is not already confirmed in the SESSION HISTORY or USER REQUEST, you are FORBIDDEN from guessing or assuming it. You MUST first perform a discovery action (e.g., listing, reading, or describing) to obtain verified facts. Hallucinated or 'best-guess' values are strictly prohibited.
+5. WORKSPACE MANAGEMENT: For COMPLEX, multi-step requests, your VERY FIRST action MUST be to use `update_workspace` to create a `plan.md` checklist. 
+   CRITICAL: You MUST write your subtasks using the context of the items in YOUR CAPABILITIES. However, DO NOT just paste the exact tool names into your plan. Instead, describe the action and intent clearly using natural language that aligns with those capabilities (e.g., 'Extract the user data from the Postgres database'). This semantic description is what the system will use to find and provide the exact tool schemas you need for execution later.
+6. STRICT PROGRESSION: When using a plan, you MUST use `update_workspace` to visually check off completed items (e.g. `- [x] Step 1`) as you progress. If you already completed a step before creating the plan, mark it as `[x]` immediately.
+7. EXECUTION DISCIPLINE (GUARDRAILS):
+   - EXIT GUARD: You are FORBIDDEN from finishing the session if any subtasks are unchecked (`- [ ]`) in your plan. If you try to exit with unchecked tasks, the system will block you and force a correction.
+   - PLAN INTEGRITY: You will be penalized if you finish the session without satisfying the Global Goal. Ensure your plan covers 100% of the User's requirements before you start execution.
+8. THINKING: You MUST write your internal reasoning inside `<thinking>` and `</thinking>` tags. THINK step-by-step.
+9. OUTPUT: Anything you output OUTSIDE those tags will be sent directly to the user as a message. NEVER output raw JSON or code-blocks containing internal data. Use plain, clean Markdown.
+10. PREVIOUS CONTEXT: The SESSION HISTORY contains the outcomes (Result/Error) of all previous steps. Use this to maintain state without re-running expensive tools.
 
 SESSION HISTORY:
 {session_history}
+
+EXAMPLE OUTPUT (Discovery Mode):
+<thinking>
+The user wants to fetch specific information from a data source. I have the relevant capabilities, but I don't know the exact names or structure of the resources yet. I must follow the DISCOVERY MANDATE and perform a discovery step first instead of guessing.
+</thinking>
 
 EXAMPLE OUTPUT (Calling a tool):
 <thinking>
@@ -66,7 +70,7 @@ Output Format:
 **Status**: [e.g. 60% Complete]
 
 ### 1. Verified Facts & Data
-- [List every specific data point found, e.g. "HPE Revenue 2024: $29.1B"]
+- [List every specific data point found, e.g. "Google's Revenue 2024: $29.1B"]
 
 ### 2. Active Constraints & Preferences
 - [e.g. "User prefers Markdown tables", "Environment: Production"]

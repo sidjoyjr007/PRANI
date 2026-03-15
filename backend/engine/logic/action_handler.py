@@ -43,7 +43,7 @@ class ActionHandler:
         self.cleaner = cleaner
         self._tool_search_cache = {}
 
-    async def get_turn_action(self, result: dict, approved_calls, tool_defs, context, current_task, status_report, user_input, pending_tool_refinement, loop_warning_triggered) -> None:
+    async def get_turn_action(self, result: dict, approved_calls, tool_defs, context, user_input, pending_tool_refinement, loop_warning_triggered) -> None:
         """
         Main entry point for calculating the next action in the loop.
         Handles tool calls, thoughts, and message streaming.
@@ -69,7 +69,7 @@ class ActionHandler:
 
         for attempt in range(max_retries):
             # 1. Prepare system prompt and tools
-            tool_defs, system_prompt = await self._get_tools_and_prompt(user_input, status_report, current_task, parse_error)
+            tool_defs, system_prompt = await self._get_tools_and_prompt(user_input, parse_error)
             self._enrich_context(context, system_prompt, pending_tool_refinement, loop_warning_triggered)
             
             error_occurred = False
@@ -117,24 +117,21 @@ class ActionHandler:
             
             has_content = bool(final_message) or bool(final_thoughts)
             if not streamed_tools:
-                if current_task and not has_content:
+                if not has_content:
                     parse_error = "You did not output any response or tool calls. Please continue your task."
                     continue
                 else:
-                    # PRANI-FIX: Fix for Flaw #4 (Dangling Subtasks)
-                    # If there are still pending subtasks, we are NOT complete.
-                    # We should force the agent to reconcile the plan.
-                    if current_task:
-                        is_complete = False
-                    else:
-                        is_complete = True 
+                    # Phase 4: We no longer override is_complete based on subtasks here.
+                    # We let the LLM's intent (or lack of tools) drive is_complete,
+                    # and the loop's Exit Guard will catch it if subtasks are orphaned.
+                    is_complete = not bool(streamed_tools)
             
             tool_calls = streamed_tools
             if final_thoughts:
                 await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.THOUGHT, content="\n".join(final_thoughts), run_id=self.run_id))
             break
 
-        if attempt == max_retries - 1 and (error_occurred or (not streamed_tools and current_task and not has_content)):
+        if attempt == max_retries - 1 and (error_occurred or (not streamed_tools and not has_content)):
             # PRANI-FIX: Fix for Flaw #3 (Silent Failure)
             # Emit a clear error instead of silently completing
             error_msg = f"Critically stalled after {max_retries} failed attempts to generate a valid action. Error: {parse_error}"
@@ -145,16 +142,49 @@ class ActionHandler:
         result.update({"full_content": final_message, "tool_calls": tool_calls, "thoughts": final_thoughts, "is_complete": is_complete})
         await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.THOUGHT_END, run_id=self.run_id))
 
-    async def _get_tools_and_prompt(self, user_input, status_report, current_task, parse_error=""):
-        current_subtask_desc = current_task.description if current_task else user_input
-        allowed_tool_ids = [tid for tid in self.agent.tool_ids] if self.agent.tool_ids else []
-        allowed_mcp_ids = [sid for sid in self.agent.mcp_server_ids] if self.agent.mcp_server_ids else []
+    async def _get_tools_and_prompt(self, user_input, parse_error=""):
+        current_subtask_desc = user_input
+        allowed_tool_ids = [str(tid) for tid in self.agent.tool_ids] if self.agent.tool_ids else []
+        allowed_mcp_ids = [str(sid) for sid in self.agent.mcp_server_ids] if self.agent.mcp_server_ids else []
         
+        # --- NEW CAPABILITIES EXTRACTION LOGIC ---
+        all_allowed_tools = self.tool_registry.get_tools_by_filter(allowed_ids=allowed_tool_ids, allowed_server_ids=allowed_mcp_ids)
+        mcp_groups = {}
+        native_tools = []
+        
+        for t in all_allowed_tools:
+            meta = t.get("metadata", {})
+            if meta.get("source") == "mcp" and "server_id" in meta:
+                sid = meta["server_id"]
+                if sid not in mcp_groups:
+                    mcp_groups[sid] = []
+                mcp_groups[sid].append(t.get("name"))
+            else:
+                native_tools.append(t)
+        
+        # Resolve server names
+        mcp_server_names = self.tool_registry.get_mcp_server_names(self.agent.mcp_server_ids) if hasattr(self.agent, 'mcp_server_ids') and self.agent.mcp_server_ids else {}
+                
+        capabilities_list = []
+        for sid, t_names in mcp_groups.items():
+            # Try to find a human-readable name if available, otherwise fallback to ID
+            server_label = mcp_server_names.get(sid, sid)
+            # We list ALL tools as requested by user
+            capabilities_list.append(f"- MCP Server ({server_label}): Provides tools like [{', '.join(t_names)}]")
+            
+        for t in native_tools:
+            capabilities_list.append(f"- {t.get('name')}: {t.get('description', '')}")
+            
+        capabilities_desc = "\n".join(capabilities_list)
+        if not capabilities_desc:
+            capabilities_desc = "- No specific capabilities assigned. Rely on built-in tools."
+        # --- END NEW LOGIC ---
+
         cache_key = f"{current_subtask_desc}|{allowed_tool_ids}|{allowed_mcp_ids}"
         if cache_key in self._tool_search_cache:
             tool_recs = self._tool_search_cache[cache_key]
         else:
-            tool_recs = self.tool_registry.search_tools(query=current_subtask_desc, tool_ids=allowed_tool_ids, mcp_server_ids=allowed_mcp_ids, limit=10)
+            tool_recs = self.tool_registry.search_tools(query=current_subtask_desc, tool_ids=self.agent.tool_ids, mcp_server_ids=self.agent.mcp_server_ids, limit=10)
             self._tool_search_cache[cache_key] = tool_recs
 
         unique_tools = {}
@@ -181,12 +211,12 @@ class ActionHandler:
             agent_role=self.agent.name or "Autonomous Agent",
             agent_instructions=self.agent.instructions or "",
             tools_desc="\n".join(tools_desc_list), 
-            status_report=status_report,
-            current_subtask=current_subtask_desc,
             session_history=history_text,
             parse_error=parse_error,
-            global_goal=user_input
+            global_goal=user_input,
+            capabilities_desc=capabilities_desc
         )
+        print(system_prompt, "system_prompt")
         return tool_defs, system_prompt
 
     def _enrich_context(self, context, system_prompt, pending_tool_refinement, loop_warning_triggered):

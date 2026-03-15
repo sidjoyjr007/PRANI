@@ -15,7 +15,8 @@ import logo from "@/assets/prani-logo.svg"
 
 // ─── Markdown Renderer ───────────────────────────────────────────────────────
 // ─── Markdown Renderer ───────────────────────────────────────────────────────
-const MarkdownContent = memo(({ content, theme }) => {
+const MarkdownContent = memo(({ content, theme, textColor }) => {
+    const baseColor = textColor || theme.colors.foreground;
     const scrubbedContent = useMemo(() => {
         if (typeof content !== 'string') return content;
 
@@ -24,7 +25,7 @@ const MarkdownContent = memo(({ content, theme }) => {
             .replace(/```json[\s\S]*?```/g, '')
             .replace(/\{[\s\S]*?"tool_calls"[\s\S]*?\}/g, '')
             .replace(/\{[\s\S]*?"text"[\s\S]*?\}/g, '')
-            .replace(/[\{\}\[\]\"\:,\\]/g, '')
+            .replace(/^[\s\{\}\[\]\"\:,\\]+$/gm, '') 
             .trim();
     }, [content]);
 
@@ -35,7 +36,7 @@ const MarkdownContent = memo(({ content, theme }) => {
             remarkPlugins={[remarkGfm]}
             components={{
                 p: ({ children }) => (
-                    <p style={{ margin: "0 0 8px 0", lineHeight: 1.65, color: theme.colors.foreground }}>{children}</p>
+                    <p style={{ margin: "0 0 8px 0", lineHeight: 1.65, color: baseColor }}>{children}</p>
                 ),
                 code: ({ node, inline, className, children, ...props }) => {
                     const isBlock = className?.startsWith("language-") || String(children).includes("\n")
@@ -70,11 +71,47 @@ const MarkdownContent = memo(({ content, theme }) => {
                         </pre>
                     )
                 },
-                ul: ({ children }) => <ul style={{ margin: "6px 0", paddingLeft: "20px", color: theme.colors.foreground }}>{children}</ul>,
-                ol: ({ children }) => <ol style={{ margin: "6px 0", paddingLeft: "20px", color: theme.colors.foreground }}>{children}</ol>,
-                li: ({ children }) => <li style={{ marginBottom: "4px", lineHeight: 1.6 }}>{children}</li>,
-                h1: ({ children }) => <h1 style={{ fontSize: "1.2em", fontWeight: 700, margin: "12px 0 6px", color: theme.colors.foreground }}>{children}</h1>,
-                h2: ({ children }) => <h2 style={{ fontSize: "1.1em", fontWeight: 600, margin: "10px 0 4px", color: theme.colors.foreground }}>{children}</h2>,
+                ul: ({ className, children, ...props }) => (
+                    <ul className={className} style={{ 
+                        margin: "6px 0", 
+                        paddingLeft: className?.includes('contains-task-list') ? "0" : "20px", 
+                        color: baseColor, 
+                        listStyle: className?.includes('contains-task-list') ? 'none' : 'disc' 
+                    }} {...props}>
+                        {children}
+                    </ul>
+                ),
+                ol: ({ children }) => <ol style={{ margin: "6px 0", paddingLeft: "20px", color: baseColor }}>{children}</ol>,
+                li: ({ className, children, ...props }) => (
+                    <li className={className} style={{ 
+                        marginBottom: "4px", 
+                        lineHeight: 1.6, 
+                        display: className?.includes('task-list-item') ? 'flex' : 'list-item', 
+                        alignItems: 'flex-start', 
+                        gap: '8px',
+                        color: baseColor
+                    }} {...props}>
+                        {children}
+                    </li>
+                ),
+                input: ({ type, checked, disabled, ...props }) => {
+                    if (type === 'checkbox') {
+                        return (
+                            <div style={{
+                                width: '16px', height: '16px', borderRadius: '4px',
+                                border: `1px solid ${checked ? theme.colors.primary[500] : theme.colors.neutral[600]}`,
+                                backgroundColor: checked ? theme.colors.primary[500] : 'transparent',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                marginTop: '4px', flexShrink: 0
+                            }}>
+                                {checked && <Check size={12} color="white" strokeWidth={3} />}
+                            </div>
+                        )
+                    }
+                    return <input type={type} checked={checked} disabled={disabled} {...props} />
+                },
+                h1: ({ children }) => <h1 style={{ fontSize: "1.2em", fontWeight: 700, margin: "12px 0 6px", color: baseColor }}>{children}</h1>,
+                h2: ({ children }) => <h2 style={{ fontSize: "1.1em", fontWeight: 600, margin: "10px 0 4px", color: baseColor }}>{children}</h2>,
                 h3: ({ children }) => <h3 style={{ fontSize: "1em", fontWeight: 600, margin: "8px 0 4px", color: theme.colors.muted_foreground }}>{children}</h3>,
                 blockquote: ({ children }) => (
                     <blockquote style={{
@@ -86,7 +123,7 @@ const MarkdownContent = memo(({ content, theme }) => {
                     }}>{children}</blockquote>
                 ),
                 a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: theme.colors.primary[400], textDecoration: "underline" }}>{children}</a>,
-                strong: ({ children }) => <strong style={{ fontWeight: 600, color: theme.colors.foreground }}>{children}</strong>,
+                strong: ({ children }) => <strong style={{ fontWeight: 600, color: baseColor }}>{children}</strong>,
                 table: ({ children }) => (
                     <div style={{ overflowX: "auto", margin: "10px 0" }}>
                         <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "0.9em" }}>{children}</table>
@@ -474,26 +511,18 @@ const MessageRow = memo(({ msg, showLabel, onApprove, onReject, approvalDecision
 
 // ─── Plan Overlay ─────────────────────────────────────────────────────────────
 const PlanOverlay = memo(({ currentPlan, theme, isPlanExpanded, setIsPlanExpanded }) => {
-    let safeSubtasks = [];
-    if (currentPlan) {
-        const planObj = currentPlan.plan || currentPlan;
-        if (planObj.subtasks && planObj.execution_order && Array.isArray(planObj.execution_order)) {
-            safeSubtasks = planObj.execution_order.map(id => planObj.subtasks[id]).filter(Boolean);
-        } else if (Array.isArray(planObj.subtasks)) {
-            safeSubtasks = planObj.subtasks;
-        } else if (planObj.subtasks && typeof planObj.subtasks === 'object') {
-            safeSubtasks = Object.values(planObj.subtasks);
-        }
+    let markdownString = "";
+    if (typeof currentPlan === 'string') {
+        markdownString = currentPlan;
+    } else if (currentPlan && currentPlan.plan && typeof currentPlan.plan === 'string') {
+        markdownString = currentPlan.plan;
     }
 
-    if (safeSubtasks.length === 0) return null;
+    if (!markdownString || !markdownString.trim()) return null;
 
-    const isComplete = safeSubtasks.every(s => String(s.status).toLowerCase() === 'completed' || String(s.status).toLowerCase() === 'success');
-    const isFailed = safeSubtasks.some(s => String(s.status).toLowerCase() === 'failed');
-
-    if (isComplete || isFailed) return null;
-
-    const activeTaskCount = safeSubtasks.filter(s => String(s.status).toLowerCase() === 'completed').length;
+    // Simple parser for checkboxes to show progress stats
+    const totalCheckboxes = (markdownString.match(/- \[\s?[xX]?\s?\]/g) || []).length;
+    const completedCheckboxes = (markdownString.match(/- \[[xX]\]/g) || []).length;
 
     return (
         <div style={{
@@ -501,9 +530,9 @@ const PlanOverlay = memo(({ currentPlan, theme, isPlanExpanded, setIsPlanExpande
             padding: "16px 20px",
             backgroundColor: theme.colors.neutral[900],
             borderRadius: "12px",
-            border: `1px solid ${isFailed ? theme.colors.destructive : theme.colors.neutral[800]}`,
-            boxShadow: isFailed ? `0 0 20px rgba(239, 68, 68, 0.1)` : "0 8px 24px rgba(0,0,0,0.15)",
-            maxHeight: isPlanExpanded ? "40%" : "auto",
+            border: `1px solid ${theme.colors.neutral[800]}`,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+            maxHeight: isPlanExpanded ? "60%" : "auto",
             overflowY: isPlanExpanded ? "auto" : "hidden",
             flexShrink: 0,
             transition: "all 0.3s ease",
@@ -516,19 +545,26 @@ const PlanOverlay = memo(({ currentPlan, theme, isPlanExpanded, setIsPlanExpande
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <div style={{
                         width: "28px", height: "28px", borderRadius: "8px",
-                        backgroundColor: isFailed ? "rgba(239, 68, 68, 0.1)" : theme.colors.primary[900],
-                        color: isFailed ? theme.colors.destructive : theme.colors.primary[400],
+                        backgroundColor: theme.colors.primary[900],
+                        color: theme.colors.primary[400],
                         display: "flex", alignItems: "center", justifyContent: "center"
                     }}>
-                        {isFailed ? <X size={16} strokeWidth={2.5} /> : <Check size={16} strokeWidth={2.5} />}
+                        <Check size={16} strokeWidth={2.5} />
                     </div>
                     <div>
                         <div style={{ fontSize: "0.9em", fontWeight: 600, color: theme.colors.neutral[200], letterSpacing: "0.02em" }}>
-                            {isFailed ? "Execution Failed" : "Execution Plan"}
+                            Agent Workspace
                         </div>
-                        <div style={{ fontSize: "0.75em", color: theme.colors.muted_foreground, marginTop: "2px" }}>
-                            {activeTaskCount} of {safeSubtasks.length} steps completed
-                        </div>
+                        {totalCheckboxes > 0 && (
+                            <div style={{ fontSize: "0.75em", color: theme.colors.muted_foreground, marginTop: "2px" }}>
+                                {completedCheckboxes} of {totalCheckboxes} tasks completed
+                            </div>
+                        )}
+                        {totalCheckboxes === 0 && (
+                            <div style={{ fontSize: "0.75em", color: theme.colors.muted_foreground, marginTop: "2px" }}>
+                                Active planning session
+                            </div>
+                        )}
                     </div>
                 </div>
                 <div style={{
@@ -544,54 +580,15 @@ const PlanOverlay = memo(({ currentPlan, theme, isPlanExpanded, setIsPlanExpande
             </div>
 
             {isPlanExpanded && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "2px", marginTop: "16px", marginLeft: "4px" }}>
-                    {safeSubtasks.map((st, i) => {
-                        const status = String(st.status).toLowerCase();
-                        const isDone = status === "completed" || status === "success";
-                        const isActive = status === "in_progress";
-                        const isFailed = status === "failed";
-                        const isPending = status === "pending";
-
-                        return (
-                            <div key={st.id || i} style={{
-                                display: "flex", alignItems: "flex-start", gap: "14px",
-                                fontSize: "0.85em", color: theme.colors.foreground,
-                                padding: "10px 12px",
-                                backgroundColor: isActive ? theme.colors.neutral[800] : "transparent",
-                                borderRadius: "8px",
-                                transition: "all 0.2s ease",
-                                opacity: isPending ? 0.5 : 1,
-                                borderLeft: isActive ? `2px solid ${theme.colors.primary[500]}` : "none"
-                            }}>
-                                <div style={{
-                                    display: "flex", alignItems: "center", justifyContent: "center",
-                                    width: "20px", height: "20px", borderRadius: "50%",
-                                    backgroundColor: isDone ? (theme.colors.success?.DEFAULT || "#22c55e") :
-                                        isFailed ? (theme.colors.destructive || "#ef4444") :
-                                            isActive ? theme.colors.primary[500] : theme.colors.neutral[800],
-                                    border: (!isDone && !isActive && !isFailed) ? `1px solid ${theme.colors.neutral[600]}` : "none",
-                                    color: theme.colors.white,
-                                    flexShrink: 0,
-                                    marginTop: "2px",
-                                    boxShadow: isActive ? `0 0 10px ${theme.colors.primary[900]}` : "none"
-                                }}>
-                                    {isDone && <Check size={12} strokeWidth={3} />}
-                                    {isFailed && <X size={12} strokeWidth={3} />}
-                                    {isActive && <div style={{ width: "6px", height: "6px", backgroundColor: "white", borderRadius: "50%", animation: "pulse 1.5s infinite" }} />}
-                                </div>
-                                <div style={{ display: "flex", flexDirection: "column" }}>
-                                    <span style={{
-                                        textDecoration: isDone ? "line-through" : "none",
-                                        color: isDone ? theme.colors.neutral[400] : (isFailed ? theme.colors.destructive : (isActive ? theme.colors.neutral[100] : theme.colors.neutral[300])),
-                                        fontWeight: (isActive || isFailed) ? 600 : 400
-                                    }}>
-                                        {st.description}
-                                    </span>
-                                    {st.error && <span style={{ fontSize: "0.85em", color: theme.colors.destructive, marginTop: "4px" }}>{st.error}</span>}
-                                </div>
-                            </div>
-                        )
-                    })}
+                <div style={{ 
+                    marginTop: "16px", 
+                    paddingTop: "16px", 
+                    borderTop: `1px solid ${theme.colors.neutral[800]}`,
+                    fontSize: "0.95em",
+                    color: theme.colors.neutral[200] || theme.colors.foreground,
+                    lineHeight: "1.6"
+                }}>
+                    <MarkdownContent content={markdownString} theme={theme} textColor={theme.colors.neutral[200] || theme.colors.foreground} />
                 </div>
             )}
         </div>

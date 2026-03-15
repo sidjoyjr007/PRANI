@@ -41,6 +41,22 @@ class ToolRegistry:
             
         return self.retrieval.get_tools_by_filter(allowed_ids=allowed_ids)
 
+    def get_tools_by_filter(self, allowed_ids: List[str] = None, allowed_server_ids: List[str] = None) -> List[Dict[str, Any]]:
+        """
+        Proxy method to fetch tools from the retrieval system by allowed IDs or server IDs.
+        """
+        return self.retrieval.get_tools_by_filter(allowed_ids=allowed_ids, allowed_server_ids=allowed_server_ids)
+
+    def get_mcp_server_names(self, mcp_server_ids: List[UUID]) -> Dict[str, str]:
+        """
+        Fetches human-readable names for MCP servers.
+        """
+        if not mcp_server_ids:
+            return {}
+        
+        servers = self.db.query(MCPServer).filter(MCPServer.id.in_(mcp_server_ids)).all()
+        return {str(s.id): s.name for s in servers}
+
     def search_tools(self, query: str, tool_ids: List[UUID] = None, mcp_server_ids: List[UUID] = None, limit: int = 5) -> List[Dict[str, Any]]:
         """
         Semantically searches for additional relevant tools based on allowed IDs.

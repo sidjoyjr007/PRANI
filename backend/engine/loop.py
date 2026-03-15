@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 from engine.events import EventBus, AgentEventType
 from engine.memory import ContextManager
 from engine.tools import ToolRegistry
-from engine.subtasks import SubtaskManager, SubtaskStatus
+from engine.workspace import WorkspacePlanner
+from llm.types import ProviderMessage
 from engine.logic.cleaner import ResponseCleaner
 from engine.logic.tool_handler import ToolHandler
 from engine.logic.action_handler import ActionHandler
@@ -27,7 +28,7 @@ class AgenticLoop:
         llm_provider, 
         event_bus: EventBus,
         user_id: uuid.UUID,
-        subtask_state: Optional[Dict[str, Any]] = None
+        workspace_state: Optional[Dict[str, Any]] = None
     ):
         self.agent = agent
         self.session_id = session_id
@@ -39,13 +40,14 @@ class AgenticLoop:
         
         self.memory = ContextManager(db, uuid.UUID(session_id), agent, user_id)
         self.tool_registry = ToolRegistry(db)
-        self.subtask_manager = SubtaskManager.from_dict(subtask_state) if subtask_state else SubtaskManager()
+        self.workspace_planner = WorkspacePlanner()
+        if workspace_state: self.workspace_planner.from_dict(workspace_state)
         
         # New specialized handlers
         self.cleaner = ResponseCleaner()
         self.tool_handler = ToolHandler(
             db, user_id, session_id, event_bus, self.memory, 
-            self.subtask_manager, self.tool_registry, agent, self.run_id
+            self.workspace_planner, self.tool_registry, agent, self.run_id
         )
         self.action_handler = ActionHandler(
             llm_provider, event_bus, self.memory, session_id, self.run_id,
@@ -78,21 +80,35 @@ class AgenticLoop:
                 self.loop_count += 1
                 await self.state_service.save_agent_state(self.session_id, "THINKING")
                 
-                # Setup Iteration
-                status_report = self.subtask_manager.get_status_report()
-                current_task = self.subtask_manager.get_current_task()
-                
-                if current_task and current_task.status == SubtaskStatus.PENDING:
-                    self.subtask_manager.mark_in_progress(current_task.id)
-                    status_report = self.subtask_manager.get_status_report()
-
-                await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.STATUS, content=f"Iteration {self.loop_count}: Thinking...", run_id=self.run_id))
-                
+                # Set up context and Inject Virtual Markdown Workspace
                 context = await self.memory.get_active_context()
+                
+                plan_md = self.workspace_planner.get_plan_markdown()
+                if plan_md:
+                    workspace_prompt = f"VIRTUAL WORKSPACE PLAN:\n{plan_md}\n\n(Remember: Update this using `update_workspace` as you progress.)"
+                    # Inject at the very beginning of the context window so it's always top-of-mind
+                    context.insert(0, ProviderMessage(role="system", content=workspace_prompt))
+
+                # UI Pulse & State Sync
+                await self._emit_plan_if_changed()
+                await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.STATUS, content=f"Step {self.loop_count}: Thinking...", run_id=self.run_id))
+
+                # 0.5 Stall Guard: Force pivot if a task fails too many times
+                stall_guidance = ""
+                # This stall guard is now handled by the cleaner.detect_loop
+                
+                if stall_guidance:
+                    context.insert(0, ProviderMessage(role="system", content=stall_guidance))
+
+                active_task_desc = self.workspace_planner.get_active_task()
+                enriched_input = user_input
+                if active_task_desc:
+                    enriched_input = f"User Request: {user_input}\nCurrent Focus: {active_task_desc}" if user_input else f"Current Focus: {active_task_desc}"
+
                 turn_data = {}
                 await self.action_handler.get_turn_action(
-                    turn_data, approved_tool_calls, [], context, current_task, 
-                    status_report, user_input, self.tool_handler.pending_tool_refinement, 
+                    turn_data, approved_tool_calls, [], context, enriched_input, 
+                    self.tool_handler.pending_tool_refinement, 
                     self.loop_warning_triggered
                 )
                 
@@ -109,8 +125,22 @@ class AgenticLoop:
 
                 if self.cleaner.detect_loop(full_content, tool_calls_buffer):
                     self.loop_warning_triggered = True
-                    await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.STATUS, content="Loop detected. Self-correcting...", run_id=self.run_id))
+                    # Enhanced Stall Guard via Cleaner:
+                    stall_prompt = "SYSTEM PROTOCOL ERROR: You are stuck in a repeating cycle of failed or identical actions. You are STALLED. You MUST use 'update_workspace' to rewrite your plan.md and take a fundamentally different approach."
+                    await self.memory.add_message(role="system", content=stall_prompt, display=False)
+                    await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.STATUS, content="Loop detected. Forcing pivot...", run_id=self.run_id))
                     tool_calls_buffer = []
+                    continue
+
+                # 0.7 Exit Guard: Refuse completion if subtasks are active
+                if is_complete and not self.workspace_planner.is_plan_fully_resolved():
+                    logger.warning(f"Exit Guard triggered for session {self.session_id}")
+                    exit_error = "SYSTEM PROTOCOL ERROR: You attempted to complete the session, but your workspace plan still has unchecked tasks ('- [ ]'). You MUST either complete them, mark them as checked intentionally, or REMOVE them from the plan using 'update_workspace' before you can finish."
+                    
+                    # Inject error as a system message and force continue
+                    await self.memory.add_message(role="system", content=exit_error, display=False)
+                    is_complete = False
+                    # Allow one more thinking turn to fix the state
                     continue
 
                 # 1. Execute Actions
@@ -119,7 +149,7 @@ class AgenticLoop:
                     is_approval_required = await self.tool_handler.execute_tool_calls(tool_calls_buffer, full_content, thoughts, is_approved_turn)
                     if is_approval_required:
                         await self.state_service.save_agent_state(self.session_id, "AWAITING_APPROVAL")
-                        await self.state_service.save_plan(self.session_id, self.subtask_manager.to_dict())
+                        await self.state_service.save_plan(self.session_id, self.workspace_planner.to_dict())
                         return 
 
                     await self._emit_plan_if_changed()
@@ -160,11 +190,12 @@ class AgenticLoop:
 
     async def _emit_plan_if_changed(self):
         import hashlib
-        plan_dict = self.subtask_manager.to_dict()
-        plan_json = json.dumps(plan_dict, sort_keys=True)
-        plan_hash = hashlib.md5(plan_json.encode()).hexdigest()
+        plan_md = self.workspace_planner.get_plan_markdown()
+        plan_hash = hashlib.md5(plan_md.encode()).hexdigest()
         
         if plan_hash != self._last_emitted_plan_hash:
-            await self.state_service.save_plan(self.session_id, plan_dict)
-            await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.PLAN, metadata={"plan": plan_dict}, run_id=self.run_id))
+            # Save the dict (which wraps the string)
+            await self.state_service.save_plan(self.session_id, self.workspace_planner.to_dict())
+            # Emit just the string to the frontend
+            await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.PLAN, content=plan_md, run_id=self.run_id))
             self._last_emitted_plan_hash = plan_hash

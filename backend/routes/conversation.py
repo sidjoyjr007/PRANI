@@ -78,7 +78,10 @@ async def add_message(conversation_id: UUID, message: MessageCreate, db: Session
 
     user_content = message.content if isinstance(message.content, str) else str(message.content)
 
-    # Launch agent loop in the background
+    # 1. Clear any old plan state from previous interactions in this conversation
+    state_service = StateService()
+    await state_service.clear_plan(str(conversation_id))
+
     # Launch agent loop in the background, keeping a strong reference
     execution_service.launch_agent(
         agent_id=conversation.agent_id, 

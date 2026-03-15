@@ -7,10 +7,9 @@ from sqlalchemy.orm import Session
 
 from engine.events import AgentEventType, EventBus
 from engine.memory import ContextManager
-from engine.subtasks import SubtaskManager, Subtask
+from engine.workspace import WorkspacePlanner
 from engine.tool_defs import (
-    TOOL_ADD_SUBTASKS, 
-    TOOL_UPDATE_SUBTASK_STATUS,
+    TOOL_UPDATE_WORKSPACE,
     TOOL_READ_TOOL_RESULTS
 )
 from models.secret import UserToolSecret
@@ -27,7 +26,7 @@ class ToolHandler:
         session_id: str, 
         bus: EventBus, 
         memory: ContextManager, 
-        subtask_manager: SubtaskManager,
+        workspace_planner: WorkspacePlanner,
         tool_registry: Any,
         agent: Any,
         run_id: str
@@ -37,7 +36,7 @@ class ToolHandler:
         self.session_id = session_id
         self.bus = bus
         self.memory = memory
-        self.subtask_manager = subtask_manager
+        self.workspace_planner = workspace_planner
         self.tool_registry = tool_registry
         self.agent = agent
         self.run_id = run_id
@@ -50,7 +49,7 @@ class ToolHandler:
     async def execute_tool_calls(self, tool_calls, content, thoughts, is_approved) -> bool:
         display_text = content.strip()
         
-        internal_tools = {TOOL_ADD_SUBTASKS, TOOL_UPDATE_SUBTASK_STATUS}
+        internal_tools = {TOOL_UPDATE_WORKSPACE}
         requires_approval = any(self.clean_tool_name(tc.function["name"]) not in internal_tools for tc in tool_calls)
         is_internal_only = all(self.clean_tool_name(tc.function["name"]) in internal_tools for tc in tool_calls)
         
@@ -79,58 +78,33 @@ class ToolHandler:
         for tc in tool_calls:
             res = ""
             t_name = tc.function["name"]
+            is_internal_only = t_name in [TOOL_READ_TOOL_RESULTS, TOOL_UPDATE_WORKSPACE]
             
-            if t_name == TOOL_ADD_SUBTASKS:
-                await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.TOOL_START, metadata={"tool": t_name, "args": tc.function.get("arguments")}, run_id=self.run_id))
+            # --- INTERNAL TOOL EXECUTION ---
+            if t_name == TOOL_UPDATE_WORKSPACE:
+                # Suppress TOOL_START for internal plan management to keep UI clean
                 try:
                     args = json.loads(tc.function["arguments"])
-                    tasks = args.get("tasks", [])
-                    for t_data in tasks:
-                        desc = t_data.get("description")
-                        if desc:
-                            new_id = f"task_{uuid.uuid4().hex[:6]}"
-                            self.subtask_manager.add_subtask(Subtask(id=new_id, description=desc))
-                            self.subtask_manager.execution_order.append(new_id)
-                    res = f"Successfully added {len(tasks)} tasks to the plan."
-                except Exception as e:
-                    res = f"Error adding subtasks: {e}"
+                    markdown_content = args.get("markdown_content", "")
                     
-                is_error = isinstance(res, str) and res.startswith("Error")
-                await self.memory.add_message(role="tool", content=res, tool_call_id=tc.id, name=t_name, display=not is_error)
-                self.pending_tool_refinement = {"tool": t_name, "error": str(res)} if is_error else None
-                continue
+                    self.workspace_planner.update_plan(markdown_content)
+                    res = "Workspace updated successfully."
+                    
+                    await self.bus.emit(self.bus.create_event(
+                        self.session_id, 
+                        AgentEventType.PLAN, 
+                        content=markdown_content, 
+                        run_id=self.run_id
+                    ))
+                except Exception as e:
+                    res = f"Error updating workspace: {e}"
                 
-            if t_name == TOOL_UPDATE_SUBTASK_STATUS:
-                await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.TOOL_START, metadata={"tool": t_name, "args": tc.function.get("arguments")}, run_id=self.run_id))
-                try:
-                    args = json.loads(tc.function["arguments"])
-                    status = args.get("status")
-                    result_msg = args.get("result")
-                    
-                    current_task = self.subtask_manager.get_current_task()
-                    if not current_task:
-                        res = "Error: No active subtask to update."
-                    else:
-                        if status == "COMPLETED":
-                            self.subtask_manager.mark_completed(current_task.id, result=result_msg)
-                        elif status == "FAILED":
-                            self.subtask_manager.mark_failed(current_task.id, error=result_msg)
-                        else:
-                            current_task.result = result_msg
-                            
-                        res = f"Updated current task '{current_task.description}' to {status}."
-                        # Sync to frontend status
-                        await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.STATUS, content=f"Step {status.lower()}: {current_task.description}", run_id=self.run_id))
-                except Exception as e:
-                    res = f"Error updating subtask: {e}"
-                    
-                is_error = isinstance(res, str) and res.startswith("Error")
-                await self.memory.add_message(role="tool", content=res, tool_call_id=tc.id, name=t_name, display=not is_error)
-                self.pending_tool_refinement = {"tool": t_name, "error": str(res)} if is_error else None
+                await self.memory.add_message(role="tool", content=res, tool_call_id=tc.id, name=t_name)
                 continue
             
             if t_name == TOOL_READ_TOOL_RESULTS:
-                await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.TOOL_START, metadata={"tool": t_name, "args": tc.function.get("arguments")}, run_id=self.run_id))
+                # Suppress TOOL_START for internal read tool
+                # await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.TOOL_START, metadata={"tool": t_name, "args": tc.function.get("arguments")}, run_id=self.run_id))
                 try:
                     args = json.loads(tc.function["arguments"])
                     msg_id = args.get("message_id")
@@ -161,8 +135,14 @@ class ToolHandler:
             
             if not is_internal_only:
                 display_name = f"Executing {t_name}..."
+                
                 await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.STATUS, content=display_name, run_id=self.run_id))
-                await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.TOOL_START, metadata={"tool": t_name, "args": tc.function.get("arguments"), "source": tool_rec.get("source") if tool_rec else "?"}, run_id=self.run_id))
+                await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.TOOL_START, metadata={
+                    "tool": t_name, 
+                    "args": tc.function.get("arguments"), 
+                    "source": tool_rec.get("source") if tool_rec else "?",
+                    "description": None
+                }, run_id=self.run_id))
             
             try:
                 if not tool_rec: 
@@ -178,8 +158,15 @@ class ToolHandler:
             if not is_internal_only:
                 if is_error:
                     await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.STATUS, content=f"{t_name} error. Self-correcting...", run_id=self.run_id))
-                else:
-                    await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.TOOL_OUTPUT, content=str(res), metadata={"tool": t_name}, run_id=self.run_id))
+                
+                # Emit TOOL_OUTPUT unconditionally so the frontend knows it finished, pass error state in metadata
+                await self.bus.emit(self.bus.create_event(
+                    self.session_id, 
+                    AgentEventType.TOOL_OUTPUT, 
+                    content=str(res), 
+                    metadata={"tool": t_name, "is_error": is_error}, 
+                    run_id=self.run_id
+                ))
             
             await self.memory.add_message(role="tool", content=res, tool_call_id=tc.id, name=t_name, display=not is_error)
             self.pending_tool_refinement = {"tool": t_name, "error": str(res)} if is_error else None

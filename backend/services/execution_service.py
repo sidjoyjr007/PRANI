@@ -146,7 +146,7 @@ class ExecutionService:
             state_service = StateService()
                 
             # Load existing plan state (if any)
-            subtask_state = await state_service.load_plan(str(session_id))
+            workspace_state = await state_service.load_plan(str(session_id))
 
             # 3.5. Cache Inconsistency Fix
             # ALWAYS invalidate the Redis message cache when starting a new background run
@@ -162,7 +162,7 @@ class ExecutionService:
                 llm_provider=provider,
                 event_bus=self.event_bus,
                 user_id=user_id,
-                subtask_state=subtask_state
+                workspace_state=workspace_state
             )
             
             # Execute logic

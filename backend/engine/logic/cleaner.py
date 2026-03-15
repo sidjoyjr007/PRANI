@@ -84,6 +84,8 @@ class ResponseCleaner:
             # 2. Nuke trailing/leading JSON technical characters
             res = re.sub(r"[\{\}\[\]\"\:,\s]*$", "", res) # trailing remnants
             res = re.sub(r"^[\{\}\[\]\"\:,\s]*", "", res) # leading remnants
+            # 3. Nuke lines containing only JSON brackets
+            res = re.sub(r"(?m)^[\s\{\}\[\]\"\:,\\]+$", "", res)
             return res.strip()
         if isinstance(data, list):
             return [self.scrub_metadata(item) for item in data]

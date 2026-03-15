@@ -1,64 +1,31 @@
 from typing import List, Dict, Any
 
 # Tool Name Constants
-TOOL_ADD_SUBTASKS = "add_subtasks"
-TOOL_UPDATE_SUBTASK_STATUS = "update_subtask_status"
+TOOL_UPDATE_WORKSPACE = "update_workspace"
 TOOL_READ_TOOL_RESULTS = "read_tool_results"
 
 BUILTIN_TOOL_DEFS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": TOOL_ADD_SUBTASKS,
-            "description": "Add one or more steps/subtasks to your execution plan. Use this when you need to break down a complex goal.",
+            "name": TOOL_UPDATE_WORKSPACE,
+            "description": "Used to create or update the virtual 'plan.md' workspace that tracks your tasks, goals, and notes. Use this tool to outline an initial plan before executing COMPLEX, multi-step tasks. For simple questions, greetings, or single-step actions, DO NOT use this tool. As you make progress on complex tasks, use this tool to replace the previous markdown with an updated version, checking off completed items using standard markdown checklists (e.g. `- [x] Step 1`). Remember that the entire content you pass here will overwrite the current plan.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "tasks": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "description": {
-                                    "type": "string",
-                                    "description": "A clear, action-oriented description of the task."
-                                }
-                            },
-                            "required": ["description"]
-                        }
+                    "markdown_content": {
+                        "type": "string",
+                        "description": "The complete, formatted Markdown text that represents your current overarching plan, tasks, and notes."
                     }
                 },
-                "required": ["tasks"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": TOOL_UPDATE_SUBTASK_STATUS,
-            "description": "Update the status of the currently active subtask (e.g., mark as COMPLETED or FAILED) along with a result message.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "status": {
-                        "type": "string",
-                        "enum": ["COMPLETED", "FAILED"],
-                        "description": "The new status of the task."
-                    },
-                    "result": {
-                        "type": "string",
-                        "description": "A message describing the outcome, or the error if it failed."
-                    }
-                },
-                "required": ["status", "result"]
+                "required": ["markdown_content"]
             }
         }
     }
 ]
 
 BUILTIN_TOOL_DESCRIPTIONS: List[str] = [
-    f"- {TOOL_ADD_SUBTASKS}: Add one or more steps/subtasks to your execution plan. Use this when you need to break down a complex goal.",
-    f"- {TOOL_UPDATE_SUBTASK_STATUS}: Update the status of the currently active subtask (e.g., mark as COMPLETED or FAILED) along with a result message."
+    f"- {TOOL_UPDATE_WORKSPACE}: Create or update the virtual 'plan.md' workspace for COMPLEX tasks only."
 ]
 
 TOOL_READ_TOOL_RESULTS_DEF = {

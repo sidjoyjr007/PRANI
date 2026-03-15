@@ -206,12 +206,12 @@ const conversationSlice = createSlice({
                         // Find the corresponding tool call by name (most recent if multiple)
                         const toolCall = [...lastMsg.tool_calls].reverse().find(tc => tc.name === metadata.tool);
                         if (toolCall) {
-                            toolCall.status = 'completed';
+                            toolCall.status = metadata?.is_error ? 'error' : 'completed';
                             toolCall.output = content;
                         }
                     } else if (lastMsg && !lastMsg.tool_calls) {
                         // Emergency fallback for out-of-order events
-                        lastMsg.tool_calls = [{ name: metadata.tool, status: 'completed', output: content }];
+                        lastMsg.tool_calls = [{ name: metadata.tool, status: metadata?.is_error ? 'error' : 'completed', output: content }];
                     }
                     break;
                 case 'approval_required':
@@ -226,25 +226,23 @@ const conversationSlice = createSlice({
                         lastMsg.thoughts = [];
                         lastMsg.tool_calls = [];
                     }
+                    state.currentPlan = null; // Clear plan on error/abort
                     break;
                 case 'plan':
-                    if (metadata && metadata.plan) {
-                        state.currentPlan = metadata.plan;
-
-                        // Mission Control: Update current status message with progress
-                        const plan = metadata.plan;
-                        if (plan.subtasks && plan.execution_order) {
-                            const subtasks = plan.execution_order.map(id => plan.subtasks[id]).filter(Boolean);
-                            const completed = subtasks.filter(s => s.status === 'completed' || s.status === 'success' || s.status === 'COMPLETED').length;
-                            if (subtasks.length > 0) {
-                                lastMsg.status = `Executing step ${Math.min(completed + 1, subtasks.length)} of ${subtasks.length}`;
-                            }
+                    if (content !== undefined && typeof content === 'string') {
+                        state.currentPlan = content;
+                    } else if (metadata && metadata.plan) {
+                        if (metadata.plan.version === 'v1_markdown') {
+                            state.currentPlan = metadata.plan.content;
+                        } else {
+                            state.currentPlan = metadata.plan;
                         }
                     }
                     break;
                 case 'loop_complete':
                     // Clear any lingering status (Thinking, Working, etc.)
                     lastMsg.status = "";
+                    state.currentPlan = null; // Clear plan on completion
                     break;
                 default:
                     break;
@@ -306,7 +304,12 @@ const conversationSlice = createSlice({
             // Fetch Plan / State
             .addCase(fetchPlan.fulfilled, (state, action) => {
                 if (state.currentConversationId === action.payload.conversationId) {
-                    state.currentPlan = action.payload.plan;
+                    const planData = action.payload.plan;
+                    if (planData && planData.version === 'v1_markdown') {
+                        state.currentPlan = planData.content;
+                    } else {
+                        state.currentPlan = planData;
+                    }
                     state.agentState = action.payload.agent_state;
 
                     // Optimistically set message state if awaiting approval
