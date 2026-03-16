@@ -246,6 +246,7 @@ class RetrievalSystem:
                     "name": meta.get('name'),
                     "source": meta.get('source'),
                     "schema": json.loads(meta.get('schema_json', '{}')),
+                    "description": meta.get('description', ''),
                     "metadata": meta
                 }
                 found_tools.append(tool_def)

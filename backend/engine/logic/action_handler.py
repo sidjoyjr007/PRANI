@@ -193,7 +193,11 @@ class ActionHandler:
             if name not in unique_tools: unique_tools[name] = t
         
         tool_defs = list(BUILTIN_TOOL_DEFS)
-        tools_desc_list = list(BUILTIN_TOOL_DESCRIPTIONS)
+        tools_desc_list = []
+        for td in tool_defs:
+            f = td["function"]
+            tools_desc_list.append(f"- {f['name']}: {f.get('description', '')}\n  Schema: {json.dumps(f.get('parameters', {}), indent=2)}")
+
         for name, t in unique_tools.items():
             t_func = {"name": name, "description": t.get("description", ""), "parameters": t.get("schema", {})}
             tool_defs.append({"type": "function", "function": t_func})
@@ -211,7 +215,7 @@ class ActionHandler:
             agent_role=self.agent.name or "Autonomous Agent",
             agent_instructions=self.agent.instructions or "",
             tools_desc="\n".join(tools_desc_list), 
-            session_history=history_text,
+            session_history="",
             parse_error=parse_error,
             global_goal=user_input,
             capabilities_desc=capabilities_desc

@@ -183,6 +183,7 @@ class ContextManager:
         text_or_parts = ""
         tool_calls = None
         tool_call_id = None
+        name = content.get("name") if isinstance(content, dict) else None
 
         if isinstance(content, dict):
             # If it has 'parts', it's multi-modal
@@ -193,13 +194,21 @@ class ContextManager:
             
             tool_calls = content.get("tool_calls")
             tool_call_id = content.get("tool_call_id")
+
+            # PRANI-ENHANCEMENT: Inject explicit anchors into text content
+            # (Allows LLM to see source/intent even if it ignores metadata)
+            if db_msg.role == "tool" and name:
+                text_or_parts = f"[SOURCE TOOL: {name}]\n{text_or_parts}"
+            elif db_msg.role == "assistant" and tool_calls:
+                call_names = [tc.get("function", {}).get("name", "?") for tc in tool_calls]
+                text_or_parts = f"[INTENT: Calling {', '.join(call_names)}]\n{text_or_parts}"
         else:
             text_or_parts = str(content)
             
         return ProviderMessage(
             role=db_msg.role, 
             content=text_or_parts, 
-            name=content.get("name") if isinstance(content, dict) else None,
+            name=name,
             tool_calls=tool_calls, 
             tool_call_id=tool_call_id,
             tokens=db_msg.tokens
@@ -311,6 +320,7 @@ class ContextManager:
     async def get_history_text(self, limit: int = 10) -> str:
         """
         Returns a plain text representation of recent history.
+        Enriched with tool attribution for better LLM reasoning.
         """
         db_messages = await self._get_db_messages()
         recent = db_messages[-limit:]
@@ -319,6 +329,17 @@ class ContextManager:
         for m in recent:
             content = m.content
             text = content.get("text", "") if isinstance(content, dict) else str(content)
-            lines.append(f"{m.role.upper()}: {text}")
+            
+            # Attributed Roles (PRANI-ENHANCEMENT)
+            if m.role == "assistant" and isinstance(content, dict) and content.get("tool_calls"):
+                calls = content["tool_calls"]
+                call_names = [c.get("function", {}).get("name", "?") for c in calls]
+                role_label = f"ASSISTANT (Calls: {', '.join(call_names)})"
+                lines.append(f"{role_label}: {text}")
+            elif m.role == "tool" and isinstance(content, dict) and content.get("name"):
+                role_label = f"TOOL ({content['name']})"
+                lines.append(f"{role_label}: {text}")
+            else:
+                lines.append(f"{m.role.upper()}: {text}")
             
         return "\n".join(lines)

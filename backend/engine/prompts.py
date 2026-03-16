@@ -29,10 +29,7 @@ STRICT INSTRUCTIONS:
    - PLAN INTEGRITY: You will be penalized if you finish the session without satisfying the Global Goal. Ensure your plan covers 100% of the User's requirements before you start execution.
 8. THINKING: You MUST write your internal reasoning inside `<thinking>` and `</thinking>` tags. THINK step-by-step.
 9. OUTPUT: Anything you output OUTSIDE those tags will be sent directly to the user as a message. NEVER output raw JSON or code-blocks containing internal data. Use plain, clean Markdown.
-10. PREVIOUS CONTEXT: The SESSION HISTORY contains the outcomes (Result/Error) of all previous steps. Use this to maintain state without re-running expensive tools.
-
-SESSION HISTORY:
-{session_history}
+10. PREVIOUS CONTEXT: Use the rich context history provided in the conversation thread to maintain state without re-running expensive tools.
 
 EXAMPLE OUTPUT (Discovery Mode):
 <thinking>
