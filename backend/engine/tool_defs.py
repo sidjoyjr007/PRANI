@@ -3,6 +3,7 @@ from typing import List, Dict, Any
 # Tool Name Constants
 TOOL_UPDATE_WORKSPACE = "update_workspace"
 TOOL_READ_TOOL_RESULTS = "read_tool_results"
+TOOL_SEARCH_TOOL_REGISTRY = "search_tool_registry"
 
 BUILTIN_TOOL_DEFS: List[Dict[str, Any]] = [
     {
@@ -41,6 +42,29 @@ TOOL_READ_TOOL_RESULTS_DEF = {
                 "end_char": { "type": "integer", "description": "The ending character index (max 3000 characters from start)." }
             },
             "required": ["message_id"]
+        }
+    }
+}
+
+TOOL_SEARCH_TOOL_REGISTRY_DEF = {
+    "type": "function",
+    "function": {
+        "name": TOOL_SEARCH_TOOL_REGISTRY,
+        "description": "Searches the full tool registry for specific capabilities. Use this when the tools in 'AVAILABLE TOOLS' are insufficient. Returns the full JSON schemas for the most relevant results, enabling them for the next turn.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Semantic query to find the right tool (e.g. 'how to list databases')"
+                },
+                "specific_tools": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Optional list of exact tool names to fetch schemas for."
+                }
+            },
+            "required": ["query"]
         }
     }
 }

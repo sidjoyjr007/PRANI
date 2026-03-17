@@ -10,7 +10,11 @@ from engine.prompts import get_action_system_prompt, get_compression_prompt
 from engine.tool_defs import (
     BUILTIN_TOOL_DEFS, 
     BUILTIN_TOOL_DESCRIPTIONS,
-    TOOL_READ_TOOL_RESULTS_DEF
+    TOOL_READ_TOOL_RESULTS_DEF,
+    TOOL_UPDATE_WORKSPACE,
+    TOOL_READ_TOOL_RESULTS,
+    TOOL_SEARCH_TOOL_REGISTRY,
+    TOOL_SEARCH_TOOL_REGISTRY_DEF
 )
 from llm.types import ProviderMessage, ToolCall
 from engine.logic.cleaner import RE_THINKING_FULL, RE_THINKING_START, RE_SCRUB_THINKING, RE_JSON_MARKDOWN, RE_TOOL_CALL_MIRROR, RE_RECURSIVE_JSON
@@ -184,15 +188,43 @@ class ActionHandler:
         if cache_key in self._tool_search_cache:
             tool_recs = self._tool_search_cache[cache_key]
         else:
-            tool_recs = self.tool_registry.search_tools(query=current_subtask_desc, tool_ids=self.agent.tool_ids, mcp_server_ids=self.agent.mcp_server_ids, limit=10)
+            tool_recs = self.tool_registry.search_tools(query=current_subtask_desc, tool_ids=self.agent.tool_ids, mcp_server_ids=self.agent.mcp_server_ids, limit=3)
             self._tool_search_cache[cache_key] = tool_recs
 
+        # Scan history for discovered schemas to "activate" them for the current turn
+        discovered_tools = []
+        context = await self.memory.get_active_context()
+        for msg in context:
+            if msg.role == "tool" and msg.name == TOOL_SEARCH_TOOL_REGISTRY:
+                try:
+                    res_list = json.loads(msg.content)
+                    if isinstance(res_list, list):
+                        discovered_tools.extend(res_list)
+                except Exception:
+                    pass
+
         unique_tools = {}
+        # 1. Start with recommended tools from semantic search
         for t in tool_recs:
             name = t["name"].replace("default_api:", "").replace("default_api.", "")
             if name not in unique_tools: unique_tools[name] = t
         
+        # 2. Add tools explicitly discovered by the assistant in this session
+        for dt in discovered_tools:
+            name = dt.get("name", "").replace("default_api:", "").replace("default_api.", "")
+            if not name: continue
+            if name not in unique_tools:
+                # Format discovered tools into the internal unique_tools structure
+                unique_tools[name] = {
+                    "name": name,
+                    "description": dt.get("description", ""),
+                    "schema": dt.get("parameters", dt.get("schema", {}))
+                }
+        
         tool_defs = list(BUILTIN_TOOL_DEFS)
+        # Always provide the discovery tool upfront
+        tool_defs.append(TOOL_SEARCH_TOOL_REGISTRY_DEF)
+        
         tools_desc_list = []
         for td in tool_defs:
             f = td["function"]

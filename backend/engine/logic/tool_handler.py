@@ -10,7 +10,8 @@ from engine.memory import ContextManager
 from engine.workspace import WorkspacePlanner
 from engine.tool_defs import (
     TOOL_UPDATE_WORKSPACE,
-    TOOL_READ_TOOL_RESULTS
+    TOOL_READ_TOOL_RESULTS,
+    TOOL_SEARCH_TOOL_REGISTRY
 )
 from models.secret import UserToolSecret
 from utils.encryption import decrypt_value
@@ -128,6 +129,51 @@ class ToolHandler:
                     res = f"Error performing surgical read: {e}"
                 
                 await self.memory.add_message(role="tool", content=res, tool_call_id=tc.id, name=t_name, display=False)
+                continue
+
+            if t_name == TOOL_SEARCH_TOOL_REGISTRY:
+                try:
+                    args = json.loads(tc.function["arguments"])
+                    query = args.get("query")
+                    specific_tools = args.get("specific_tools", [])
+                    
+                    # 1. Start with semantic search if query is provided
+                    results = []
+                    if query:
+                        results = self.tool_registry.search_tools(
+                            query=query, 
+                            tool_ids=self.agent.tool_ids, 
+                            mcp_server_ids=self.agent.mcp_server_ids, 
+                            limit=10
+                        )
+                    
+                    # 2. Add specific tools if requested
+                    if specific_tools:
+                        allowed_tool_ids = [str(tid) for tid in self.agent.tool_ids] if self.agent.tool_ids else []
+                        allowed_mcp_ids = [str(sid) for sid in self.agent.mcp_server_ids] if self.agent.mcp_server_ids else []
+                        
+                        # Fetch and filter to ensure authorization
+                        filtered_tools = self.tool_registry.get_tools_by_filter(allowed_ids=allowed_tool_ids, allowed_server_ids=allowed_mcp_ids)
+                        for ft in filtered_tools:
+                            if ft.get("name") in specific_tools:
+                                # Avoid duplicates if already found by semantic search
+                                if not any(r.get("name") == ft.get("name") for r in results):
+                                    results.append(ft)
+                    
+                    # 3. Format into JSON schemas for the LLM
+                    schema_output = []
+                    for r in results:
+                        schema_output.append({
+                            "name": r.get("name"),
+                            "description": r.get("description"),
+                            "parameters": r.get("schema")
+                        })
+                    
+                    res = json.dumps(schema_output, indent=2)
+                except Exception as e:
+                    res = f"Error searching registry: {e}"
+                
+                await self.memory.add_message(role="tool", content=res, tool_call_id=tc.id, name=t_name, display=True)
                 continue
 
             # External Tool Execution
