@@ -10,6 +10,57 @@ from models.llm import LLM
 
 class AgentService:
     @staticmethod
+    def _populate_agent_names(db: Session, agents: List[Agent]):
+        if not agents:
+            return
+
+        # Collect all unique IDs
+        all_tool_ids = set()
+        all_mcp_ids = set()
+        all_llm_ids = set()
+
+        for a in agents:
+            if hasattr(a, 'tool_ids') and a.tool_ids:
+                for tid in a.tool_ids:
+                    try:
+                        all_tool_ids.add(UUID(tid) if isinstance(tid, str) else tid)
+                    except: pass
+            if hasattr(a, 'mcp_server_ids') and a.mcp_server_ids:
+                for mid in a.mcp_server_ids:
+                    try:
+                        all_mcp_ids.add(UUID(mid) if isinstance(mid, str) else mid)
+                    except: pass
+            if hasattr(a, 'llm_id') and a.llm_id:
+                all_llm_ids.add(a.llm_id)
+
+        # Bulk fetch names
+        tool_map = {t.id: t.name for t in db.query(Tool.id, Tool.name).filter(Tool.id.in_(all_tool_ids)).all()} if all_tool_ids else {}
+        mcp_map = {m.id: m.name for m in db.query(MCPServer.id, MCPServer.name).filter(MCPServer.id.in_(all_mcp_ids)).all()} if all_mcp_ids else {}
+        llm_map = {l.id: l.name for l in db.query(LLM.id, LLM.name).filter(LLM.id.in_(all_llm_ids)).all()} if all_llm_ids else {}
+
+        # Assign back to agents
+        for a in agents:
+            a.tool_names = []
+            if hasattr(a, 'tool_ids') and a.tool_ids:
+                for tid in a.tool_ids:
+                    try:
+                        tid_uuid = UUID(tid) if isinstance(tid, str) else tid
+                        if tid_uuid in tool_map:
+                            a.tool_names.append(tool_map[tid_uuid])
+                    except: pass
+            
+            a.mcp_server_names = []
+            if hasattr(a, 'mcp_server_ids') and a.mcp_server_ids:
+                for mid in a.mcp_server_ids:
+                    try:
+                        mid_uuid = UUID(mid) if isinstance(mid, str) else mid
+                        if mid_uuid in mcp_map:
+                            a.mcp_server_names.append(mcp_map[mid_uuid])
+                    except: pass
+            
+            a.llm_name = llm_map.get(a.llm_id) if hasattr(a, 'llm_id') else None
+
+    @staticmethod
     def get_agents(db: Session, user_id: UUID, page: int = 1, size: int = 10, search: Optional[str] = None):
         query = db.query(Agent).filter(
             or_(
@@ -34,6 +85,9 @@ class AgentService:
         skip = (page - 1) * size
         items = query.order_by(desc(Agent.updated_at)).offset(skip).limit(size).all()
         
+        # Populate names
+        AgentService._populate_agent_names(db, items)
+        
         return {
             "items": items,
             "total": total,
@@ -51,7 +105,10 @@ class AgentService:
                     Agent.is_public == True
                 )
             )
-        return query.first()
+        agent = query.first()
+        if agent:
+            AgentService._populate_agent_names(db, [agent])
+        return agent
 
     @staticmethod
     def _validate_resources(db: Session, user_id: UUID, agent_data: dict):
@@ -92,7 +149,6 @@ class AgentService:
         db_agent = Agent(
             name=agent.name,
             instructions=agent.instructions,
-            capabilities=agent.capabilities,
             tool_ids=[str(id) for id in agent.tool_ids],
             mcp_server_ids=[str(id) for id in agent.mcp_server_ids],
             llm_id=agent.llm_id,

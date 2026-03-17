@@ -14,7 +14,6 @@ import { Toggle } from "@/components/ui/toggle"
 import { CommandPalette } from "@/components/ui/command-palette"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { ChevronLeft, Check } from "lucide-react"
-import CapabilitiesInput from "@/components/CapabilitiesInput"
 import { Toast, ToastContainer } from "@/components/ui/toast"
 
 import { fetchTools } from "@/store/slices/toolSlice"
@@ -36,7 +35,6 @@ export default function CreateAgentPage() {
   const [agentData, setAgentData] = useState({
     name: "",
     instructions: "",
-    capabilities: [],
     toolIds: [],
     mcpServerIds: [],
     humanInLoop: false,
@@ -79,7 +77,6 @@ export default function CreateAgentPage() {
           const mapped = {
             name: agent.name || "",
             instructions: agent.instructions || "",
-            capabilities: agent.capabilities || [],
             toolIds: agent.tool_ids || [],
             mcpServerIds: agent.mcp_server_ids || [],
             humanInLoop: agent.human_in_loop || false,
@@ -139,11 +136,6 @@ export default function CreateAgentPage() {
       if (agentData.name !== originalData.name) payload.name = agentData.name
       if (agentData.instructions !== originalData.instructions) payload.instructions = agentData.instructions
       if (agentData.humanInLoop !== originalData.humanInLoop) payload.human_in_loop = agentData.humanInLoop
-
-      // Compare arrays using JSON stringify
-      if (JSON.stringify([...agentData.capabilities].sort()) !== JSON.stringify([...originalData.capabilities].sort())) {
-        payload.capabilities = agentData.capabilities
-      }
       if (JSON.stringify([...agentData.toolIds].sort()) !== JSON.stringify([...originalData.toolIds].sort())) {
         payload.tool_ids = agentData.toolIds
       }
@@ -168,7 +160,6 @@ export default function CreateAgentPage() {
       payload = {
         name: agentData.name,
         instructions: agentData.instructions,
-        capabilities: agentData.capabilities,
         tool_ids: agentData.toolIds,
         mcp_server_ids: agentData.mcpServerIds,
         human_in_loop: agentData.humanInLoop,
@@ -276,11 +267,6 @@ export default function CreateAgentPage() {
                   }}>
                     {agentData.instructions ? agentData.instructions.trim().split(/\s+/).filter(Boolean).length : 0}/250 words
                   </p>
-                </div>
-
-                <div>
-                  <label style={{ display: "block", fontSize: theme.typography.fontSize.sm, fontWeight: theme.typography.fontWeight.semibold, color: theme.colors.foreground, marginBottom: theme.spacing[2] }}>Capabilities</label>
-                  <CapabilitiesInput value={agentData.capabilities} onChange={(capabilities) => setAgentData({ ...agentData, capabilities })} />
                 </div>
               </Card>
 

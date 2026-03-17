@@ -3,11 +3,11 @@ import { useTheme } from "@/context/ThemeContext"
 import { Button } from "@/components/ui/button"
 import { Text } from "@/components/ui/text"
 import { Avatar } from "@/components/ui/avatar"
-import { Combobox, ComboboxTrigger, ComboboxContent, ComboboxItem, ComboboxSearch } from "@/components/ui/combobox"
+import { CommandPalette } from "@/components/ui/command-palette"
 import {
     Send, User, Bot, Check, X, ChevronDown,
     Terminal, Cpu, ChevronRight, ChevronDown as ChevronDownIcon,
-    AlertTriangle, Zap, Clock, Pause
+    AlertTriangle, Zap, Clock, Pause, ChevronUp
 } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -647,14 +647,15 @@ export default function ChatPanel({
     onApprove,
     onAbort,
     isStreaming,
+    isCenteredMode,
 }) {
     const theme = useTheme()
     const messagesEndRef = useRef(null)
     const messagesContainerRef = useRef(null)
     const [approvalDecisions, setApprovalDecisions] = useState({})
     const [isFocused, setIsFocused] = useState(false)
-
     const [isPlanExpanded, setIsPlanExpanded] = useState(true)
+    const [isAgentPaletteOpen, setIsAgentPaletteOpen] = useState(false)
 
     // Auto-scroll logic (Optimized for performance)
     const lastScrollTime = useRef(0);
@@ -685,6 +686,185 @@ export default function ChatPanel({
     }, [])
 
     const selectedAgent = agents.find(a => a.id === selectedAgentId)
+
+    // ─── Centered No-Agent Layout ─────────────────────────────────────────────
+    if (isCenteredMode) {
+        return (
+            <div style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: theme.colors.background,
+                height: "100%",
+                overflow: "hidden",
+                padding: "0 24px",
+            }}>
+                {/* Prani logo + heading */}
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", marginBottom: "32px" }}>
+                    <img src={logo} alt="Prani Logo" style={{ height: "40px", width: "auto", opacity: 0.9 }} />
+                    <div style={{ fontSize: "1.05em", fontWeight: 500, color: theme.colors.muted_foreground, letterSpacing: "0.02em" }}>
+                        Select an agent to get started
+                    </div>
+                </div>
+
+                {/* Centered Input Box */}
+                <div style={{ width: "100%", maxWidth: "680px" }}>
+                    <div
+                        style={{
+                            position: "relative",
+                            backgroundColor: theme.colors.card,
+                            border: `1px solid ${theme.colors.border}`,
+                            borderRadius: "16px",
+                            boxShadow: "0 4px 6px -1px rgba(0,0,0,0.07), 0 12px 28px -4px rgba(0,0,0,0.08)",
+                            transition: "box-shadow 0.2s ease, border-color 0.2s ease",
+                            display: "flex",
+                            flexDirection: "column",
+                            maxHeight: "500px",
+                            overflow: "hidden",
+                        }}
+                        onFocus={e => {
+                            e.currentTarget.style.boxShadow = `0 0 0 3px ${theme.colors.primary[200]}, 0 4px 6px -1px rgba(0,0,0,0.07), 0 12px 28px -4px rgba(0,0,0,0.09)`
+                            e.currentTarget.style.borderColor = theme.colors.primary[400]
+                        }}
+                        onBlur={e => {
+                            e.currentTarget.style.boxShadow = "0 4px 6px -1px rgba(0,0,0,0.07), 0 12px 28px -4px rgba(0,0,0,0.08)"
+                            e.currentTarget.style.borderColor = theme.colors.border
+                        }}
+                        tabIndex={0}
+                    >
+                        <textarea
+                            value={inputValue}
+                            onChange={e => setInputValue(e.target.value)}
+                            onKeyDown={e => {
+                                if (e.key === "Enter" && !e.shiftKey) {
+                                    e.preventDefault()
+                                    handleSendMessage()
+                                }
+                            }}
+                            disabled={!selectedAgentId}
+                            rows={3}
+                            placeholder={selectedAgentId ? "Write a message... (Enter to send, Shift+Enter for newline)" : "Pick an agent below, then type your message..."}
+                            style={{
+                                padding: "18px 20px 10px",
+                                backgroundColor: "transparent",
+                                color: theme.colors.foreground,
+                                resize: "none",
+                                border: "none",
+                                outline: "none",
+                                fontFamily: "inherit",
+                                fontSize: "0.9rem",
+                                overflowY: "auto",
+                                lineHeight: "1.65",
+                                opacity: selectedAgentId ? 1 : 0.45,
+                            }}
+                            onInput={e => {
+                                const textarea = e.target
+                                textarea.style.height = "auto"
+                                const newHeight = Math.min(textarea.scrollHeight, 6 * 24 + 48)
+                                textarea.style.height = newHeight + "px"
+                            }}
+                        />
+                        {/* Bottom Toolbar */}
+                        <div style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            padding: "10px 12px 12px",
+                            borderTop: `1px solid ${theme.colors.neutral[100]}`,
+                            gap: theme.spacing[3],
+                        }}>
+                            {/* Agent Selector Button */}
+                            <button
+                                onClick={() => setIsAgentPaletteOpen(true)}
+                                style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "6px",
+                                    padding: "6px 12px",
+                                    borderRadius: "8px",
+                                    border: `1px solid ${selectedAgentId ? theme.colors.primary[300] : theme.colors.neutral[200]}`,
+                                    backgroundColor: selectedAgentId ? theme.colors.primary[50] : "transparent",
+                                    color: selectedAgentId ? theme.colors.primary[700] : theme.colors.muted_foreground,
+                                    fontFamily: "inherit",
+                                    fontSize: "0.82rem",
+                                    fontWeight: selectedAgentId ? 500 : 400,
+                                    cursor: "pointer",
+                                    transition: "all 0.15s ease",
+                                    whiteSpace: "nowrap",
+                                    maxWidth: "220px",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                }}
+                                onMouseEnter={e => {
+                                    e.currentTarget.style.borderColor = theme.colors.primary[400]
+                                    e.currentTarget.style.backgroundColor = theme.colors.primary[50]
+                                }}
+                                onMouseLeave={e => {
+                                    e.currentTarget.style.borderColor = selectedAgentId ? theme.colors.primary[300] : theme.colors.neutral[200]
+                                    e.currentTarget.style.backgroundColor = selectedAgentId ? theme.colors.primary[50] : "transparent"
+                                }}
+                            >
+                                <Cpu size={13} style={{ flexShrink: 0 }} />
+                                <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                                    {agents.find(a => a.id === selectedAgentId)?.name || "Select Agent"}
+                                </span>
+                                <ChevronDown size={11} style={{ flexShrink: 0, opacity: 0.6 }} />
+                            </button>
+
+                            {/* Send Button */}
+                            <button
+                                onClick={handleSendMessage}
+                                disabled={!inputValue.trim() || !selectedAgentId}
+                                style={{
+                                    flexShrink: 0,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    width: "38px",
+                                    height: "38px",
+                                    borderRadius: "10px",
+                                    border: "none",
+                                    cursor: (!inputValue.trim() || !selectedAgentId) ? "not-allowed" : "pointer",
+                                    backgroundColor: (!inputValue.trim() || !selectedAgentId) ? theme.colors.neutral[200] : theme.colors.primary[600],
+                                    color: (!inputValue.trim() || !selectedAgentId) ? theme.colors.neutral[400] : "#ffffff",
+                                    transition: "background-color 0.18s ease, transform 0.12s ease",
+                                    boxShadow: (!inputValue.trim() || !selectedAgentId) ? "none" : "0 2px 8px rgba(79,111,150,0.35)",
+                                }}
+                                onMouseEnter={e => { if (!e.currentTarget.disabled) e.currentTarget.style.transform = "scale(1.05)" }}
+                                onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)" }}
+                            >
+                                <Send size={15} />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Pulse animation */}
+                <style>{`
+                    @keyframes pulse {
+                      0%, 100% { opacity: 0.3; transform: scale(0.8); }
+                      50% { opacity: 1; transform: scale(1.2); }
+                    }
+                `}</style>
+
+                {/* Agent Command Palette */}
+                <CommandPalette
+                    isOpen={isAgentPaletteOpen}
+                    onClose={() => setIsAgentPaletteOpen(false)}
+                    title="Select Agent"
+                    description="Choose an agent to power this conversation."
+                    placeholder="Search agents..."
+                    items={agents.map(a => ({ id: String(a.id), label: a.name, description: a.instructions ? a.instructions.slice(0, 80) + (a.instructions.length > 80 ? '...' : '') : undefined }))}
+                    selectedIds={selectedAgentId ? [String(selectedAgentId)] : []}
+                    onSelect={(id) => { setSelectedAgentId(id); setIsAgentPaletteOpen(false) }}
+                    onDeselect={() => { setSelectedAgentId(""); setIsAgentPaletteOpen(false) }}
+                    emptyMessage="No agents found."
+                />
+            </div>
+        )
+    }
 
     return (
         <div style={{
@@ -799,28 +979,27 @@ export default function ChatPanel({
             }
 
             {/* Input Area */}
-            <div style={{ padding: `0 ${theme.spacing[6]} ${theme.spacing[6]}` }}>
+            <div style={{ padding: "0 24px 24px" }}>
                 <div
                     style={{
                         position: "relative",
                         backgroundColor: theme.colors.card,
-                        border: `${theme.borderWidth.sm} solid ${theme.colors.border}`,
-                        borderRadius: theme.borderRadius.lg,
-                        boxShadow: theme.shadows.md,
-                        outline: "2px solid transparent",
-                        outlineOffset: "-2px",
-                        transition: `all ${theme.transitions.normal}`,
+                        border: `1px solid ${theme.colors.border}`,
+                        borderRadius: "16px",
+                        boxShadow: "0 2px 4px -1px rgba(0,0,0,0.06), 0 8px 20px -4px rgba(0,0,0,0.07)",
+                        transition: "box-shadow 0.2s ease, border-color 0.2s ease",
                         display: "flex",
                         flexDirection: "column",
                         maxHeight: "500px",
+                        overflow: "hidden",
                     }}
                     onFocus={e => {
-                        e.currentTarget.style.outline = `2px solid ${theme.colors.primary[500]}`
-                        e.currentTarget.style.boxShadow = theme.shadows.lg
+                        e.currentTarget.style.boxShadow = `0 0 0 3px ${theme.colors.primary[200]}, 0 2px 4px -1px rgba(0,0,0,0.06), 0 8px 20px -4px rgba(0,0,0,0.08)`
+                        e.currentTarget.style.borderColor = theme.colors.primary[400]
                     }}
                     onBlur={e => {
-                        e.currentTarget.style.outline = "2px solid transparent"
-                        e.currentTarget.style.boxShadow = theme.shadows.md
+                        e.currentTarget.style.boxShadow = "0 2px 4px -1px rgba(0,0,0,0.06), 0 8px 20px -4px rgba(0,0,0,0.07)"
+                        e.currentTarget.style.borderColor = theme.colors.border
                     }}
                     tabIndex={0}
                 >
@@ -834,20 +1013,20 @@ export default function ChatPanel({
                             }
                         }}
                         disabled={isStreaming}
-                        rows={2}
-                        placeholder={isStreaming ? (currentPlan?.status || "Agent is working...") : "Write a message..."}
+                        rows={3}
+                        placeholder={isStreaming ? (currentPlan?.status || "Agent is working...") : "Write a message... (Enter to send, Shift+Enter for newline)"}
                         style={{
-                            padding: `${theme.spacing[4]} ${theme.spacing[5]}`,
+                            padding: "18px 20px 10px",
                             backgroundColor: "transparent",
                             color: isStreaming ? theme.colors.neutral[500] : theme.colors.foreground,
                             resize: "none",
                             border: "none",
                             outline: "none",
                             fontFamily: "inherit",
-                            fontSize: theme.typography.fontSize.sm,
+                            fontSize: "0.9rem",
                             overflowY: "auto",
-                            lineHeight: "1.6",
-                            opacity: isStreaming ? 0.6 : 1,
+                            lineHeight: "1.65",
+                            opacity: isStreaming ? 0.5 : 1,
                         }}
                         onInput={e => {
                             const textarea = e.target
@@ -862,69 +1041,96 @@ export default function ChatPanel({
                         display: "flex",
                         justifyContent: "space-between",
                         alignItems: "center",
-                        padding: theme.spacing[4],
-                        backgroundColor: "transparent",
-                        gap: theme.spacing[4],
+                        padding: "10px 12px 12px",
+                        borderTop: `1px solid ${theme.colors.neutral[100]}`,
+                        gap: theme.spacing[3],
                     }}>
-                        {/* Agent Selection Combobox */}
-                        <div style={{ position: "relative", width: "auto", zIndex: 50, minWidth: "200px" }}>
-                            <Combobox value={selectedAgentId} onValueChange={setSelectedAgentId} variant="ghost" size="md">
-                                <ComboboxTrigger style={{ justifyContent: "flex-start" }}>
-                                    {selectedAgent ? selectedAgent.name : "Select Agent"}
-                                </ComboboxTrigger>
-                                <ComboboxContent>
-                                    <ComboboxSearch placeholder="Search agents..." />
-                                    {agents.map(agent => (
-                                        <ComboboxItem key={agent.id} value={String(agent.id)} searchableText={agent.name}>
-                                            <div style={{ display: "flex", flexDirection: "column" }}>
-                                                <span>{agent.name}</span>
-                                            </div>
-                                        </ComboboxItem>
-                                    ))}
-                                    {agents.length === 0 && (
-                                        <div style={{ padding: "8px", color: theme.colors.muted_foreground }}>No agents found</div>
-                                    )}
-                                </ComboboxContent>
-                            </Combobox>
-                        </div>
+                        {/* Agent Selector Button */}
+                        <button
+                            onClick={() => setIsAgentPaletteOpen(true)}
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "6px",
+                                padding: "6px 12px",
+                                borderRadius: "8px",
+                                border: `1px solid ${selectedAgentId ? theme.colors.primary[300] : theme.colors.neutral[200]}`,
+                                backgroundColor: selectedAgentId ? theme.colors.primary[50] : "transparent",
+                                color: selectedAgentId ? theme.colors.primary[700] : theme.colors.muted_foreground,
+                                fontFamily: "inherit",
+                                fontSize: "0.82rem",
+                                fontWeight: selectedAgentId ? 500 : 400,
+                                cursor: "pointer",
+                                transition: "all 0.15s ease",
+                                whiteSpace: "nowrap",
+                                maxWidth: "220px",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                            }}
+                            onMouseEnter={e => {
+                                e.currentTarget.style.borderColor = theme.colors.primary[400]
+                                e.currentTarget.style.backgroundColor = theme.colors.primary[50]
+                            }}
+                            onMouseLeave={e => {
+                                e.currentTarget.style.borderColor = selectedAgentId ? theme.colors.primary[300] : theme.colors.neutral[200]
+                                e.currentTarget.style.backgroundColor = selectedAgentId ? theme.colors.primary[50] : "transparent"
+                            }}
+                        >
+                            <Cpu size={13} style={{ flexShrink: 0 }} />
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                                {selectedAgent ? selectedAgent.name : "Select Agent"}
+                            </span>
+                            <ChevronDown size={11} style={{ flexShrink: 0, opacity: 0.6 }} />
+                        </button>
 
                         {/* Send / Stop Button */}
                         {isStreaming ? (
-                            <Button
+                            <button
                                 onClick={onAbort}
-                                variant="destructive"
-                                size="md"
                                 style={{
                                     flexShrink: 0,
                                     display: "flex",
                                     alignItems: "center",
                                     justifyContent: "center",
-                                    width: "40px",
-                                    height: "40px",
-                                    padding: 0,
-                                    backgroundColor: theme.colors.destructive,
+                                    width: "38px",
+                                    height: "38px",
+                                    borderRadius: "10px",
+                                    border: "none",
+                                    cursor: "pointer",
+                                    backgroundColor: theme.colors.destructive?.DEFAULT || "#a84a4a",
+                                    color: "#ffffff",
+                                    boxShadow: "0 2px 8px rgba(168,74,74,0.35)",
+                                    transition: "transform 0.12s ease",
                                 }}
+                                onMouseEnter={e => e.currentTarget.style.transform = "scale(1.05)"}
+                                onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
                             >
-                                <Pause size={16} />
-                            </Button>
+                                <Pause size={15} />
+                            </button>
                         ) : (
-                            <Button
+                            <button
                                 onClick={handleSendMessage}
                                 disabled={!inputValue.trim() || !selectedAgentId}
-                                variant="primary"
-                                size="md"
                                 style={{
                                     flexShrink: 0,
                                     display: "flex",
                                     alignItems: "center",
                                     justifyContent: "center",
-                                    width: "40px",
-                                    height: "40px",
-                                    padding: 0,
+                                    width: "38px",
+                                    height: "38px",
+                                    borderRadius: "10px",
+                                    border: "none",
+                                    cursor: (!inputValue.trim() || !selectedAgentId) ? "not-allowed" : "pointer",
+                                    backgroundColor: (!inputValue.trim() || !selectedAgentId) ? theme.colors.neutral[200] : theme.colors.primary[600],
+                                    color: (!inputValue.trim() || !selectedAgentId) ? theme.colors.neutral[400] : "#ffffff",
+                                    transition: "background-color 0.18s ease, transform 0.12s ease",
+                                    boxShadow: (!inputValue.trim() || !selectedAgentId) ? "none" : "0 2px 8px rgba(79,111,150,0.35)",
                                 }}
+                                onMouseEnter={e => { if (inputValue.trim() && selectedAgentId) e.currentTarget.style.transform = "scale(1.05)" }}
+                                onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)" }}
                             >
-                                <Send size={16} />
-                            </Button>
+                                <Send size={15} />
+                            </button>
                         )}
                     </div>
                 </div>
@@ -937,6 +1143,20 @@ export default function ChatPanel({
           50% { opacity: 1; transform: scale(1.2); }
         }
       `}</style>
+
+            {/* Agent Command Palette */}
+            <CommandPalette
+                isOpen={isAgentPaletteOpen}
+                onClose={() => setIsAgentPaletteOpen(false)}
+                title="Select Agent"
+                description="Choose an agent to power this conversation."
+                placeholder="Search agents..."
+                items={agents.map(a => ({ id: String(a.id), label: a.name, description: a.instructions ? a.instructions.slice(0, 80) + (a.instructions.length > 80 ? '...' : '') : undefined }))}
+                selectedIds={selectedAgentId ? [String(selectedAgentId)] : []}
+                onSelect={(id) => { setSelectedAgentId(id); setIsAgentPaletteOpen(false) }}
+                onDeselect={() => { setSelectedAgentId(""); setIsAgentPaletteOpen(false) }}
+                emptyMessage="No agents found."
+            />
         </div >
     )
 }

@@ -11,9 +11,6 @@ class Agent(Base):
     name = Column(String, nullable=False)
     instructions = Column(String, nullable=True)
     
-    # Capabilities as a list of strings
-    capabilities = Column(JSONB, default=list, nullable=False)
-    
     # Linked Resources
     # We store IDs as JSON lists for flexibility, though M2M tables are cleaner for strict SQL.
     # Given the requirement for "Snapshot" style or simple linking, JSONB is fine for now, 

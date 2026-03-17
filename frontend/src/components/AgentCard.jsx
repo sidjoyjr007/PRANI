@@ -5,7 +5,7 @@ import { useDispatch } from "react-redux"
 import DeleteResourceDialog from "@/components/DeleteResourceDialog"
 import { deleteAgent } from "@/store/slices/agentSlice"
 import ResourceCard from "@/components/ui/ResourceCard"
-import { Bot, Trash2, MessageSquare, Wrench, Server } from "lucide-react"
+import { Bot, Trash2, MessageSquare, Wrench, Server, Brain } from "lucide-react"
 
 export default function AgentCard({ agent, addToast }) {
   const theme = useTheme()
@@ -32,33 +32,55 @@ export default function AgentCard({ agent, addToast }) {
 
   if (!agent) return null
 
-  // Capabilities as badges (limited to 3)
-  const maxCapabilities = 3
-  const rawCapabilities = agent.capabilities || []
-  const displayedCapabilities = rawCapabilities.slice(0, maxCapabilities)
-  const remainingCount = Math.max(0, rawCapabilities.length - maxCapabilities)
+  const toolNames = agent.tool_names || [];
+  const mcpNames = agent.mcp_server_names || [];
+  const llmName = agent.llm_name;
 
-  const toolCount = agent.tool_ids?.length || 0
-  const serverCount = agent.mcp_server_ids?.length || 0
+  const badges = [];
 
-  const badges = displayedCapabilities.map(cap => ({
-    label: cap,
-    variant: "subtle",
-    color: "primary"
-  }))
+  // Tools Badges (up to 2, then +count)
+  const maxTools = 2;
+  const displayedTools = toolNames.slice(0, maxTools);
+  const remainingTools = Math.max(0, toolNames.length - maxTools);
 
-  if (remainingCount > 0) {
+  displayedTools.forEach(name => {
     badges.push({
-      label: `+${remainingCount}`,
+      label: name,
+      variant: "subtle",
+      color: "secondary",
+      icon: Wrench
+    });
+  });
+
+  if (remainingTools > 0) {
+    badges.push({
+      label: `+${remainingTools}`,
       variant: "outline",
-      color: "primary"
-    })
+      color: "secondary"
+    });
   }
 
-  const stats = [
-    { icon: Wrench, value: toolCount },
-    { icon: Server, value: serverCount }
-  ]
+  // MCP Badges (up to 2, then +count)
+  const maxMCPs = 2;
+  const displayedMCPs = mcpNames.slice(0, maxMCPs);
+  const remainingMCPs = Math.max(0, mcpNames.length - maxMCPs);
+
+  displayedMCPs.forEach(name => {
+    badges.push({
+      label: name,
+      variant: "subtle",
+      color: "neutral",
+      icon: Server
+    });
+  });
+
+  if (remainingMCPs > 0) {
+    badges.push({
+      label: `+${remainingMCPs}`,
+      variant: "outline",
+      color: "neutral"
+    });
+  }
 
   const actions = [
     {
@@ -79,9 +101,16 @@ export default function AgentCard({ agent, addToast }) {
     <>
       <ResourceCard
         title={agent.name}
+        subtitle={
+          llmName ? (
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <Brain size={12} style={{ opacity: 0.8 }} />
+              {llmName}
+            </div>
+          ) : "No Model Assigned"
+        }
         icon={Bot}
         badges={badges}
-        stats={stats}
         actions={actions}
         onClick={() => navigate(`/edit-agent/${agent.id}`)}
       />

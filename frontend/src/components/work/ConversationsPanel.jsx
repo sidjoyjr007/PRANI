@@ -45,27 +45,84 @@ export default function ConversationsPanel({
         <div
             style={{
                 width: "300px",
-                borderRight: `${theme.borderWidth.sm} solid ${theme.colors.border}`,
+                borderRight: `1px solid ${theme.colors.neutral[100]}`,
                 display: "flex",
                 flexDirection: "column",
-                backgroundColor: theme.colors.card,
-                padding: theme.spacing[6],
+                backgroundColor: theme.colors.card || "#ffffff",
+                position: "relative",
+                zIndex: 1,
             }}
         >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: theme.spacing[6] }}>
-                <Text as="label" variant="helper" size="xs" style={{ margin: 0, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: "700", color: theme.colors.foreground }}>Conversations</Text>
+            {/* Subtle Gradient Overlay for depth */}
+            <div style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: `linear-gradient(180deg, rgba(255,255,255,0) 0%, ${theme.colors.neutral[50]}44 100%)`,
+                pointerEvents: "none",
+                zIndex: -1
+            }} />
+
+            <div style={{ 
+                padding: `${theme.spacing[6]} ${theme.spacing[6]} ${theme.spacing[4]}`,
+                display: "flex", 
+                justifyContent: "space-between", 
+                alignItems: "center", 
+                marginBottom: theme.spacing[2] 
+            }}>
+                <Text 
+                    as="label" 
+                    variant="label" 
+                    size="sm" 
+                    style={{ 
+                        margin: 0, 
+                        textTransform: "uppercase", 
+                        letterSpacing: "0.1em", 
+                        fontWeight: "900", 
+                        color: theme.colors.neutral[600],
+                        fontSize: "0.75rem"
+                    }}
+                >
+                    Conversations
+                </Text>
                 <Button
                     variant="ghost"
                     size="sm"
                     disabled={!hasAgentSelected}
                     onClick={onNewConversation}
-                    style={{ width: "28px", height: "28px", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", color: theme.colors.muted_foreground }}
+                    style={{ 
+                        width: "24px", 
+                        height: "24px", 
+                        padding: 0, 
+                        display: "flex", 
+                        alignItems: "center", 
+                        justifyContent: "center", 
+                        color: theme.colors.primary[500],
+                        backgroundColor: theme.colors.primary[50],
+                        borderRadius: "6px",
+                        transition: "all 0.2s ease"
+                    }}
                 >
-                    <Plus size={16} />
+                    <Plus size={14} strokeWidth={3} />
                 </Button>
             </div>
 
-            <div className="hover-scrollbar" style={{ flex: 1, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column", gap: theme.spacing[2], height: "100%", paddingRight: "0px", width: "100%" }}>
+            <div 
+                className="hover-scrollbar" 
+                style={{ 
+                    flex: 1, 
+                    overflowY: "auto", 
+                    overflowX: "hidden", 
+                    display: "flex", 
+                    flexDirection: "column", 
+                    gap: "2px", 
+                    height: "100%", 
+                    padding: `0 ${theme.spacing[3]} ${theme.spacing[6]}`,
+                    width: "100%" 
+                }}
+            >
                 {!hasAgentSelected ? (
                     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
                         <Empty
@@ -96,7 +153,7 @@ export default function ConversationsPanel({
                                     display: "flex",
                                     alignItems: "center",
                                     justifyContent: "space-between",
-                                    padding: theme.spacing[1],
+                                    padding: "4px 8px",
                                     width: "100%",
                                     boxSizing: "border-box",
                                     backgroundColor: activeConversation === conv.id
@@ -104,15 +161,17 @@ export default function ConversationsPanel({
                                         : isHovered
                                             ? theme.colors.neutral[50]
                                             : "transparent",
-                                    borderRadius: theme.borderRadius.md,
+                                    borderRadius: "10px",
                                     cursor: "pointer",
-                                    transition: theme.transitions.fast,
+                                    transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
                                     position: "relative",
                                     zIndex: (isHovered || openDropdownId === conv.id) ? 10 : 1,
+                                    border: `1px solid ${activeConversation === conv.id ? theme.colors.primary[100] : "transparent"}`,
                                 }}
                                 onMouseEnter={() => setHoveredConversationId(conv.id)}
                                 onMouseLeave={() => setHoveredConversationId(null)}
                             >
+
                                 <button
                                     onClick={() => onSelectConversation(conv.id)}
                                     style={{
@@ -121,14 +180,30 @@ export default function ConversationsPanel({
                                         border: "none",
                                         cursor: "pointer",
                                         textAlign: "left",
-                                        padding: theme.spacing[2],
+                                        padding: "8px 4px",
                                         overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                        whiteSpace: "nowrap",
-                                        transition: "color 0.2s",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "4px",
+                                        transition: "transform 0.2s ease",
+                                        transform: isHovered ? "translateX(2px)" : "translateX(0)"
                                     }}
                                 >
-                                    <Text as="div" variant="body" size="xs" style={{ fontWeight: activeConversation === conv.id ? theme.typography.fontWeight.semibold : theme.typography.fontWeight.medium, margin: 0, color: activeConversation === conv.id ? theme.colors.foreground : theme.colors.muted_foreground }}>
+                                    <Text 
+                                        as="div" 
+                                        variant="body" 
+                                        size="xs" 
+                                        style={{ 
+                                            fontWeight: activeConversation === conv.id ? "650" : "500", 
+                                            margin: 0, 
+                                            color: activeConversation === conv.id ? theme.colors.primary[900] : theme.colors.neutral[700],
+                                            whiteSpace: "nowrap",
+                                            overflow: "hidden",
+                                            textOverflow: "ellipsis",
+                                            fontSize: "0.825rem",
+                                            letterSpacing: "-0.01em"
+                                        }}
+                                    >
                                         {conv.title}
                                     </Text>
                                 </button>

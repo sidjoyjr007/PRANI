@@ -1,7 +1,7 @@
 import { useNavigate, useLocation } from "react-router-dom"
 import { useTheme } from "@/context/ThemeContext"
 import { useAuth } from "@/context/AuthContext"
-import { ListTodo, Bot, Wrench, Server, Brain, LogOut, User, Settings } from "lucide-react"
+import { ListTodo, Bot, Wrench, Server, Brain, LogOut } from "lucide-react"
 import praniLogo from "@/assets/only-logo.svg"
 import { Avatar } from "@/components/ui/avatar"
 import { Dropdown, DropdownTrigger, DropdownContent, DropdownItem, DropdownSeparator } from "@/components/ui/dropdown"
@@ -142,15 +142,7 @@ export default function Layout({ children }) {
                   </Text>
                 </div>
 
-                <DropdownItem onClick={() => {}} leadingIcon={User}>
-                  Profile
-                </DropdownItem>
 
-                <DropdownItem onClick={() => {}} leadingIcon={Settings}>
-                  Settings
-                </DropdownItem>
-
-                <DropdownSeparator />
 
                 <DropdownItem
                   onClick={handleLogout}

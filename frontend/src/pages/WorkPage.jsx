@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { Toast, ToastContainer } from "@/components/ui/toast"
 import { useDispatch, useSelector } from "react-redux"
 import { useParams, useNavigate, useLocation } from "react-router-dom"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 import Layout from "@/components/Layout"
 import ConversationsPanel from "@/components/work/ConversationsPanel"
 import ChatPanel from "@/components/work/ChatPanel"
@@ -41,6 +42,8 @@ export default function WorkPage() {
   const [inputValue, setInputValue] = useState("")
   const [selectedAgentId, setSelectedAgentId] = useState("")
   const [isScrolledToBottom, setIsScrolledToBottom] = useState(true)
+  const [leftPanelOpen, setLeftPanelOpen] = useState(true)
+  const [rightPanelOpen, setRightPanelOpen] = useState(true)
 
   // Toast State
   const [toasts, setToasts] = useState([])
@@ -188,6 +191,9 @@ export default function WorkPage() {
     : agentConversations
   const activePanelConversation = sessionId || (selectedAgentId ? "new" : null)
 
+  // When no agent is selected, hide both side panels and use a centered layout
+  const isNoAgentState = !selectedAgentId && !sessionId
+
   // Map Redux messages to ChatPanel format
   const uiMessages = messages.map(m => ({
     id: m.id,
@@ -202,7 +208,7 @@ export default function WorkPage() {
 
   return (
     <Layout>
-      <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
+      <div style={{ display: "flex", height: "100%", overflow: "hidden", position: "relative" }}>
 
         <ToastContainer position="top-center">
           {toasts.map((toast) => (
@@ -216,46 +222,129 @@ export default function WorkPage() {
           ))}
         </ToastContainer>
 
-        {/* Left Panel */}
-        <ConversationsPanel
-          conversations={displayConversations}
-          activeConversation={activePanelConversation}
-          onSelectConversation={handleSelectConversation}
-          onNewConversation={handleNewConversation}
-          onDeleteConversation={handleDeleteConversation}
-          onRenameConversation={handleRenameConversation}
-          selectedAgentId={selectedAgentId}
-        />
+        {/* Left toggle button */}
+        {!isNoAgentState && (
+          <button
+            onClick={() => setLeftPanelOpen(v => !v)}
+            title={leftPanelOpen ? "Hide conversations" : "Show conversations"}
+            style={{
+              position: "absolute",
+              left: 0,
+              top: "50%",
+              transform: "translateY(-50%)",
+              zIndex: 100,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "20px",
+              height: "48px",
+              borderRadius: "0 8px 8px 0",
+              border: "1px solid #e4e8ec",
+              borderLeft: "none",
+              backgroundColor: "#ffffff",
+              cursor: "pointer",
+              color: "#8a94a0",
+              boxShadow: "2px 0 6px rgba(0,0,0,0.06)",
+              transition: "color 0.15s, background-color 0.15s",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#f2f4f7"; e.currentTarget.style.color = "#4d5661" }}
+            onMouseLeave={e => { e.currentTarget.style.backgroundColor = "#ffffff"; e.currentTarget.style.color = "#8a94a0" }}
+          >
+            {leftPanelOpen ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
+          </button>
+        )}
 
-        {/* Center Panel */}
-        <ChatPanel
-          messages={uiMessages}
-          currentPlan={currentPlan}
-          setMessages={() => { }}
-          inputValue={inputValue}
-          setInputValue={setInputValue}
-          handleSendMessage={handleSendMessage}
-          selectedAgentId={selectedAgentId}
-          setSelectedAgentId={handleAgentChange}
-          agents={agents}
-          streamingIndex={null}
-          messageActions={{}}
-          isScrolledToBottom={isScrolledToBottom}
-          setIsScrolledToBottom={setIsScrolledToBottom}
-          scrollToBottom={scrollToBottom}
-          onApprove={handleApprove}
-          onAbort={() => abortStream(sessionId)}
-          isStreaming={isStreaming}
-        />
+        {/* Left Panel — hidden when no agent selected or collapsed */}
+        {!isNoAgentState && leftPanelOpen && (
+          <ConversationsPanel
+            conversations={displayConversations}
+            activeConversation={activePanelConversation}
+            onSelectConversation={handleSelectConversation}
+            onNewConversation={handleNewConversation}
+            onDeleteConversation={handleDeleteConversation}
+            onRenameConversation={handleRenameConversation}
+            selectedAgentId={selectedAgentId}
+          />
+        )}
 
-        {/* Right Panel */}
-        <AgentDetailsPanel
-          selectedAgent={selectedAgent}
-          allTools={tools}
-          allLLMs={llms}
-          allMCPServers={mcps}
-          sessionId={sessionId}
-        />
+        {/* Center Panel — wraps chat + toggle buttons */}
+        <div style={{
+          flex: 1,
+          display: "flex",
+          overflow: "hidden",
+          position: "relative",
+          ...((!isNoAgentState && !leftPanelOpen && !rightPanelOpen) ? {
+            maxWidth: "860px",
+            margin: "0 auto",
+            width: "100%",
+          } : {}),
+        }}>
+
+          <ChatPanel
+            messages={uiMessages}
+            currentPlan={currentPlan}
+            setMessages={() => { }}
+            inputValue={inputValue}
+            setInputValue={setInputValue}
+            handleSendMessage={handleSendMessage}
+            selectedAgentId={selectedAgentId}
+            setSelectedAgentId={handleAgentChange}
+            agents={agents}
+            streamingIndex={null}
+            messageActions={{}}
+            isScrolledToBottom={isScrolledToBottom}
+            setIsScrolledToBottom={setIsScrolledToBottom}
+            scrollToBottom={scrollToBottom}
+            onApprove={handleApprove}
+            onAbort={() => abortStream(sessionId)}
+            isStreaming={isStreaming}
+            isCenteredMode={isNoAgentState}
+          />
+
+        </div>
+
+        {/* Right toggle button */}
+        {!isNoAgentState && (
+          <button
+            onClick={() => setRightPanelOpen(v => !v)}
+            title={rightPanelOpen ? "Hide details" : "Show details"}
+            style={{
+              position: "absolute",
+              right: 0,
+              top: "50%",
+              transform: "translateY(-50%)",
+              zIndex: 100,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "20px",
+              height: "48px",
+              borderRadius: "8px 0 0 8px",
+              border: "1px solid #e4e8ec",
+              borderRight: "none",
+              backgroundColor: "#ffffff",
+              cursor: "pointer",
+              color: "#8a94a0",
+              boxShadow: "-2px 0 6px rgba(0,0,0,0.06)",
+              transition: "color 0.15s, background-color 0.15s",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#f2f4f7"; e.currentTarget.style.color = "#4d5661" }}
+            onMouseLeave={e => { e.currentTarget.style.backgroundColor = "#ffffff"; e.currentTarget.style.color = "#8a94a0" }}
+          >
+            {rightPanelOpen ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
+          </button>
+        )}
+
+        {/* Right Panel — hidden when no agent selected or collapsed */}
+        {!isNoAgentState && rightPanelOpen && (
+          <AgentDetailsPanel
+            selectedAgent={selectedAgent}
+            allTools={tools}
+            allLLMs={llms}
+            allMCPServers={mcps}
+            sessionId={sessionId}
+          />
+        )}
 
       </div>
     </Layout>

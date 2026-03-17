@@ -6,9 +6,10 @@ import { Text } from "@/components/ui/text"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Logs, MousePointerClick, AlertCircle } from "lucide-react"
+import { Logs, MousePointerClick, AlertCircle, Wrench, Server, Zap, Box, Info, Layout, Brain } from "lucide-react"
 import { Empty } from "@/components/ui/empty"
-import { HoverCardContent } from "@/components/ui/hover-card"
+import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card"
+import { StackedList, StackedListItem, StackedListSection } from "@/components/ui/stacked-list"
 
 export default function AgentDetailsPanel({ selectedAgent, allTools = [], allLLMs = [], allMCPServers = [], sessionId = null }) {
     const theme = useTheme()
@@ -39,9 +40,10 @@ export default function AgentDetailsPanel({ selectedAgent, allTools = [], allLLM
             <div
                 style={{
                     width: "400px",
-                    borderLeft: `${theme.borderWidth.sm} solid ${theme.colors.border}`,
-                    backgroundColor: theme.colors.card,
-                    padding: theme.spacing[6],
+                    borderLeft: `1px solid ${theme.colors.neutral[100]}`,
+                    backgroundColor: theme.colors.card || "#ffffff",
+                    position: "relative",
+                    zIndex: 1,
                     display: "flex",
                     flexDirection: "column",
                     alignItems: "center",
@@ -49,6 +51,17 @@ export default function AgentDetailsPanel({ selectedAgent, allTools = [], allLLM
                     height: "100%",
                 }}
             >
+                {/* Subtle Gradient Overlay */}
+                <div style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: `linear-gradient(180deg, rgba(255,255,255,0) 0%, ${theme.colors.neutral[50]}44 100%)`,
+                    pointerEvents: "none",
+                    zIndex: -1
+                }} />
                 <Empty
                     icon={MousePointerClick}
                     title="No Agent Selected"
@@ -62,155 +75,129 @@ export default function AgentDetailsPanel({ selectedAgent, allTools = [], allLLM
     return (
         <div
             style={{
-                width: "400px",
-                borderLeft: `${theme.borderWidth.sm} solid ${theme.colors.border}`,
-                backgroundColor: theme.colors.card,
-                padding: theme.spacing[6],
-                overflowY: "auto",
+                width: "300px",
+                borderLeft: `1px solid ${theme.colors.neutral[100]}`,
+                backgroundColor: theme.colors.card || "#ffffff",
+                position: "relative",
+                zIndex: 1,
                 display: "flex",
                 flexDirection: "column",
+                height: "100%",
             }}
         >
-            <Tabs value={rightPanelTab} onValueChange={setRightPanelTab} variant="badge" style={{ display: "flex", flexDirection: "column", flex: 1 }}>
-                <TabsList style={{ width: "100%", marginBottom: theme.spacing[6], gap: theme.spacing[4], display: "flex", overflowX: "auto" }}>
-                    <TabsTrigger value="tools" badge={String(agentTools.length + agentMCPServers.length)}>Tools & MCP</TabsTrigger>
-                    <TabsTrigger value="capabilities" badge={String(selectedAgent.capabilities?.length || 0)}>Capabilities</TabsTrigger>
-                </TabsList>
+            {/* Subtle Gradient Overlay */}
+            <div style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: `linear-gradient(180deg, rgba(255,255,255,0) 0%, ${theme.colors.neutral[50]}44 100%)`,
+                pointerEvents: "none",
+                zIndex: -1
+            }} />
 
-                <TabsContent value="tools" style={{ flex: 1 }}>
-                    <div style={{ display: "flex", flexDirection: "column", gap: theme.spacing[6] }}>
-                        {/* Tools Section */}
-                        <div>
-                            <Text as="label" variant="helper" size="xs" style={{ display: "block", marginBottom: theme.spacing[3], textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: "600", color: theme.colors.muted_foreground }}>
-                                Tools
-                            </Text>
-                            {agentTools.length > 0 ? (
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: theme.spacing[2] }}>
-                                    {agentTools.map((tool, idx) => (
-                                        <div key={idx} style={{ display: "flex" }}>
-                                            {tool.sync_status === "FAILED" ? (
-                                                <HoverCardContent
-                                                    side="bottom"
-                                                    style={{
-                                                        width: "280px",
-                                                        padding: theme.spacing[3],
-                                                        backgroundColor: theme.colors.card,
-                                                        border: `1px solid ${theme.colors.destructive[200]}`,
-                                                        boxShadow: `0 4px 12px ${theme.colors.destructive[900]}1a`
-                                                    }}
-                                                >
-                                                    <div style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "help" }}>
-                                                        <Badge variant="outline" color="secondary" pill>
-                                                            {tool.name}
-                                                        </Badge>
-                                                        <AlertCircle size={16} style={{ color: theme.colors.destructive[500] }} />
-                                                    </div>
-                                                    <div style={{ display: "flex", flexDirection: "column", gap: theme.spacing[3] }}>
-                                                        <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[2], color: theme.colors.destructive[600] }}>
-                                                            <AlertCircle size={16} />
-                                                            <Text size="sm" as="span" style={{ fontWeight: 600, color: "inherit", margin: 0 }}>Sync Failed</Text>
-                                                        </div>
-                                                        <div style={{ backgroundColor: theme.colors.destructive[50], padding: theme.spacing[2], borderRadius: theme.borderRadius.sm, border: `1px solid ${theme.colors.destructive[100]}` }}>
-                                                            <Text size="xs" as="p" style={{ color: theme.colors.destructive[800], fontFamily: "monospace", wordBreak: "break-word", margin: 0 }}>
-                                                                {tool.sync_error || "Unknown failure"}
-                                                            </Text>
-                                                        </div>
-                                                        <Text size="xs" as="p" style={{ color: theme.colors.muted_foreground, margin: 0 }}>
-                                                            Go to the Custom Tools page and click 'Retry Sync' to fix this issue.
-                                                        </Text>
-                                                    </div>
-                                                </HoverCardContent>
-                                            ) : (
-                                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                                    <Badge variant="outline" color="secondary" pill>
-                                                        {tool.name}
-                                                    </Badge>
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <Text as="p" variant="muted" size="sm">No tools assigned.</Text>
-                            )}
-                        </div>
-
-                        {/* MCP Servers Section */}
-                        <div>
-                            <Text as="label" variant="helper" size="xs" style={{ display: "block", marginBottom: theme.spacing[3], textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: "600", color: theme.colors.muted_foreground }}>
-                                MCP Servers
-                            </Text>
-                            {agentMCPServers.length > 0 ? (
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: theme.spacing[2] }}>
-                                    {agentMCPServers.map((server, idx) => (
-                                        <div key={idx} style={{ display: "flex" }}>
-                                            {server.sync_status === "FAILED" ? (
-                                                <HoverCardContent
-                                                    side="bottom"
-                                                    style={{
-                                                        width: "280px",
-                                                        padding: theme.spacing[3],
-                                                        backgroundColor: theme.colors.card,
-                                                        border: `1px solid ${theme.colors.destructive[200]}`,
-                                                        boxShadow: `0 4px 12px ${theme.colors.destructive[900]}1a`
-                                                    }}
-                                                >
-                                                    <div style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "help" }}>
-                                                        <Badge variant="outline" color="primary" pill>
-                                                            {server.name}
-                                                        </Badge>
-                                                        <AlertCircle size={16} style={{ color: theme.colors.destructive[500] }} />
-                                                    </div>
-                                                    <div style={{ display: "flex", flexDirection: "column", gap: theme.spacing[3] }}>
-                                                        <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[2], color: theme.colors.destructive[600] }}>
-                                                            <AlertCircle size={16} />
-                                                            <Text size="sm" as="span" style={{ fontWeight: 600, color: "inherit", margin: 0 }}>Sync Failed</Text>
-                                                        </div>
-                                                        <div style={{ backgroundColor: theme.colors.destructive[50], padding: theme.spacing[2], borderRadius: theme.borderRadius.sm, border: `1px solid ${theme.colors.destructive[100]}` }}>
-                                                            <Text size="xs" as="p" style={{ color: theme.colors.destructive[800], fontFamily: "monospace", wordBreak: "break-word", margin: 0 }}>
-                                                                {server.sync_error || "Unknown failure"}
-                                                            </Text>
-                                                        </div>
-                                                        <Text size="xs" as="p" style={{ color: theme.colors.muted_foreground, margin: 0 }}>
-                                                            Go to the MCP Servers page and click 'Retry Sync' to fix this issue.
-                                                        </Text>
-                                                    </div>
-                                                </HoverCardContent>
-                                            ) : (
-                                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                                    <Badge variant="outline" color="primary" pill>
-                                                        {server.name}
-                                                    </Badge>
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <Text as="p" variant="muted" size="sm">No MCP servers assigned.</Text>
-                            )}
-                        </div>
-                    </div>
-                </TabsContent>
-
-                <TabsContent value="capabilities" style={{ flex: 1 }}>
-                    <Text as="label" variant="helper" size="xs" style={{ display: "block", marginBottom: theme.spacing[3], textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: "600", color: theme.colors.muted_foreground }}>
-                        Agent Capabilities
+            <div 
+                className="hover-scrollbar"
+                style={{ 
+                    padding: theme.spacing[4], 
+                    flex: 1, 
+                    display: "flex", 
+                    flexDirection: "column",
+                    overflowY: "auto"
+                }}
+            >
+                <div style={{ 
+                    padding: `${theme.spacing[2]} ${theme.spacing[2]} ${theme.spacing[4]}`,
+                    display: "flex", 
+                    alignItems: "center", 
+                    gap: theme.spacing[2],
+                    marginBottom: theme.spacing[2]
+                }}>
+                    <Info size={16} style={{ color: theme.colors.neutral[500] }} />
+                    <Text 
+                        as="label" 
+                        variant="label" 
+                        size="sm" 
+                        style={{ 
+                            margin: 0, 
+                            textTransform: "uppercase", 
+                            letterSpacing: "0.1em", 
+                            fontWeight: "900", 
+                            color: theme.colors.neutral[600],
+                            fontSize: "0.75rem"
+                        }}
+                    >
+                        Agent Overview
                     </Text>
-                    {selectedAgent.capabilities && selectedAgent.capabilities.length > 0 ? (
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: theme.spacing[2] }}>
-                            {selectedAgent.capabilities.map((cap, idx) => (
-                                <Badge key={idx} variant="outline" color="secondary" pill>
-                                    {cap}
-                                </Badge>
-                            ))}
-                        </div>
-                    ) : (
-                        <Text as="p" variant="muted" size="sm">No specific capabilities listed.</Text>
-                    )}
-                </TabsContent>
-            </Tabs>
+                </div>
 
+                <StackedList variant="flat" style={{ backgroundColor: "transparent", border: "none", boxShadow: "none" }}>
+                    <StackedListSection title="Model Config">
+                        <StackedListItem 
+                            title="LLM" 
+                            description={llmName}
+                            trailing={<Brain size={14} />}
+                            size="sm"
+                        />
+                    </StackedListSection>
+
+                    {/* Tools Section */}
+                    <StackedListSection title={`Tools (${agentTools.length})`}>
+                        {agentTools.length > 0 ? (
+                            agentTools.map((tool, idx) => (
+                                <StackedListItem
+                                    key={idx}
+                                    title={tool.name}
+                                    description={tool.description || "Custom Python executable tool"}
+                                    trailing={
+                                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                            {tool.sync_status === "FAILED" && (
+                                                <HoverCard openDelay={0} closeDelay={0}>
+                                                    <HoverCardTrigger asChild>
+                                                        <AlertCircle size={14} style={{ color: theme.colors.destructive[500], cursor: "help" }} />
+                                                    </HoverCardTrigger>
+                                                    <HoverCardContent side="left" style={{ width: "240px", fontSize: "12px", padding: "12px" }}>
+                                                        <Text variant="body" size="xs" style={{ color: theme.colors.destructive[700], fontWeight: "600", marginBottom: "4px" }}>Sync Error</Text>
+                                                        <Text variant="muted" size="xs">{tool.sync_error || "Unknown synchronization error"}</Text>
+                                                    </HoverCardContent>
+                                                </HoverCard>
+                                            )}
+                                            <Wrench size={14} />
+                                        </div>
+                                    }
+                                    size="sm"
+                                    divider={idx !== agentTools.length - 1}
+                                />
+                            ))
+                        ) : (
+                            <div style={{ padding: "12px 20px" }}>
+                                <Text variant="muted" size="xs">No tools assigned.</Text>
+                            </div>
+                        )}
+                    </StackedListSection>
+
+                    {/* MCP Servers Section */}
+                    <StackedListSection title={`MCP Servers (${agentMCPServers.length})`}>
+                        {agentMCPServers.length > 0 ? (
+                            agentMCPServers.map((server, idx) => (
+                                <StackedListItem
+                                    key={idx}
+                                    title={server.name}
+                                    description={server.type || "MCP server integration"}
+                                    trailing={<Server size={14} />}
+                                    size="sm"
+                                    divider={idx !== agentMCPServers.length - 1}
+                                />
+                            ))
+                        ) : (
+                            <div style={{ padding: "12px 20px" }}>
+                                <Text variant="muted" size="xs">No MCP servers assigned.</Text>
+                            </div>
+                        )}
+                    </StackedListSection>
+                </StackedList>
+            </div>
         </div>
     )
 }

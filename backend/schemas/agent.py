@@ -6,7 +6,6 @@ from datetime import datetime
 class AgentBase(BaseModel):
     name: str = Field(..., min_length=3, max_length=100, pattern=r"^[A-Za-z0-9 _-]+$")
     instructions: Optional[str] = None
-    capabilities: List[str] = []
     tool_ids: List[UUID] = []
     mcp_server_ids: List[UUID] = []
     llm_id: Optional[UUID] = None
@@ -22,11 +21,6 @@ class AgentBase(BaseModel):
                 raise ValueError("Instructions cannot exceed 250 words.")
         return v
 
-    @field_validator('capabilities', mode='before')
-    @classmethod
-    def parse_capabilities(cls, v: Any) -> List[str]:
-        if isinstance(v, str):
-            return [s.strip() for s in v.split(',') if s.strip()]
         return v
 
 class AgentCreate(AgentBase):
@@ -35,7 +29,6 @@ class AgentCreate(AgentBase):
 class AgentUpdate(BaseModel):
     name: Optional[str] = None
     instructions: Optional[str] = None
-    capabilities: Optional[List[str]] = None
     tool_ids: Optional[List[UUID]] = None
     mcp_server_ids: Optional[List[UUID]] = None
     llm_id: Optional[UUID] = None
@@ -46,6 +39,11 @@ class AgentResponse(AgentBase):
     id: UUID
     created_at: datetime
     updated_at: datetime
+    
+    # Names for frontend display
+    tool_names: List[str] = []
+    mcp_server_names: List[str] = []
+    llm_name: Optional[str] = None
 
     class Config:
         from_attributes = True

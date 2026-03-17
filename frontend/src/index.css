@@ -254,8 +254,17 @@ html {
 }
 
 /* Scrollbar on hover only for specific elements */
+.hover-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.hover-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 .hover-scrollbar::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0);
+  background-color: transparent;
 }
 
 .hover-scrollbar:hover::-webkit-scrollbar-thumb {
