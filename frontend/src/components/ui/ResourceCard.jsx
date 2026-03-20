@@ -39,28 +39,18 @@ export default function ResourceCard({
         flex: 1,
         height: "100%",
         padding: 0,
+        cursor: onClick ? "pointer" : "default",
         ...style,
       }}
       onClick={onClick}
+
+
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       className={cn("group", className)}
       {...props}
     >
-      {/* Dynamic Glow Effect */}
-      <div style={{
-        position: "absolute",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: `radial-gradient(1200px circle at ${isHovered ? "50% 50%" : "50% -50%"}, ${activeAccent}08, transparent)`,
-        opacity: isHovered ? 1 : 0,
-        transition: "opacity 0.5s ease",
-        pointerEvents: "none",
-        zIndex: -1,
-        borderRadius: "inherit"
-      }} />
+
 
       {/* Floating Action Bar */}
       <div

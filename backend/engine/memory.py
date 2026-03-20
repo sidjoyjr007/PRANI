@@ -1,10 +1,11 @@
+from __future__ import annotations
 import logging
 import asyncio
 import os
 from utils.llm_token import estimate_tokens
 
 logger = logging.getLogger(__name__)
-from typing import List, Optional, Any
+from typing import List, Optional, Any, TYPE_CHECKING
 import uuid
 import json
 from uuid import UUID
@@ -16,21 +17,24 @@ from sqlalchemy import desc
 from llm.types import ProviderMessage
 from schemas.conversation import MessageCreate
 from models.conversation import Message, Conversation
-from models.agent import Agent
 from services.conversation_service import ConversationService
 from engine.prompts import get_compression_prompt
 from utils.cache import MessageCache
+
+if TYPE_CHECKING:
+    from models.agent import Agent
 
 class ContextManager:
     """
     Manages the 'Active Context' window for the LLM using token awareness.
     """
     
-    def __init__(self, db: Session, session_id: UUID, agent: Agent, user_id: UUID):
+    def __init__(self, db: Session, session_id: UUID, agent: Agent, user_id: UUID, run_id: Optional[UUID] = None):
         self.db = db
         self.session_id = session_id
         self.agent = agent
         self.user_id = user_id
+        self.run_id = run_id
         self.conversation_service = ConversationService(db)
         
         # Context Pressure Configuration
@@ -50,11 +54,31 @@ class ContextManager:
             
         return estimate_tokens(msg.role) + estimate_tokens(msg.content) + 4
 
-    async def _get_db_messages(self, force_refresh=False) -> List[Message]:
+    async def _get_db_messages(self, force_refresh=False) -> List[Any]:
         if not force_refresh and self._db_messages_cache is not None:
             return self._db_messages_cache
             
-        # 1. Try Redis Cache first
+        # 1. Isolated Run Storage
+        if self.run_id:
+            from models.deployment_run import DeploymentRun
+            run = self.db.query(DeploymentRun).filter(DeploymentRun.id == self.run_id).first()
+            if not run or not run.messages:
+                return []
+            
+            # Convert JSON dicts back to transient Message-like objects for the context builder
+            from models.conversation import Message
+            messages = []
+            for m in run.messages:
+                messages.append(Message(
+                    role=m["role"],
+                    content=m["content"],
+                    tokens=m.get("tokens"),
+                    created_at=datetime.fromisoformat(m["created_at"]) if m.get("created_at") else datetime.now()
+                ))
+            self._db_messages_cache = messages
+            return messages
+
+        # 2. Try Redis Cache first (for conversations)
         if not force_refresh:
             cached_data = await self.cache.get_messages(self.session_id)
             if cached_data:
@@ -230,23 +254,48 @@ class ContextManager:
         if thoughts: rich_content["thoughts"] = thoughts
         if status: rich_content["status"] = status
         
-        # Add display flag (defaults to True)
-        rich_content["display"] = display
-
-        msg_data = MessageCreate(role=role, content=rich_content)
-        
-        # Run DB persist in background thread
-        new_msg = await asyncio.to_thread(self.conversation_service.add_message, self.session_id, msg_data, user_id=self.user_id)
+        # Dispatch persistence
+        if self.run_id:
+            from models.deployment_run import DeploymentRun
+            run = self.db.query(DeploymentRun).filter(DeploymentRun.id == self.run_id).first()
+            if run:
+                current_msgs = run.messages or []
+                msg_json = {
+                    "role": role,
+                    "content": rich_content,
+                    "tokens": self._calculate_tokens(role, rich_content),
+                    "created_at": datetime.now().isoformat()
+                }
+                current_msgs.append(msg_json)
+                run.messages = current_msgs
+                self.db.commit()
+                
+                # Create a transient message object for local processing
+                from models.conversation import Message
+                new_msg = Message(
+                    role=role,
+                    content=rich_content,
+                    tokens=msg_json["tokens"],
+                    created_at=datetime.now()
+                )
+        else:
+            # Standard conversation persistence
+            msg_data = MessageCreate(role=role, content=rich_content)
+            new_msg = await asyncio.to_thread(self.conversation_service.add_message, self.session_id, msg_data, user_id=self.user_id)
         
         if new_msg:
             # Update local cache
             if self._db_messages_cache is not None:
                 self._db_messages_cache.append(new_msg)
             
-            # Update Redis cache
-            asyncio.create_task(self.cache.add_message(self.session_id, new_msg))
+            # Update Redis cache (only for non-run sessions)
+            if not self.run_id:
+                asyncio.create_task(self.cache.add_message(self.session_id, new_msg))
             
         return new_msg
+
+    def _calculate_tokens(self, role: str, content: Any) -> int:
+        return estimate_tokens(role) + estimate_tokens(content)
 
     async def compact_history(self, llm_provider: Any):
         """

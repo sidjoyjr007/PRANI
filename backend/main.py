@@ -14,7 +14,7 @@ from config.logger import setup_logging
 setup_logging()
 
 # Import all models so SQLAlchemy's `create_all` discovers them
-import models.agent_log  # noqa: F401
+import models
 
 # Create tables
 Base.metadata.create_all(bind=engine)

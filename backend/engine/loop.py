@@ -28,7 +28,8 @@ class AgenticLoop:
         llm_provider, 
         event_bus: EventBus,
         user_id: uuid.UUID,
-        workspace_state: Optional[Dict[str, Any]] = None
+        workspace_state: Optional[Dict[str, Any]] = None,
+        run_id: Optional[str] = None
     ):
         self.agent = agent
         self.session_id = session_id
@@ -36,9 +37,9 @@ class AgenticLoop:
         self.user_id = user_id
         self.llm = llm_provider
         self.bus = event_bus
-        self.run_id = str(uuid.uuid4())
+        self.run_id = run_id or str(uuid.uuid4())
         
-        self.memory = ContextManager(db, uuid.UUID(session_id), agent, user_id)
+        self.memory = ContextManager(db, uuid.UUID(session_id), agent, user_id, run_id=uuid.UUID(self.run_id) if self.run_id else None)
         self.tool_registry = ToolRegistry(db)
         self.workspace_planner = WorkspacePlanner()
         if workspace_state: self.workspace_planner.from_dict(workspace_state)

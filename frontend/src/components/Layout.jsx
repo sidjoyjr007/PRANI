@@ -1,7 +1,7 @@
 import { useNavigate, useLocation } from "react-router-dom"
 import { useTheme } from "@/context/ThemeContext"
 import { useAuth } from "@/context/AuthContext"
-import { ListTodo, Bot, Wrench, Server, Brain, LogOut } from "lucide-react"
+import { ListTodo, Bot, Wrench, Server, Brain, LogOut, Rocket } from "lucide-react"
 import praniLogo from "@/assets/only-logo.svg"
 import { Avatar } from "@/components/ui/avatar"
 import { Dropdown, DropdownTrigger, DropdownContent, DropdownItem, DropdownSeparator } from "@/components/ui/dropdown"
@@ -21,6 +21,7 @@ export default function Layout({ children }) {
     { id: "tools", icon: Wrench, label: "Tools", route: "/tools" },
     { id: "mcp", icon: Server, label: "MCP", route: "/mcp-servers" },
     { id: "llm", icon: Brain, label: "LLM", route: "/llms" },
+    { id: "deployments", icon: Rocket, label: "Deployments", route: "/deployments" },
   ]
 
   const handleLogout = async () => {

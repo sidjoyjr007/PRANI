@@ -14,6 +14,8 @@ const SelectContext = React.createContext({
   isOpen: false, 
   handleOpenChange: () => {}, 
   handleValueChange: () => {},
+  registerLabel: () => {},
+  labels: {},
   variant: "default",
   size: "md",
 })
@@ -29,6 +31,7 @@ const Select = React.forwardRef(({
 }, ref) => {
   const [isOpen, setIsOpen] = React.useState(false)
   const [selectedValue, setSelectedValue] = React.useState(value)
+  const [labels, setLabels] = React.useState({})
 
   const handleOpenChange = (newOpen) => setIsOpen(newOpen)
   
@@ -37,6 +40,20 @@ const Select = React.forwardRef(({
     onValueChange?.(newValue)
     setIsOpen(false)
   }
+
+  const registerLabel = React.useCallback((val, label) => {
+    setLabels(prev => {
+      if (prev[val] === label) return prev
+      return { ...prev, [val]: label }
+    })
+  }, [])
+
+  // Sync internal selectedValue with prop value
+  React.useEffect(() => {
+    if (value !== undefined) {
+      setSelectedValue(value)
+    }
+  }, [value])
 
   // Close on escape
   React.useEffect(() => {
@@ -55,10 +72,12 @@ const Select = React.forwardRef(({
       isOpen, 
       handleOpenChange, 
       handleValueChange,
+      registerLabel,
+      labels,
       variant,
       size,
     }}>
-      <div ref={ref} style={{ position: "relative", width: "100%" }} className={className} {...props}>
+      <div ref={ref} style={{ position: "relative", width: "100%" }} className={cn("select-container", className)} {...props}>
         {children}
       </div>
     </SelectContext.Provider>
@@ -75,9 +94,10 @@ const SelectGroup = React.forwardRef(({ className, label, children, ...props }, 
 SelectGroup.displayName = "SelectGroup"
 
 const SelectValue = ({ placeholder = "Select..." }) => {
-  const { value } = React.useContext(SelectContext)
-  return value || placeholder
+  const { value, labels } = React.useContext(SelectContext)
+  return labels[value] || placeholder
 }
+
 
 
 const SelectTrigger = React.forwardRef(({ 
@@ -266,9 +286,17 @@ const SelectItem = React.forwardRef(({
   ...props 
 }, ref) => {
   const theme = useTheme()
-  const { value: selectedValue, handleValueChange } = React.useContext(SelectContext)
+  const { value: selectedValue, handleValueChange, registerLabel } = React.useContext(SelectContext)
   const isSelected = selectedValue === value
   const [isHovering, setIsHovering] = React.useState(false)
+
+  React.useEffect(() => {
+    if (value !== undefined && children) {
+      // Simple text extraction from children if it's a string, otherwise use value
+      const label = typeof children === 'string' ? children : String(children)
+      registerLabel(value, label)
+    }
+  }, [value, children, registerLabel])
 
   const statusColors = {
     online: theme.colors.success[500],

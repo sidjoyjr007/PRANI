@@ -5,7 +5,7 @@ import { useDispatch } from "react-redux"
 import DeleteResourceDialog from "@/components/DeleteResourceDialog"
 import { deleteAgent } from "@/store/slices/agentSlice"
 import ResourceCard from "@/components/ui/ResourceCard"
-import { Bot, Trash2, MessageSquare, Wrench, Server, Brain } from "lucide-react"
+import { Bot, Trash2, MessageSquare, Wrench, Server, Brain, Rocket } from "lucide-react"
 
 export default function AgentCard({ agent, addToast }) {
   const theme = useTheme()
@@ -87,7 +87,19 @@ export default function AgentCard({ agent, addToast }) {
       icon: MessageSquare,
       title: "Chat with Agent",
       color: theme.colors.primary[600],
-      onClick: (e) => navigate("/work", { state: { agentId: agent.id } })
+      onClick: (e) => {
+        e.stopPropagation();
+        navigate("/work", { state: { agentId: agent.id } });
+      }
+    },
+    {
+      icon: Rocket,
+      title: "Deploy Agent",
+      color: theme.colors.secondary[600],
+      onClick: (e) => {
+        e.stopPropagation();
+        navigate("/create-deployment", { state: { agentId: agent.id } });
+      }
     },
     {
       icon: Trash2,

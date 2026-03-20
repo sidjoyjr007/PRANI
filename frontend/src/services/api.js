@@ -66,6 +66,8 @@ export const authAPI = {
     apiClient.post("/auth/reset-password", { token, new_password: newPassword }),
 
   refreshToken: () => apiClient.post("/auth/refresh"),
+  getApiKey: () => apiClient.get("/auth/api-key"),
+  rotateApiKey: () => apiClient.post("/auth/api-key/rotate"),
 }
 
 export default apiClient

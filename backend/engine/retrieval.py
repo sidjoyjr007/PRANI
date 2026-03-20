@@ -28,15 +28,21 @@ class RetrievalSystem:
             self.chroma_url = os.getenv("CHROMA_URL", "http://localhost:8100")
         
         self.collection_name = collection_name
+        # Always initialize collection to None so attribute access never raises AttributeError
+        self.collection = None
+        self.client = None
 
     def _ensure_connected(self):
         """Lazily connect to ChromaDB only when needed."""
-        if RetrievalSystem._connected:
+        if RetrievalSystem._connected and RetrievalSystem._collection is not None:
             self.client = RetrievalSystem._client
             self.collection = RetrievalSystem._collection
             return
         
-        RetrievalSystem._connected = True 
+        # Don't re-attempt if already tried and failed (collection stays None)
+        if RetrievalSystem._connected and RetrievalSystem._collection is None:
+            return
+
         try:
             clean_url = self.chroma_url.replace("http://", "").replace("https://", "")
             if ":" in clean_url:
@@ -61,11 +67,16 @@ class RetrievalSystem:
             
             self.client = RetrievalSystem._client
             self.collection = RetrievalSystem._collection
+            RetrievalSystem._connected = True  # Only mark connected on success
             logger.info(f"Connected to ChromaDB at {self.chroma_url}, Collection: {self.collection_name}")
             
         except Exception as e:
             logger.error(f"Failed to connect to ChromaDB: {e}. Retrieval will be disabled.")
+            # Mark as "attempted" so we don't keep retrying
+            RetrievalSystem._connected = True
+            RetrievalSystem._collection = None
             self.client = None
+            self.collection = None
 
     def index_tools(self, tools: List[Dict[str, Any]]):
         """

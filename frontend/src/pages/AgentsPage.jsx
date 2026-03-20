@@ -196,7 +196,12 @@ export default function AgentsPage() {
               items={agents}
               columns={3}
               gap={6}
-              renderCard={(agent) => <AgentCard agent={agent} addToast={addToast} />}
+              renderCard={(agent) => (
+                <AgentCard 
+                    agent={agent} 
+                    addToast={addToast} 
+                />
+              )}
             />
 
             {/* Pagination */}

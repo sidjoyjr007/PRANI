@@ -70,6 +70,7 @@ const RadioGroupItem = React.forwardRef(({
   label,
   description,
   radioPosition = "left",
+  hideRadio = false,
   ...props 
 }, ref) => {
   const theme = useTheme()
@@ -173,16 +174,18 @@ const RadioGroupItem = React.forwardRef(({
       className={cn(className)}
       {...props}
     >
-      <div style={radioStyle}>
-        {isSelected && (
-          <div style={{
-            width: "6px",
-            height: "6px",
-            borderRadius: "50%",
-            backgroundColor: theme.colors.card,
-          }} />
-        )}
-      </div>
+      {!hideRadio && (
+        <div style={radioStyle}>
+          {isSelected && (
+            <div style={{
+              width: "6px",
+              height: "6px",
+              borderRadius: "50%",
+              backgroundColor: theme.colors.card,
+            }} />
+          )}
+        </div>
+      )}
 
       {label && (
         <div style={{ flex: 1 }}>

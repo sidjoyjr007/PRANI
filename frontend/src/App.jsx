@@ -20,6 +20,9 @@ import LLMsPage from './pages/LLMsPage'
 import CreateLLMPage from './pages/CreateLLMPage'
 import LLMTestPage from './pages/LLMTestPage'
 import LogsPage from './pages/LogsPage'
+import DeploymentsPage from './pages/DeploymentsPage'
+import DeploymentRunsPage from './pages/DeploymentRunsPage'
+import CreateDeploymentPage from './pages/CreateDeploymentPage'
 import ComponentShowcase from './pages/ComponentShowcase'
 import NotFoundPage from './pages/NotFoundPage'
 import { ProtectedRoute, PublicRoute } from './components/ProtectedRoute'
@@ -40,6 +43,10 @@ function App() {
         <Route path="/agents" element={<ProtectedRoute><AgentsPage /></ProtectedRoute>} />
         <Route path="/create-agent" element={<ProtectedRoute><CreateAgentPage /></ProtectedRoute>} />
         <Route path="/edit-agent/:agentId" element={<ProtectedRoute><CreateAgentPage /></ProtectedRoute>} />
+        <Route path="/deployments" element={<ProtectedRoute><DeploymentsPage /></ProtectedRoute>} />
+        <Route path="/deployments/:deploymentId/runs" element={<ProtectedRoute><DeploymentRunsPage /></ProtectedRoute>} />
+        <Route path="/create-deployment" element={<ProtectedRoute><CreateDeploymentPage /></ProtectedRoute>} />
+        <Route path="/edit-deployment/:deploymentId" element={<ProtectedRoute><CreateDeploymentPage /></ProtectedRoute>} />
         <Route path="/tools" element={<ProtectedRoute><ToolsPage /></ProtectedRoute>} />
         <Route path="/test-tool/:toolId" element={<ProtectedRoute><ToolTestPage /></ProtectedRoute>} />
         <Route path="/create-tool" element={<ProtectedRoute><CreateToolPage /></ProtectedRoute>} />

@@ -45,6 +45,15 @@ const getCardStyles = (variant, theme) => {
       borderStyle: "solid",
       boxShadow: `inset 0 2px 4px 0 ${theme.colors.shadow}10`,
     },
+    glass: {
+      backgroundColor: "rgba(17, 24, 39, 0.4)",
+      backdropFilter: "blur(20px)",
+      WebkitBackdropFilter: "blur(20px)",
+      borderColor: "rgba(255, 255, 255, 0.05)",
+      borderWidth: "1px",
+      borderStyle: "solid",
+      boxShadow: "0 10px 40px rgba(0, 0, 0, 0.3)",
+    },
   }
   return styles[variant] || styles.default
 }

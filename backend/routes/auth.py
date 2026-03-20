@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from sqlalchemy.orm import Session
+import secrets
+import hashlib
 from config.database import get_db
 from config.settings import settings
 from schemas.user import (
@@ -294,4 +296,25 @@ def verify_email_dev(email: str, db: Session = Depends(get_db)):
     return {
         "message": "Email verified successfully (dev mode)",
         "user": UserResponse.from_orm(user),
+    }
+
+@router.get("/api-key", response_model=dict)
+def get_api_key_status(current_user: User = Depends(get_current_user)):
+    """Check if the user has an API key set"""
+    return {
+        "has_api_key": current_user.api_key_hash is not None
+    }
+
+@router.post("/api-key/rotate", response_model=dict)
+def rotate_api_key(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Generate a new API key for the user"""
+    api_key = secrets.token_urlsafe(32)
+    api_key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+    
+    current_user.api_key_hash = api_key_hash
+    db.commit()
+    
+    return {
+        "api_key": api_key,
+        "message": "New API key generated. Please save it now, it will not be shown again."
     }
