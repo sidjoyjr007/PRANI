@@ -85,7 +85,7 @@ export default function MCPServerCard({ server, addToast }) {
   }
 
   return (
-    <>
+    <div key={server.id}>
       <ResourceCard
         title={server.name}
         subtitle={server.url?.toLowerCase()}
@@ -103,6 +103,6 @@ export default function MCPServerCard({ server, addToast }) {
         resourceName={server.name}
         confirmationKeyword="DELETE"
       />
-    </>
+    </div>
   )
 }

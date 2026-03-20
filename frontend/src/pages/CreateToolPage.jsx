@@ -15,7 +15,7 @@ import { Chips } from "@/components/ui/chips"
 import { Combobox, ComboboxTrigger, ComboboxContent, ComboboxItem, ComboboxSearch } from "@/components/ui/combobox"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { Dialog, DialogTrigger, DialogPortal, DialogOverlay, DialogContent, DialogClose } from "@/components/ui/dialog"
-import { ChevronLeft, Check, Plus, Trash2, Eye, EyeOff, Settings, X, Globe, Lock } from "lucide-react"
+import { ChevronLeft, Check, Plus, Trash2, Eye, EyeOff, Settings, X, Globe, Lock, Info } from "lucide-react"
 import { toolService } from "@/services/toolService"
 import { useDispatch, useSelector } from "react-redux"
 import { fetchToolById, createTool, updateTool, clearCurrentTool } from "@/store/slices/toolSlice"
@@ -364,7 +364,72 @@ export default function CreateToolPage() {
         ))}
       </ToastContainer>
 
-      <Container>
+      {/* Action-Centric Sticky Header */}
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 40,
+          backgroundColor: `${theme.colors.card}f2`,
+          backdropFilter: "blur(12px)",
+          borderBottom: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
+          padding: `${theme.spacing[3]} 0`,
+          width: "100%",
+        }}
+      >
+        <div style={{
+          maxWidth: "1280px",
+          margin: "0 auto",
+          padding: `0 ${theme.spacing[8]}`,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          height: "36px"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[3] }}>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => navigate("/tools")} 
+              style={{ 
+                width: "32px", 
+                height: "32px", 
+                borderRadius: "8px", 
+                padding: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[300]}`,
+                color: theme.colors.foreground
+              }}
+            >
+              <ChevronLeft size={20} strokeWidth={2.5} />
+            </Button>
+            <div style={{ width: "1px", height: "14px", backgroundColor: theme.colors.neutral[300] }} />
+            <Text weight="semibold" style={{ fontSize: "14px", color: theme.colors.foreground, margin: 0 }}>
+              {toolData.id ? "Edit Tool" : "Create Tool"}
+            </Text>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[2] }}>
+            <Button variant="ghost" size="sm" onClick={() => navigate("/tools")} style={{ height: "32px", fontSize: "13px", color: theme.colors.muted_foreground }}>
+              Discard
+            </Button>
+            <Button 
+              variant="primary" 
+              size="sm" 
+              leadingIcon={Check} 
+              onClick={handleSave} 
+              disabled={isSaving || isLoading} 
+              style={{ height: "32px", fontSize: "13px", padding: `0 ${theme.spacing[4]}` }}
+            >
+              {isSaving ? (toolData.id ? "Updating..." : "Saving...") : (toolData.id ? "Save Tool" : "Create Tool")}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <Container maxWidth="1280px" style={{ paddingTop: theme.spacing[12], paddingBottom: theme.spacing[24], backgroundColor: "transparent" }}>
         {isLoading ? (
           <div style={{
             display: "flex",
@@ -379,396 +444,257 @@ export default function CreateToolPage() {
           <>
             <div style={{
               display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: theme.spacing[8],
-              paddingBottom: theme.spacing[4],
-              borderBottom: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-            }}>
-              <Button variant="outline" size="md" leadingIcon={ChevronLeft} onClick={() => navigate("/tools")}>
-                Back
-              </Button>
-              <h1 style={{
-                fontSize: theme.typography.fontSize.xl2,
-                fontWeight: theme.typography.fontWeight.bold,
-                color: theme.colors.foreground,
-                margin: 0,
-                flex: 1,
-                textAlign: "center",
-              }}>
-                {toolData.id ? "Edit Tool" : "Create New Tool"}
-              </h1>
-              <Button variant="primary" size="md" leadingIcon={Check} onClick={handleSave} disabled={isSaving}>
-                {isSaving ? (toolData.id ? "Updating..." : "Saving...") : (toolData.id ? "Update" : "Save")}
-              </Button>
-            </div>
-
-            <div style={{
-              display: "flex",
               flexDirection: "column",
               gap: theme.spacing[8],
-              marginBottom: theme.spacing[8],
+              marginBottom: theme.spacing[12],
             }}>
-              {/* Tool Information Card */}
-              <Card style={{
-                padding: theme.spacing[6],
-                border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-                borderRadius: theme.borderRadius.md,
-                backgroundColor: theme.colors.card,
-              }}>
-                <Text as="h3" size="lg" variant="label" style={{ marginBottom: theme.spacing[6] }}>
-                  Tool Information
-                </Text>
-                <div style={{ marginBottom: theme.spacing[6] }}>
-                  <label style={{
-                    display: "block",
-                    fontSize: theme.typography.fontSize.sm,
-                    fontWeight: theme.typography.fontWeight.semibold,
-                    color: theme.colors.foreground,
-                    marginBottom: theme.spacing[2],
-                  }}>
-                    Tool Name *
-                  </label>
-                  <Input
-                    placeholder="e.g., web_search, code_executor"
-                    value={toolData.name || ""}
-                    onChange={(e) => setToolData({ ...toolData, name: e.target.value })}
-                    maxLength={30}
-                  />
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: theme.spacing[2] }}>
-                    <Text size="xs" variant="muted" style={{ display: "block" }}>
-                      Only use letters, numbers, spaces, hyphens, and underscores
-                    </Text>
-                    <p style={{
-                      fontSize: theme.typography.fontSize.xs,
-                      color: theme.colors.muted_foreground,
-                      margin: 0,
-                    }}>
-                      {toolData.name?.length || 0}/30 characters
-                    </p>
+              {/* Unified Dashboard Tool Card */}
+              <Card style={{ padding: 0, border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`, borderRadius: theme.borderRadius.xl, backgroundColor: theme.colors.card, overflow: "hidden", boxShadow: "none" }}>
+                
+                {/* Tool Information */}
+                <div style={{ padding: theme.spacing[8] }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[2], marginBottom: theme.spacing[6] }}>
+                    <div style={{ width: "24px", height: "24px", borderRadius: "6px", backgroundColor: theme.colors.primary.DEFAULT + "08", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Info size={14} style={{ color: theme.colors.primary.DEFAULT }} />
+                    </div>
+                    <Text weight="semibold" style={{ fontSize: "14px", color: theme.colors.foreground, margin: 0 }}>Tool Information</Text>
                   </div>
-                </div>
-                <div>
-                  <label style={{
-                    display: "block",
-                    fontSize: theme.typography.fontSize.sm,
-                    fontWeight: theme.typography.fontWeight.semibold,
-                    color: theme.colors.foreground,
-                    marginBottom: theme.spacing[2],
-                  }}>
-                    Description *
-                  </label>
-                  <Textarea
-                    placeholder="Describe what your tool does"
-                    value={toolData.description || ""}
-                    onChange={(e) => setToolData({ ...toolData, description: e.target.value })}
-                    rows={3}
-                    showCharCount={false}
-                  />
-                  <p style={{
-                    fontSize: theme.typography.fontSize.xs,
-                    color: ((toolData.description || "").trim().split(/\s+/).filter(Boolean).length) > 50 ? theme.colors.destructive[600] : theme.colors.muted_foreground,
-                    margin: `${theme.spacing[2]} 0 0 0`,
-                  }}>
-                    {(toolData.description || "").trim().split(/\s+/).filter(Boolean).length}/50 words
-                  </p>
-                </div>
 
-              </Card>
-
-              {/* Input Fields Card */}
-              <Card style={{
-                padding: theme.spacing[6],
-                border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-                borderRadius: theme.borderRadius.md,
-                backgroundColor: theme.colors.card,
-              }}>
-                <div style={{ marginBottom: theme.spacing[6] }}>
-                  <Text as="h3" size="lg" variant="label">
-                    Input Fields ({toolData.inputFields?.length || 0})
-                  </Text>
-                  <Text as="p" size="sm" variant="body" style={{ color: theme.colors.muted_foreground, marginTop: theme.spacing[1] }}>
-                    Define the input parameters for your tool
-                  </Text>
-                </div>
-
-                {toolData.inputFields && toolData.inputFields.length > 0 && (
                   <div style={{ marginBottom: theme.spacing[6] }}>
-                    {toolData.inputFields.map((field, idx) => (
-                      <div
-                        key={idx}
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: theme.spacing[4],
-                          marginBottom: theme.spacing[4],
-                          padding: theme.spacing[4],
-                          border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-                          borderRadius: theme.borderRadius.sm,
-                          backgroundColor: theme.colors.neutral[50],
-                        }}
-                      >
-                        {/* Row 1: Name and Description */}
-                        <div style={{ display: "flex", gap: theme.spacing[3] }}>
-                          <div style={{ flex: 1 }}>
-                            <label style={{
-                              display: "block",
-                              fontSize: theme.typography.fontSize.xs,
-                              fontWeight: theme.typography.fontWeight.semibold,
-                              color: theme.colors.foreground,
-                              marginBottom: theme.spacing[1],
-                            }}>
-                              Field Name
-                            </label>
-                            <Input
-                              placeholder="e.g., query"
-                              value={field.name || ""}
-                              onChange={(e) => {
-                                const newFields = [...toolData.inputFields]
-                                newFields[idx] = { ...newFields[idx], name: e.target.value }
-                                setToolData({ ...toolData, inputFields: newFields })
-                              }}
-                            />
-                          </div>
-                          <div style={{ flex: 1 }}>
-                            <label style={{
-                              display: "block",
-                              fontSize: theme.typography.fontSize.xs,
-                              fontWeight: theme.typography.fontWeight.semibold,
-                              color: theme.colors.foreground,
-                              marginBottom: theme.spacing[1],
-                            }}>
-                              Description
-                            </label>
-                            <Input
-                              placeholder="Field description"
-                              value={field.description || ""}
-                              onChange={(e) => {
-                                const newFields = [...toolData.inputFields]
-                                newFields[idx] = { ...newFields[idx], description: e.target.value }
-                                setToolData({ ...toolData, inputFields: newFields })
-                              }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Row 2: Type and Default Value */}
-                        <div style={{ display: "flex", gap: theme.spacing[3] }}>
-                          <div style={{ flex: 1 }}>
-                            <label style={{
-                              display: "block",
-                              fontSize: theme.typography.fontSize.xs,
-                              fontWeight: theme.typography.fontWeight.semibold,
-                              color: theme.colors.foreground,
-                              marginBottom: theme.spacing[1],
-                            }}>
-                              Data Type
-                            </label>
-                            <Select value={field.dataType || "str"} onValueChange={(value) => {
-                              const newFields = [...toolData.inputFields]
-                              newFields[idx] = { ...newFields[idx], dataType: value }
-                              setToolData({ ...toolData, inputFields: newFields })
-                            }}>
-                              <SelectTrigger size="lg">
-                                <SelectValue placeholder="Select type" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="str">String</SelectItem>
-                                <SelectItem value="int">Integer</SelectItem>
-                                <SelectItem value="float">Float</SelectItem>
-                                <SelectItem value="bool">Boolean</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div style={{ flex: 1 }}>
-                            <label style={{
-                              display: "block",
-                              fontSize: theme.typography.fontSize.xs,
-                              fontWeight: theme.typography.fontWeight.semibold,
-                              color: theme.colors.foreground,
-                              marginBottom: theme.spacing[1],
-                            }}>
-                              Default Value
-                            </label>
-                            <Input
-                              placeholder="Default value"
-                              value={field.defaultValue || ""}
-                              onChange={(e) => {
-                                const newFields = [...toolData.inputFields]
-                                newFields[idx] = { ...newFields[idx], defaultValue: e.target.value }
-                                setToolData({ ...toolData, inputFields: newFields })
-                              }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Row 3: Required Checkbox */}
-                        <div>
-                          <Checkbox
-                            checked={field.required || false}
-                            onChange={(e) => {
-                              const newFields = [...toolData.inputFields]
-                              newFields[idx] = { ...newFields[idx], required: e.target.checked }
-                              setToolData({ ...toolData, inputFields: newFields })
-                            }}
-                            label="Required"
-                            size="md"
-                          />
-                        </div>
-
-                        {/* Row 4: Remove Button */}
-                        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            leadingIcon={Trash2}
-                            onClick={() => {
-                              const newFields = toolData.inputFields.filter((_, i) => i !== idx)
-                              setToolData({ ...toolData, inputFields: newFields })
-                            }}
-                          >
-                            Remove
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
+                    <label style={{ display: "block", fontSize: "11px", fontWeight: "600", color: theme.colors.neutral[500], textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: theme.spacing[2] }}>
+                      Name
+                    </label>
+                    <Input
+                      placeholder="e.g., web_search, code_executor"
+                      value={toolData.name || ""}
+                      onChange={(e) => setToolData({ ...toolData, name: e.target.value })}
+                      maxLength={30}
+                    />
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: theme.spacing[2] }}>
+                      <Text size="xs" variant="muted" style={{ display: "block" }}>
+                        Letters, numbers, spaces, hyphens, and underscores only
+                      </Text>
+                      <Text size="xs" variant="muted">
+                        {toolData.name?.length || 0}/30 characters
+                      </Text>
+                    </div>
                   </div>
-                )}
 
-                <Button
-                  variant="outline"
-                  size="md"
-                  leadingIcon={Plus}
-                  onClick={() => {
-                    const newFields = [
-                      ...(toolData.inputFields || []),
-                      { id: Date.now(), name: "", description: "", dataType: "str", defaultValue: "", required: false }
-                    ]
-                    if (newFields.length <= 20) {
-                      setToolData({ ...toolData, inputFields: newFields })
-                    } else {
-                      addToast("Limit Reached", "Maximum 20 input fields allowed", "warning")
-                    }
-                  }}
-                >
-                  Add Input Field
-                </Button>
-              </Card>
-
-              {/* Code Editor Card */}
-              <Card style={{
-                padding: theme.spacing[6],
-                border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-                borderRadius: theme.borderRadius.md,
-                backgroundColor: theme.colors.card,
-              }}>
-                <div style={{ marginBottom: theme.spacing[6], display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div>
-                    <h3 style={{
-                      fontSize: theme.typography.fontSize.lg,
-                      fontWeight: theme.typography.fontWeight.semibold,
-                      color: theme.colors.foreground,
-                      margin: 0,
-                    }}>
-                      Python Code
-                    </h3>
-
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    leadingIcon={Settings}
-                    onClick={() => setShowEnvModal(true)}
-                  >
-                    Env Variables
-                  </Button>
-                </div>
-
-                <div style={{ marginBottom: theme.spacing[4] }}>
-                  <div style={{
-                    padding: theme.spacing[4],
-                    backgroundColor: theme.colors.primary[50],
-                    border: `1px solid ${theme.colors.primary[200]}`,
-                    borderRadius: theme.borderRadius.md,
-                  }}>
-                    <p style={{
-                      fontSize: theme.typography.fontSize.sm,
-                      color: theme.colors.primary[900],
-                      margin: 0,
-                      lineHeight: 1.5,
-                    }}>
-                      <strong>Required Function:</strong> Your code MUST define a function named <code>def execute_tool(inputs):</code> which accepts dictionary inputs and returns a result.
-                      <br />
-                      <strong>Environment Variables:</strong> Access environment variables defined below using the syntax <code>{"{{env.VARIABLE_NAME}}"}</code> within your code string.
-                      <br />
-                      <em>Example:</em> <code>api_key = "{"{{env.API_KEY}}"}"</code>
-                    </p>
+                    <label style={{ display: "block", fontSize: "11px", fontWeight: "600", color: theme.colors.neutral[500], textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: theme.spacing[2] }}>
+                      Description
+                    </label>
+                    <Textarea
+                      placeholder="Describe what your tool does..."
+                      value={toolData.description || ""}
+                      onChange={(e) => setToolData({ ...toolData, description: e.target.value })}
+                      rows={3}
+                      showCharCount={false}
+                    />
+                    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: theme.spacing[2] }}>
+                      <Text size="xs" variant={((toolData.description || "").trim().split(/\s+/).filter(Boolean).length) > 50 ? "destructive" : "muted"}>
+                        {(toolData.description || "").trim().split(/\s+/).filter(Boolean).length}/50 words
+                      </Text>
+                    </div>
                   </div>
                 </div>
-                <label style={{
-                  display: "block",
-                  fontSize: theme.typography.fontSize.sm,
-                  fontWeight: theme.typography.fontWeight.semibold,
-                  color: theme.colors.foreground,
-                  marginBottom: theme.spacing[2],
-                }}>
-                  Code *
-                </label>
-                <div style={{
-                  border: `2px solid ${theme.colors.neutral[300]}`,
-                  borderRadius: theme.borderRadius.md,
-                  overflow: "hidden",
-                }}>
-                  <Editor
-                    height="500px"
-                    defaultLanguage="python"
-                    value={toolData.code || ""}
-                    onChange={(value) => setToolData({ ...toolData, code: value || "" })}
-                    theme={theme.isDark ? "vs-dark" : "vs"}
-                    options={{
-                      minimap: { enabled: false },
-                      fontSize: 13,
-                      fontFamily: "'Monaco', 'Courier New', monospace",
-                      lineHeight: 1.5,
-                      letterSpacing: 0.5,
-                      tabSize: 4,
-                      wordWrap: "on",
-                      scrollBeyondLastLine: false,
-                      renderLineHighlight: "none",
-                      padding: {
-                        top: 12,
-                        bottom: 12,
-                      },
-                      scrollbar: {
-                        vertical: "auto",
-                        horizontal: "auto",
-                      },
-                    }}
-                  />
+
+                <div style={{ borderTop: `${theme.borderWidth.sm} solid ${theme.colors.neutral[100]}`, margin: `0 ${theme.spacing[8]}` }} />
+
+                {/* Input Parameters */}
+                <div style={{ padding: theme.spacing[8] }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: theme.spacing[6] }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[2] }}>
+                      <div style={{ width: "24px", height: "24px", borderRadius: "6px", backgroundColor: theme.colors.primary.DEFAULT + "08", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Plus size={14} style={{ color: theme.colors.primary.DEFAULT }} />
+                      </div>
+                      <Text weight="semibold" style={{ fontSize: "14px", color: theme.colors.foreground, margin: 0 }}>Input Parameters</Text>
+                    </div>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const newFields = [
+                          ...(toolData.inputFields || []),
+                          { id: Date.now(), name: "", description: "", dataType: "str", defaultValue: "", required: false }
+                        ]
+                        if (newFields.length <= 20) {
+                          setToolData({ ...toolData, inputFields: newFields })
+                        } else {
+                          addToast("Limit Reached", "Maximum 20 input fields allowed", "warning")
+                        }
+                      }}
+                      style={{ fontSize: "11px", height: "26px", padding: `0 ${theme.spacing[3]}`, color: theme.colors.neutral[600] }}
+                    >
+                      Add Parameter
+                    </Button>
+                  </div>
+
+                  {toolData.inputFields && toolData.inputFields.length > 0 ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: theme.spacing[4] }}>
+                      {toolData.inputFields.map((field, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: theme.spacing[4],
+                            padding: theme.spacing[4],
+                            border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
+                            borderRadius: theme.borderRadius.lg,
+                            backgroundColor: theme.colors.neutral[50] + "33",
+                          }}
+                        >
+                          <div style={{ display: "flex", gap: theme.spacing[3] }}>
+                            <div style={{ flex: 1 }}>
+                              <label style={{ display: "block", fontSize: "10px", fontWeight: "700", color: theme.colors.neutral[500], textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: theme.spacing[1.5] }}>
+                                Name
+                              </label>
+                              <Input
+                                placeholder="e.g., query"
+                                value={field.name || ""}
+                                size="sm"
+                                onChange={(e) => {
+                                  const newFields = [...toolData.inputFields]
+                                  newFields[idx] = { ...newFields[idx], name: e.target.value }
+                                  setToolData({ ...toolData, inputFields: newFields })
+                                }}
+                              />
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <label style={{ display: "block", fontSize: "10px", fontWeight: "700", color: theme.colors.neutral[500], textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: theme.spacing[1.5] }}>
+                                Type
+                              </label>
+                              <Select value={field.dataType || "str"} onValueChange={(value) => {
+                                const newFields = [...toolData.inputFields]
+                                newFields[idx] = { ...newFields[idx], dataType: value }
+                                setToolData({ ...toolData, inputFields: newFields })
+                              }}>
+                                <SelectTrigger size="md">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="str">String</SelectItem>
+                                  <SelectItem value="int">Integer</SelectItem>
+                                  <SelectItem value="float">Float</SelectItem>
+                                  <SelectItem value="bool">Boolean</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+
+                          <div style={{ display: "flex", gap: theme.spacing[3] }}>
+                            <div style={{ flex: 1 }}>
+                              <label style={{ display: "block", fontSize: "10px", fontWeight: "700", color: theme.colors.neutral[500], textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: theme.spacing[1.5] }}>
+                                Description
+                              </label>
+                              <Input
+                                placeholder="Parameter description..."
+                                value={field.description || ""}
+                                size="sm"
+                                onChange={(e) => {
+                                  const newFields = [...toolData.inputFields]
+                                  newFields[idx] = { ...newFields[idx], description: e.target.value }
+                                  setToolData({ ...toolData, inputFields: newFields })
+                                }}
+                              />
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <label style={{ display: "block", fontSize: "10px", fontWeight: "700", color: theme.colors.neutral[500], textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: theme.spacing[1.5] }}>
+                                Default Value
+                              </label>
+                              <Input
+                                placeholder="Default value"
+                                value={field.defaultValue || ""}
+                                size="sm"
+                                onChange={(e) => {
+                                  const newFields = [...toolData.inputFields]
+                                  newFields[idx] = { ...newFields[idx], defaultValue: e.target.value }
+                                  setToolData({ ...toolData, inputFields: newFields })
+                                }}
+                              />
+                            </div>
+                          </div>
+
+                           <div style={{ display: "flex", alignItems: "center" }}>
+                            <Checkbox
+                              checked={field.required || false}
+                              onChange={(e) => {
+                                const newFields = [...toolData.inputFields]
+                                newFields[idx] = { ...newFields[idx], required: e.target.checked }
+                                setToolData({ ...toolData, inputFields: newFields })
+                              }}
+                              label={<span style={{ fontSize: "12px", color: theme.colors.neutral[600] }}>Required parameter</span>}
+                              size="sm"
+                            />
+                          </div>
+
+                          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: theme.spacing[2] }}>
+                             <Button
+                              variant="destructive"
+                              size="sm"
+                              leadingIcon={Trash2}
+                              onClick={() => {
+                                const newFields = toolData.inputFields.filter((_, i) => i !== idx)
+                                setToolData({ ...toolData, inputFields: newFields })
+                              }}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ padding: theme.spacing[6], border: `${theme.borderWidth.sm} dashed ${theme.colors.neutral[100]}`, borderRadius: theme.borderRadius.xl, textAlign: "center" }}>
+                      <Text style={{ fontSize: "12px" }} variant="muted">No input parameters defined.</Text>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ borderTop: `${theme.borderWidth.sm} solid ${theme.colors.neutral[100]}`, margin: `0 ${theme.spacing[8]}` }} />
+
+                {/* Source Code */}
+                <div style={{ padding: theme.spacing[8] }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: theme.spacing[6] }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[2] }}>
+                      <div style={{ width: "24px", height: "24px", borderRadius: "6px", backgroundColor: theme.colors.primary.DEFAULT + "08", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Settings size={14} style={{ color: theme.colors.primary.DEFAULT }} />
+                      </div>
+                      <Text weight="semibold" style={{ fontSize: "14px", color: theme.colors.foreground, margin: 0 }}>Source Code</Text>
+                    </div>
+                    <Button variant="outline" size="sm" leadingIcon={Globe} onClick={() => setShowEnvModal(true)} style={{ fontSize: "11px", height: "26px", color: theme.colors.neutral[600] }}>
+                      Environment Variables
+                    </Button>
+                  </div>
+
+                  <div style={{ marginBottom: theme.spacing[6], padding: theme.spacing[4], backgroundColor: theme.colors.primary.DEFAULT + "05", borderRadius: theme.borderRadius.lg, border: `${theme.borderWidth.sm} solid ${theme.colors.primary.DEFAULT}15` }}>
+                    <Text style={{ fontSize: "12px", lineHeight: 1.5, color: theme.colors.primary[800] }}>
+                      Define <code>def execute_tool(inputs):</code> to handle tool logic. Use <code>{"{{env.KEY}}"}</code> to access environment variables.
+                    </Text>
+                  </div>
+
+                  <div style={{ border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`, borderRadius: theme.borderRadius.lg, overflow: "hidden" }}>
+                    <Editor
+                      height="500px"
+                      defaultLanguage="python"
+                      value={toolData.code || ""}
+                      onChange={(value) => setToolData({ ...toolData, code: value || "" })}
+                      theme={theme.isDark ? "vs-dark" : "vs"}
+                      options={{
+                        minimap: { enabled: false },
+                        fontSize: 13,
+                        lineHeight: 1.6,
+                        padding: { top: 16, bottom: 16 },
+                        scrollBeyondLastLine: false,
+                        renderLineHighlight: "none",
+                        fontFamily: "'SF Mono', 'Fira Code', monospace",
+                      }}
+                    />
+                  </div>
                 </div>
               </Card>
-            </div>
-
-            {/* Footer Section */}
-            <div style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: theme.spacing[3],
-              paddingTop: theme.spacing[6],
-              borderTop: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-            }}>
-              <Button variant="outline" size="md" onClick={() => navigate("/tools")}>
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="md"
-                leadingIcon={Check}
-                onClick={handleSave}
-                disabled={isSaving}
-              >
-                {isSaving ? (toolData.id ? "Updating..." : "Saving...") : (toolData.id ? "Update Tool" : "Save Tool")}
-              </Button>
             </div>
           </>
         )}

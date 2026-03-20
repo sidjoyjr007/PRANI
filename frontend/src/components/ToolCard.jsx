@@ -85,7 +85,7 @@ export default function ToolCard({ tool, addToast }) {
   }
 
   return (
-    <>
+    <div key={tool.id}>
       <ResourceCard
         title={tool.name}
         description={tool.description}
@@ -103,6 +103,6 @@ export default function ToolCard({ tool, addToast }) {
         resourceName={tool.name}
         confirmationKeyword="DELETE"
       />
-    </>
+    </div>
   )
 }

@@ -138,25 +138,72 @@ export default function MCPTestPage() {
                 ))}
             </ToastContainer>
 
-            <Container>
-                {/* Header */}
+            {/* Action-Centric Sticky Header */}
+            <div
+                style={{
+                    position: "sticky",
+                    top: 0,
+                    zIndex: 40,
+                    backgroundColor: `${theme.colors.card}f2`,
+                    backdropFilter: "blur(12px)",
+                    borderBottom: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
+                    padding: `${theme.spacing[3]} 0`,
+                    width: "100%",
+                }}
+            >
                 <div style={{
-                    display: "flex", justifyContent: "space-between", alignItems: "center",
-                    marginBottom: theme.spacing[8], paddingBottom: theme.spacing[4],
-                    borderBottom: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`
+                    maxWidth: "1280px",
+                    margin: "0 auto",
+                    padding: `0 ${theme.spacing[8]}`,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    height: "36px"
                 }}>
-                    <Button variant="outline" size="md" leadingIcon={ChevronLeft} onClick={() => navigate("/mcp-servers")}>
-                        Back
-                    </Button>
-                    <h1 style={{
-                        fontSize: theme.typography.fontSize.xl2, fontWeight: theme.typography.fontWeight.bold,
-                        color: theme.colors.foreground, margin: 0,
-                        flex: 1, textAlign: "center",
-                    }}>
-                        Test {currentMCP?.name || "MCP Server"}
-                    </h1>
-                    <div style={{ width: "fit-content" }} /> {/* Spacer to center title */}
+                    <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[3] }}>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => navigate("/mcp-servers")}
+                            style={{
+                                width: "32px",
+                                height: "32px",
+                                borderRadius: "8px",
+                                padding: 0,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[300]}`,
+                                color: theme.colors.foreground
+                            }}
+                        >
+                            <ChevronLeft size={20} strokeWidth={2.5} />
+                        </Button>
+                        <div style={{ width: "1px", height: "14px", backgroundColor: theme.colors.neutral[300] }} />
+                        <Text weight="semibold" style={{ fontSize: "14px", color: theme.colors.foreground, margin: 0 }}>
+                            Test MCP: {currentMCP?.name || "Server"}
+                        </Text>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[2] }}>
+                        <Button variant="ghost" size="sm" onClick={() => navigate("/mcp-servers")} style={{ height: "32px", fontSize: "13px", color: theme.colors.muted_foreground }}>
+                            Discard
+                        </Button>
+                        <Button
+                            variant="primary"
+                            size="sm"
+                            leadingIcon={isTesting ? RefreshCw : Play}
+                            onClick={handleTest}
+                            disabled={isTesting || !config}
+                            style={{ height: "32px", fontSize: "13px", padding: `0 ${theme.spacing[4]}` }}
+                        >
+                            {isTesting ? "Testing..." : "Test Connection"}
+                        </Button>
+                    </div>
                 </div>
+            </div>
+
+            <Container style={{ maxWidth: "1280px", margin: "0 auto", padding: `0 ${theme.spacing[8]}` }}>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: theme.spacing[8] }}>
 
@@ -202,16 +249,17 @@ export default function MCPTestPage() {
                     {/* Right Column: Terminal Output */}
                     <Card
                         style={{
-                            padding: theme.spacing[6],
-                            border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[800]}`,
-                            borderRadius: theme.borderRadius.md,
-                            backgroundColor: "#0f172a",
-                            fontFamily: '"Fira Code", "Courier New", monospace',
+                            padding: theme.spacing[8],
+                            border: `1px solid #1e293b`,
+                            borderRadius: theme.borderRadius.xl,
+                            backgroundColor: "#0d1117",
+                            fontFamily: '"Fira Code", "JetBrains Mono", monospace',
                             color: "#e2e8f0",
                             overflow: "hidden",
                             display: "flex",
                             flexDirection: "column",
-                            minHeight: "400px"
+                            minHeight: "500px",
+                            boxShadow: "0 10px 30px -10px rgba(0,0,0,0.5)"
                         }}
                     >
                         {/* Terminal Header */}

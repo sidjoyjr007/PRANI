@@ -82,11 +82,11 @@ export default function AgentCard({ agent, addToast }) {
     });
   }
 
+
   const actions = [
     {
       icon: MessageSquare,
       title: "Chat with Agent",
-      color: theme.colors.primary[600],
       onClick: (e) => navigate("/work", { state: { agentId: agent.id } })
     },
     {
@@ -98,7 +98,7 @@ export default function AgentCard({ agent, addToast }) {
   ]
 
   return (
-    <>
+    <div key={agent.id}>
       <ResourceCard
         title={agent.name}
         subtitle={
@@ -109,6 +109,7 @@ export default function AgentCard({ agent, addToast }) {
             </div>
           ) : "No Model Assigned"
         }
+        description={agent.instructions}
         icon={Bot}
         badges={badges}
         actions={actions}
@@ -123,6 +124,6 @@ export default function AgentCard({ agent, addToast }) {
         resourceName={agent.name}
         confirmationKeyword="DELETE"
       />
-    </>
+    </div>
   )
 }

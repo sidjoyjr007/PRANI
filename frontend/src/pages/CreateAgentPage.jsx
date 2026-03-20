@@ -13,7 +13,7 @@ import { Chips } from "@/components/ui/chips"
 import { Toggle } from "@/components/ui/toggle"
 import { CommandPalette } from "@/components/ui/command-palette"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
-import { ChevronLeft, Check } from "lucide-react"
+import { ChevronLeft, Check, Info, Wrench, Server, Settings } from "lucide-react"
 import { Toast, ToastContainer } from "@/components/ui/toast"
 
 import { fetchTools } from "@/store/slices/toolSlice"
@@ -202,104 +202,168 @@ export default function CreateAgentPage() {
         ))}
       </ToastContainer>
 
-      <Container>
+      {/* Action-Centric Sticky Header */}
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 40,
+          backgroundColor: `${theme.colors.card}f2`,
+          backdropFilter: "blur(12px)",
+          borderBottom: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
+          padding: `${theme.spacing[3]} 0`,
+          width: "100%",
+        }}
+      >
+        <div style={{
+          maxWidth: "1280px",
+          margin: "0 auto",
+          padding: `0 ${theme.spacing[8]}`,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          height: "36px"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[3] }}>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => navigate("/agents")} 
+              style={{ 
+                width: "32px", 
+                height: "32px", 
+                borderRadius: "8px", 
+                padding: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[300]}`,
+                color: theme.colors.foreground
+              }}
+            >
+              <ChevronLeft size={20} strokeWidth={2.5} />
+            </Button>
+            <div style={{ width: "1px", height: "14px", backgroundColor: theme.colors.neutral[300] }} />
+            <Text weight="semibold" style={{ fontSize: "14px", color: theme.colors.foreground, margin: 0 }}>
+              {agentId ? "Edit Agent" : "Create Agent"}
+            </Text>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[2] }}>
+            <Button variant="ghost" size="sm" onClick={() => navigate("/agents")} style={{ height: "32px", fontSize: "13px", color: theme.colors.muted_foreground }}>
+              Discard
+            </Button>
+            <Button 
+              variant="primary" 
+              size="sm" 
+              leadingIcon={Check} 
+              onClick={handleSave} 
+              disabled={isSaving || isLoading} 
+              style={{ height: "32px", fontSize: "13px", padding: `0 ${theme.spacing[4]}` }}
+            >
+              {isSaving ? (agentId ? "Updating..." : "Saving...") : (agentId ? "Save Changes" : "Create Agent")}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <Container padding={8}>
         {isLoading ? (
           <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "400px", color: theme.colors.muted_foreground }}>
             <p>Loading agent data...</p>
           </div>
         ) : (
           <>
-            {/* Header Section */}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: theme.spacing[8],
-                paddingBottom: theme.spacing[4],
-                borderBottom: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-              }}
-            >
-              <Button variant="outline" size="md" leadingIcon={ChevronLeft} onClick={() => navigate("/agents")}>
-                Back
-              </Button>
-              <h1 style={{ fontSize: theme.typography.fontSize.xl2, fontWeight: theme.typography.fontWeight.bold, color: theme.colors.foreground, margin: 0, flex: 1, textAlign: "center" }}>
-                {agentId ? "Edit Agent" : "Create New Agent"}
-              </h1>
-              <Button variant="primary" size="md" leadingIcon={Check} onClick={handleSave} disabled={isSaving}>
-                {isSaving ? (agentId ? "Updating..." : "Saving...") : (agentId ? "Update" : "Save")}
-              </Button>
-            </div>
+            {/* Main Content Area */}
+              {/* Polished Dashboard Form Card */}
+              <Card style={{ padding: 0, border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`, borderRadius: theme.borderRadius.xl, backgroundColor: theme.colors.card, overflow: "hidden", boxShadow: "none", marginBottom: theme.spacing[12] }}>
+                
+                {/* Agent Information */}
+                <div style={{ padding: theme.spacing[8] }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[2], marginBottom: theme.spacing[6] }}>
+                    <div style={{ width: "24px", height: "24px", borderRadius: "6px", backgroundColor: theme.colors.primary.DEFAULT + "08", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Info size={14} style={{ color: theme.colors.primary.DEFAULT }} />
+                    </div>
+                    <Text weight="semibold" style={{ fontSize: "14px", color: theme.colors.foreground, margin: 0 }}>Agent Information</Text>
+                  </div>
 
-            {/* Main Content */}
-            <div style={{ display: "flex", flexDirection: "column", gap: theme.spacing[8], marginBottom: theme.spacing[8] }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: theme.spacing[8], marginBottom: theme.spacing[6] }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: "11px", fontWeight: "600", color: theme.colors.neutral[500], textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: theme.spacing[2] }}>
+                        Name
+                      </label>
+                      <Input placeholder="e.g. Research Analyst" value={agentData.name} onChange={(e) => setAgentData({ ...agentData, name: e.target.value })} maxLength={30} />
+                    </div>
 
-              {/* Agent Information */}
-              <Card style={{ padding: theme.spacing[6], border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`, borderRadius: theme.borderRadius.md, backgroundColor: theme.colors.card }}>
-                <Text as="h3" size="lg" variant="label" style={{ marginBottom: theme.spacing[6] }}>Agent Information</Text>
+                    <div>
+                      <label style={{ display: "block", fontSize: "11px", fontWeight: "600", color: theme.colors.neutral[500], textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: theme.spacing[2] }}>
+                        LLM Model
+                      </label>
+                      <Select value={agentData.llmId || ""} onValueChange={(value) => setAgentData({ ...agentData, llmId: value || null })}>
+                        <SelectTrigger size="md">
+                          {selectedLLM ? selectedLLM.name : "Select a model"}
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {llms.map(llm => (
+                            <SelectItem key={llm.id} value={llm.id}>{llm.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
 
-                <div style={{ marginBottom: theme.spacing[6] }}>
-                  <label style={{ display: "block", fontSize: theme.typography.fontSize.sm, fontWeight: theme.typography.fontWeight.semibold, color: theme.colors.foreground, marginBottom: theme.spacing[2] }}>
-                    Agent Name *
-                  </label>
-                  <Input placeholder="e.g., Research Agent" value={agentData.name} onChange={(e) => setAgentData({ ...agentData, name: e.target.value })} maxLength={30} />
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: theme.spacing[2] }}>
-                    <Text size="xs" variant="muted" style={{ display: "block" }}>
-                      Only use letters, numbers, spaces, hyphens, and underscores
-                    </Text>
-                    <p style={{
-                      fontSize: theme.typography.fontSize.xs,
-                      color: theme.colors.muted_foreground,
-                      margin: 0,
-                    }}>
-                      {agentData.name?.length || 0}/30 characters
-                    </p>
+                  <div style={{ marginBottom: 0 }}>
+                    <label style={{ display: "block", fontSize: "11px", fontWeight: "600", color: theme.colors.neutral[500], textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: theme.spacing[2] }}>
+                      Instructions
+                    </label>
+                    <Textarea 
+                      placeholder="Describe the agent's persona and core objectives..." 
+                      value={agentData.instructions} 
+                      onChange={(e) => setAgentData({ ...agentData, instructions: e.target.value })} 
+                      rows={6} 
+                    />
+                    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: theme.spacing[2] }}>
+                      <Text size="xs" variant={(agentData.instructions ? agentData.instructions.trim().split(/\s+/).filter(Boolean).length : 0) > 250 ? "destructive" : "muted"}>
+                        {agentData.instructions ? agentData.instructions.trim().split(/\s+/).filter(Boolean).length : 0} / 250 words
+                      </Text>
+                    </div>
                   </div>
                 </div>
 
-                <div style={{ marginBottom: theme.spacing[6] }}>
-                  <label style={{ display: "block", fontSize: theme.typography.fontSize.sm, fontWeight: theme.typography.fontWeight.semibold, color: theme.colors.foreground, marginBottom: theme.spacing[2] }}>Instructions</label>
-                  <Textarea placeholder="Provide detailed instructions for this agent" value={agentData.instructions} onChange={(e) => setAgentData({ ...agentData, instructions: e.target.value })} rows={5} />
-                  <p style={{
-                    fontSize: theme.typography.fontSize.xs,
-                    color: (agentData.instructions ? agentData.instructions.trim().split(/\s+/).filter(Boolean).length : 0) > 250 ? theme.colors.destructive[600] : theme.colors.muted_foreground,
-                    margin: `${theme.spacing[2]} 0 0 0`,
-                  }}>
-                    {agentData.instructions ? agentData.instructions.trim().split(/\s+/).filter(Boolean).length : 0}/250 words
-                  </p>
-                </div>
-              </Card>
+                <div style={{ borderTop: `${theme.borderWidth.sm} solid ${theme.colors.neutral[100]}`, margin: `0 ${theme.spacing[8]}` }} />
 
-              {/* Tools Selection Section */}
-              <Card style={{ padding: theme.spacing[6], border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`, borderRadius: theme.borderRadius.md, backgroundColor: theme.colors.card }}>
-                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: theme.spacing[4], gap: theme.spacing[4] }}>
-                  <Text as="h3" size="lg" variant="label">
-                    Select Tools ({agentData.toolIds.length})
-                  </Text>
+                {/* Tools */}
+                <div style={{ padding: theme.spacing[8] }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: theme.spacing[6] }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[2] }}>
+                      <div style={{ width: "24px", height: "24px", borderRadius: "6px", backgroundColor: theme.colors.primary.DEFAULT + "08", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Wrench size={14} style={{ color: theme.colors.primary.DEFAULT }} />
+                      </div>
+                      <Text weight="semibold" style={{ fontSize: "14px", color: theme.colors.foreground, margin: 0 }}>Tools</Text>
+                    </div>
 
-                  <div style={{ width: "fit-content" }}>
                     <Button
                       variant="outline"
-                      size="md"
+                      size="sm"
                       onClick={(e) => {
                         e.preventDefault()
                         setIsToolPaletteOpen(true)
                       }}
+                      style={{ fontSize: "11px", height: "26px", padding: `0 ${theme.spacing[3]}`, color: theme.colors.neutral[600] }}
                     >
-                      + Add Tool
+                      Add Tools
                     </Button>
                   </div>
-                </div>
 
-                {agentData.toolIds.length > 0 && (
-                  <div>
+                  {agentData.toolIds.length > 0 ? (
                     <Chips
                       items={agentData.toolIds.map(id => ({
                         id: id,
                         label: tools.find(t => t.id === id)?.name || "Loading..."
                       }))}
                       variant="primary"
-                      size="md"
+                      size="sm"
                       onRemove={(id) => {
                         setAgentData({
                           ...agentData,
@@ -307,40 +371,46 @@ export default function CreateAgentPage() {
                         })
                       }}
                     />
-                  </div>
-                )}
-              </Card>
+                  ) : (
+                    <div style={{ padding: theme.spacing[4], border: `${theme.borderWidth.sm} dashed ${theme.colors.neutral[100]}`, borderRadius: theme.borderRadius.md, textAlign: "center" }}>
+                      <Text style={{ fontSize: "12px" }} variant="muted">No tools configured.</Text>
+                    </div>
+                  )}
+                </div>
 
-              {/* MCP Servers Section */}
-              <Card style={{ padding: theme.spacing[6], border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`, borderRadius: theme.borderRadius.md, backgroundColor: theme.colors.card }}>
-                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: theme.spacing[4], gap: theme.spacing[4] }}>
-                  <Text as="h3" size="lg" variant="label">
-                    Select MCP Servers ({agentData.mcpServerIds.length})
-                  </Text>
+                <div style={{ borderTop: `${theme.borderWidth.sm} solid ${theme.colors.neutral[100]}`, margin: `0 ${theme.spacing[8]}` }} />
 
-                  <div style={{ width: "fit-content" }}>
+                {/* MCP Servers */}
+                <div style={{ padding: theme.spacing[8] }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: theme.spacing[6] }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[2] }}>
+                      <div style={{ width: "24px", height: "24px", borderRadius: "6px", backgroundColor: theme.colors.primary.DEFAULT + "08", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Server size={14} style={{ color: theme.colors.primary.DEFAULT }} />
+                      </div>
+                      <Text weight="semibold" style={{ fontSize: "14px", color: theme.colors.foreground, margin: 0 }}>MCP Servers</Text>
+                    </div>
+
                     <Button
                       variant="outline"
-                      size="md"
+                      size="sm"
                       onClick={(e) => {
                         e.preventDefault()
                         setIsServerPaletteOpen(true)
                       }}
+                      style={{ fontSize: "11px", height: "26px", padding: `0 ${theme.spacing[3]}`, color: theme.colors.neutral[600] }}
                     >
-                      + Add Server
+                      Add Servers
                     </Button>
                   </div>
-                </div>
 
-                {agentData.mcpServerIds.length > 0 && (
-                  <div>
+                  {agentData.mcpServerIds.length > 0 ? (
                     <Chips
                       items={agentData.mcpServerIds.map(id => ({
                         id: id,
                         label: mcpServers.find(s => s.id === id)?.name || "Loading..."
                       }))}
                       variant="primary"
-                      size="md"
+                      size="sm"
                       onRemove={(id) => {
                         setAgentData({
                           ...agentData,
@@ -348,99 +418,67 @@ export default function CreateAgentPage() {
                         })
                       }}
                     />
-                  </div>
-                )}
-              </Card>
-
-              {/* Settings (LLM & Logic) */}
-              <Card style={{ padding: theme.spacing[6], border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`, borderRadius: theme.borderRadius.md, backgroundColor: theme.colors.card }}>
-                <Text as="h3" size="lg" variant="label" style={{ marginBottom: theme.spacing[6] }}>Settings</Text>
-
-                {/* Human In Loop */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: theme.spacing[6], paddingBottom: theme.spacing[6], borderBottom: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}` }}>
-                  <div>
-                    <Text as="p" size="sm" variant="label" style={{ margin: 0 }}>Human in Loop</Text>
-                    <Text as="p" size="xs" variant="body" style={{ margin: `${theme.spacing[1]} 0 0 0`, color: theme.colors.muted_foreground }}>Enable human approval for agent actions</Text>
-                  </div>
-                  <Toggle pressed={agentData.humanInLoop} onPressedChange={(checked) => setAgentData({ ...agentData, humanInLoop: checked })} size="md" />
+                  ) : (
+                    <div style={{ padding: theme.spacing[4], border: `${theme.borderWidth.sm} dashed ${theme.colors.neutral[100]}`, borderRadius: theme.borderRadius.md, textAlign: "center" }}>
+                      <Text style={{ fontSize: "12px" }} variant="muted">No external knowledge systems connected.</Text>
+                    </div>
+                  )}
                 </div>
 
-                {/* LLM Selection */}
-                <div>
-                  <label style={{ display: "block", fontSize: theme.typography.fontSize.sm, fontWeight: theme.typography.fontWeight.semibold, color: theme.colors.foreground, marginBottom: theme.spacing[2] }}>LLM Model</label>
-                  <Select value={agentData.llmId || ""} onValueChange={(value) => setAgentData({ ...agentData, llmId: value || null })}>
-                    <SelectTrigger size="lg">
-                      {selectedLLM ? selectedLLM.name : "Select LLM Model"}
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {llms.map(llm => (
-                        <SelectItem key={llm.id} value={llm.id}>{llm.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div style={{ borderTop: `${theme.borderWidth.sm} solid ${theme.colors.neutral[100]}`, margin: `0 ${theme.spacing[8]}` }} />
+
+                {/* Settings */}
+                <div style={{ padding: theme.spacing[8] }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[2], marginBottom: theme.spacing[6] }}>
+                    <div style={{ width: "24px", height: "24px", borderRadius: "6px", backgroundColor: theme.colors.primary.DEFAULT + "08", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Settings size={14} style={{ color: theme.colors.primary.DEFAULT }} />
+                    </div>
+                    <Text weight="semibold" style={{ fontSize: "14px", color: theme.colors.foreground, margin: 0 }}>Settings</Text>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: theme.spacing[4], borderRadius: theme.borderRadius.lg, border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`, backgroundColor: theme.colors.neutral[50] + "88" }}>
+                    <div>
+                      <Text weight="semibold" style={{ fontSize: "13px", color: theme.colors.foreground, margin: 0 }}>Mandatory human approval</Text>
+                      <Text style={{ fontSize: "12px", margin: `${theme.spacing[1]} 0 0 0` }} variant="muted">Agent must wait for confirmation before performing actions.</Text>
+                    </div>
+                    <Toggle pressed={agentData.humanInLoop} onPressedChange={(checked) => setAgentData({ ...agentData, humanInLoop: checked })} size="sm" />
+                  </div>
                 </div>
               </Card>
-            </div>
-
-            {/* Footer Section */}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: theme.spacing[3],
-                paddingTop: theme.spacing[6],
-                borderTop: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-              }}
-            >
-              <Button variant="outline" size="md" onClick={() => navigate("/agents")}>
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="md"
-                leadingIcon={Check}
-                onClick={handleSave}
-                disabled={isSaving}
-              >
-                {isSaving ? (agentId ? "Updating..." : "Saving...") : (agentId ? "Update Agent" : "Save Agent")}
-              </Button>
-            </div>
-
-          </>
-        )}
-
-        {/* Render Command Palettes at the root level to escape CSS positioning traps */}
-        {agentData && (
-          <>
-            <CommandPalette
-              isOpen={isToolPaletteOpen}
-              onClose={() => setIsToolPaletteOpen(false)}
-              title="Add Tools"
-              description="Search and select tools to equip this agent with."
-              placeholder="Search available tools..."
-              items={tools.map(t => ({ id: t.id, label: t.name, description: t.description }))}
-              selectedIds={agentData.toolIds}
-              onSelect={(id) => setAgentData({ ...agentData, toolIds: [...agentData.toolIds, id] })}
-              onDeselect={(id) => setAgentData({ ...agentData, toolIds: agentData.toolIds.filter(tid => tid !== id) })}
-              emptyMessage="No available tools found."
-            />
-
-            <CommandPalette
-              isOpen={isServerPaletteOpen}
-              onClose={() => setIsServerPaletteOpen(false)}
-              title="Add MCP Servers"
-              description="Select MCP servers to provide access to external systems."
-              placeholder="Search available servers..."
-              items={mcpServers.map(s => ({ id: s.id, label: s.name }))}
-              selectedIds={agentData.mcpServerIds}
-              onSelect={(id) => setAgentData({ ...agentData, mcpServerIds: [...agentData.mcpServerIds, id] })}
-              onDeselect={(id) => setAgentData({ ...agentData, mcpServerIds: agentData.mcpServerIds.filter(sid => sid !== id) })}
-              emptyMessage="No available MCP servers found."
-            />
           </>
         )}
       </Container>
+
+      {/* Render Command Palettes at the root level to escape CSS positioning traps */}
+      {agentData && (
+        <>
+          <CommandPalette
+            isOpen={isToolPaletteOpen}
+            onClose={() => setIsToolPaletteOpen(false)}
+            title="Add Tools"
+            description="Search and select tools to equip this agent with."
+            placeholder="Search available tools..."
+            items={tools.map(t => ({ id: t.id, label: t.name, description: t.description }))}
+            selectedIds={agentData.toolIds}
+            onSelect={(id) => setAgentData({ ...agentData, toolIds: [...agentData.toolIds, id] })}
+            onDeselect={(id) => setAgentData({ ...agentData, toolIds: agentData.toolIds.filter(tid => tid !== id) })}
+            emptyMessage="No available tools found."
+          />
+
+          <CommandPalette
+            isOpen={isServerPaletteOpen}
+            onClose={() => setIsServerPaletteOpen(false)}
+            title="Add MCP Servers"
+            description="Select MCP servers to provide access to external systems."
+            placeholder="Search available servers..."
+            items={mcpServers.map(s => ({ id: s.id, label: s.name }))}
+            selectedIds={agentData.mcpServerIds}
+            onSelect={(id) => setAgentData({ ...agentData, mcpServerIds: [...agentData.mcpServerIds, id] })}
+            onDeselect={(id) => setAgentData({ ...agentData, mcpServerIds: agentData.mcpServerIds.filter(sid => sid !== id) })}
+            emptyMessage="No available MCP servers found."
+          />
+        </>
+      )}
     </Layout>
   )
 }

@@ -12,7 +12,7 @@ import { Text } from "@/components/ui/text"
 import { Card } from "@/components/ui/card"
 import { Alert } from "@/components/ui/alert"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
-import { ChevronLeft, Check, Plus, Trash2, Eye, EyeOff, Settings, X } from "lucide-react"
+import { ChevronLeft, Check, Plus, Trash2, Eye, EyeOff, Settings, X, Globe, Info } from "lucide-react"
 import { Toast, ToastContainer } from "@/components/ui/toast"
 import { fetchLLMById, createLLM, updateLLM, clearCurrentLLM } from "@/store/slices/llmSlice"
 
@@ -227,108 +227,184 @@ export default function CreateLLMPage() {
         ))}
       </ToastContainer>
 
-      <Container>
-        {/* Header */}
+      {/* Action-Centric Sticky Header */}
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 40,
+          backgroundColor: `${theme.colors.card}f2`,
+          backdropFilter: "blur(12px)",
+          borderBottom: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
+          padding: `${theme.spacing[3]} 0`,
+          width: "100%",
+        }}
+      >
         <div style={{
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-          marginBottom: theme.spacing[8], paddingBottom: theme.spacing[4],
-          borderBottom: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`
+          maxWidth: "1280px",
+          margin: "0 auto",
+          padding: `0 ${theme.spacing[8]}`,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          height: "36px"
         }}>
-          <Button variant="outline" size="md" leadingIcon={ChevronLeft} onClick={() => navigate("/llms")}>
-            Back
-          </Button>
-          <h1 style={{
-            fontSize: theme.typography.fontSize.xl2, fontWeight: theme.typography.fontWeight.bold,
-            color: theme.colors.foreground, margin: 0, flex: 1, textAlign: "center"
-          }}>
-            {isEditMode ? "Edit LLM" : "Create New LLM"}
-          </h1>
-          <Button variant="primary" size="md" leadingIcon={Check} onClick={handleSave} disabled={isSaving}>
-            {isSaving ? (isEditMode ? "Updating..." : "Saving...") : (isEditMode ? "Update" : "Save")}
-          </Button>
+          <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[3] }}>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => navigate("/llms")} 
+              style={{ 
+                width: "32px", 
+                height: "32px", 
+                borderRadius: "8px", 
+                padding: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[300]}`,
+                color: theme.colors.foreground
+              }}
+            >
+              <ChevronLeft size={20} strokeWidth={2.5} />
+            </Button>
+            <div style={{ width: "1px", height: "14px", backgroundColor: theme.colors.neutral[300] }} />
+            <Text weight="semibold" style={{ fontSize: "14px", color: theme.colors.foreground, margin: 0 }}>
+              {llmId ? "Edit LLM" : "Create LLM"}
+            </Text>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[2] }}>
+            <Button variant="ghost" size="sm" onClick={() => navigate("/llms")} style={{ height: "32px", fontSize: "13px", color: theme.colors.muted_foreground }}>
+              Discard
+            </Button>
+            <Button 
+              variant="primary" 
+              size="sm" 
+              leadingIcon={Check} 
+              onClick={handleSave} 
+              disabled={isSaving || isLoading} 
+              style={{ height: "32px", fontSize: "13px", padding: `0 ${theme.spacing[4]}` }}
+            >
+              {isSaving ? (llmId ? "Updating..." : "Saving...") : (llmId ? "Save LLM" : "Create LLM")}
+            </Button>
+          </div>
         </div>
+      </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: theme.spacing[8], marginBottom: theme.spacing[8] }}>
+      <Container maxWidth="1280px" style={{ paddingTop: theme.spacing[12], paddingBottom: theme.spacing[24], backgroundColor: "transparent" }}>
+        {isLoading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px', color: theme.colors.muted_foreground }}>
+            <p>Loading LLM data...</p>
+          </div>
+        ) : (
+          <>
+            <div style={{ 
+              display: "flex", 
+              flexDirection: "column", 
+              gap: theme.spacing[8], 
+              marginBottom: theme.spacing[12] 
+            }}>
+              {/* Unified Dashboard LLM Card */}
+              <Card style={{ padding: 0, border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`, borderRadius: theme.borderRadius.xl, backgroundColor: theme.colors.card, overflow: "hidden", boxShadow: "none" }}>
+                
+                {/* LLM Information */}
+                <div style={{ padding: theme.spacing[8] }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[2], marginBottom: theme.spacing[6] }}>
+                    <div style={{ width: "24px", height: "24px", borderRadius: "6px", backgroundColor: theme.colors.primary.DEFAULT + "08", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Info size={14} style={{ color: theme.colors.primary.DEFAULT }} />
+                    </div>
+                    <Text weight="semibold" style={{ fontSize: "14px", color: theme.colors.foreground, margin: 0 }}>LLM Information</Text>
+                  </div>
 
-          {/* 1. Basic Info */}
-          <Card style={{ padding: theme.spacing[6], backgroundColor: theme.colors.card, border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`, borderRadius: theme.borderRadius.md }}>
-            <Text as="h3" size="lg" variant="label" style={{ marginBottom: theme.spacing[6] }}>LLM Information</Text>
+                  <div style={{ marginBottom: theme.spacing[6] }}>
+                    <label style={{ display: "block", fontSize: "10px", fontWeight: "700", color: theme.colors.neutral[500], textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: theme.spacing[1.5] }}>
+                      LLM Name *
+                    </label>
+                    <Input placeholder="e.g. Production GPT-4" value={llmData.name} onChange={(e) => setLLMData({ ...llmData, name: e.target.value })} maxLength={30} />
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: theme.spacing[2] }}>
+                      <Text size="xs" variant="muted" style={{ display: "block", fontSize: "11px" }}>
+                        Only use letters, numbers, spaces, hyphens, and underscores
+                      </Text>
+                      <p style={{
+                        fontSize: "11px",
+                        color: theme.colors.muted_foreground,
+                        margin: 0,
+                      }}>
+                        {llmData.name?.length || 0}/30 characters
+                      </p>
+                    </div>
+                  </div>
+                </div>
 
-            <div style={{ marginBottom: theme.spacing[6] }}>
-              <label style={{ display: "block", fontSize: theme.typography.fontSize.sm, fontWeight: theme.typography.fontWeight.semibold, marginBottom: theme.spacing[2], color: theme.colors.foreground }}>
-                LLM Name *
-              </label>
-              <Input placeholder="e.g., Production GPT-4" value={llmData.name} onChange={(e) => setLLMData({ ...llmData, name: e.target.value })} maxLength={30} />
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: theme.spacing[2] }}>
-                <Text size="xs" variant="muted" style={{ display: "block" }}>
-                  Only use letters, numbers, spaces, hyphens, and underscores
-                </Text>
-                <p style={{
-                  fontSize: theme.typography.fontSize.xs,
-                  color: theme.colors.muted_foreground,
-                  margin: 0,
-                }}>
-                  {llmData.name?.length || 0}/30 characters
-                </p>
-              </div>
+                <div style={{ borderTop: `${theme.borderWidth.sm} solid ${theme.colors.neutral[100]}`, margin: `0 ${theme.spacing[8]}` }} />
+
+                {/* Provider & Model */}
+                <div style={{ padding: theme.spacing[8] }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[2], marginBottom: theme.spacing[6] }}>
+                    <div style={{ width: "24px", height: "24px", borderRadius: "6px", backgroundColor: theme.colors.primary.DEFAULT + "08", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Settings size={14} style={{ color: theme.colors.primary.DEFAULT }} />
+                    </div>
+                    <Text weight="semibold" style={{ fontSize: "14px", color: theme.colors.foreground, margin: 0 }}>Provider & Model</Text>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: "1fr 1fr", gap: theme.spacing[6] }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: "10px", fontWeight: "700", color: theme.colors.neutral[500], textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: theme.spacing[1.5] }}>Provider *</label>
+                      <Select value={llmData.provider} onValueChange={(val) => setLLMData({ ...llmData, provider: val })}>
+                        <SelectTrigger size="md"><SelectValue placeholder="Select Provider" /></SelectTrigger>
+                        <SelectContent>
+                          {PROVIDERS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: "block", fontSize: "10px", fontWeight: "700", color: theme.colors.neutral[500], textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: theme.spacing[1.5] }}>Model Name *</label>
+                      <Input placeholder="e.g., gpt-4, claude-3-opus" value={llmData.model} onChange={(e) => setLLMData({ ...llmData, model: e.target.value })} />
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ borderTop: `${theme.borderWidth.sm} solid ${theme.colors.neutral[100]}`, margin: `0 ${theme.spacing[8]}` }} />
+
+                {/* Headers & Env Vars */}
+                <div style={{ padding: theme.spacing[8] }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: theme.spacing[6] }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: theme.spacing[2] }}>
+                      <div style={{ width: "24px", height: "24px", borderRadius: "6px", backgroundColor: theme.colors.primary.DEFAULT + "08", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Globe size={14} style={{ color: theme.colors.primary.DEFAULT }} />
+                      </div>
+                      <Text weight="semibold" style={{ fontSize: "14px", color: theme.colors.foreground, margin: 0 }}>Headers Configuration</Text>
+                    </div>
+                    <Button variant="outline" size="sm" leadingIcon={Settings} onClick={() => setShowEnvModal(true)} style={{ fontSize: "11px", height: "26px", color: theme.colors.neutral[600] }}>
+                      Environment Variables
+                    </Button>
+                  </div>
+
+                  <div style={{ marginBottom: theme.spacing[4], padding: theme.spacing[4], backgroundColor: theme.colors.primary.DEFAULT + "05", borderRadius: theme.borderRadius.lg, border: `${theme.borderWidth.sm} solid ${theme.colors.primary.DEFAULT}15` }}>
+                    <Text style={{ fontSize: "12px", lineHeight: 1.5, color: theme.colors.primary[800] }}>
+                      Use <code>{"{{env.KEY}}"}</code> to reference environment variables securely.<br />
+                      Example: <code>{`"Authorization": "Bearer {{env.OPENAI_API_KEY}}"`}</code>
+                    </Text>
+                  </div>
+
+                  <div style={{ height: "250px", border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`, borderRadius: theme.borderRadius.lg, overflow: "hidden" }}>
+                    <Editor
+                      height="100%"
+                      defaultLanguage="json"
+                      value={llmData.headers}
+                      onChange={(value) => setLLMData({ ...llmData, headers: value || "" })}
+                      theme={theme.isDark ? "vs-dark" : "vs"}
+                      options={{ minimap: { enabled: false }, fontSize: 13, scrollBeyondLastLine: false }}
+                    />
+                  </div>
+                </div>
+              </Card>
             </div>
-          </Card>
-
-          {/* 2. Provider & Model */}
-          <Card style={{ padding: theme.spacing[6], backgroundColor: theme.colors.card, border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`, borderRadius: theme.borderRadius.md }}>
-            <Text as="h3" size="lg" variant="label" style={{ marginBottom: theme.spacing[6] }}>Provider & Model</Text>
-
-            <div style={{ display: 'flex', flexDirection: "column", gap: theme.spacing[6] }}>
-              <div>
-                <label style={{ display: "block", fontSize: theme.typography.fontSize.sm, fontWeight: theme.typography.fontWeight.semibold, marginBottom: theme.spacing[2], color: theme.colors.foreground }}>Provider *</label>
-                <Select value={llmData.provider} onValueChange={(val) => setLLMData({ ...llmData, provider: val })}>
-                  <SelectTrigger><SelectValue placeholder="Select Provider" /></SelectTrigger>
-                  <SelectContent>
-                    {PROVIDERS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <label style={{ display: "block", fontSize: theme.typography.fontSize.sm, fontWeight: theme.typography.fontWeight.semibold, marginBottom: theme.spacing[2], color: theme.colors.foreground }}>Model Name *</label>
-                <Input placeholder="e.g., gpt-4, claude-3-opus" value={llmData.model} onChange={(e) => setLLMData({ ...llmData, model: e.target.value })} />
-              </div>
-            </div>
-          </Card>
-
-          {/* 3. Headers & Env Vars */}
-          <Card style={{ padding: theme.spacing[6], backgroundColor: theme.colors.card, border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`, borderRadius: theme.borderRadius.md }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: theme.spacing[6] }}>
-              <div>
-                <Text as="h3" size="lg" variant="label">Headers Configuration</Text>
-                <Text as="p" size="sm" style={{ color: theme.colors.muted_foreground, marginTop: theme.spacing[1] }}>Define HTTP headers (JSON format)</Text>
-              </div>
-              <Button variant="outline" size="sm" leadingIcon={Settings} onClick={() => setShowEnvModal(true)}>
-                Env Variables
-              </Button>
-            </div>
-
-            <div style={{ marginBottom: theme.spacing[4] }}>
-              <Alert variant="filled" status="info">
-                <Text size="sm">
-                  Use <code>{"{{env.VARIABLE_NAME}}"}</code> to reference environment variables securely.<br />
-                  Example: <code>{`"Authorization": "Bearer {{env.OPENAI_API_KEY}}"`}</code>
-                </Text>
-              </Alert>
-            </div>
-
-            <div style={{ border: `2px solid ${theme.colors.neutral[300]}`, borderRadius: theme.borderRadius.md, overflow: "hidden" }}>
-              <Editor
-                height="200px"
-                defaultLanguage="json"
-                value={llmData.headers}
-                onChange={(value) => setLLMData({ ...llmData, headers: value || "" })}
-                theme={theme.isDark ? "vs-dark" : "vs"}
-                options={{ minimap: { enabled: false }, fontSize: 13, lineNumbers: "off", folding: false }}
-              />
-            </div>
-          </Card>
-        </div>
+          </>
+        )}
+      </Container>
 
         {/* Environment Variables Modal */}
         {showEnvModal && (
@@ -447,30 +523,6 @@ export default function CreateLLMPage() {
             </Card>
           </div>
         )}
-
-        {/* Footer Section */}
-        <div style={{
-          display: "flex",
-          justifyContent: "flex-end",
-          gap: theme.spacing[3],
-          paddingTop: theme.spacing[6],
-          borderTop: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
-        }}>
-          <Button variant="outline" size="md" onClick={() => navigate("/llms")}>
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            size="md"
-            leadingIcon={Check}
-            onClick={handleSave}
-            disabled={isSaving}
-          >
-            {isSaving ? (isEditMode ? "Updating..." : "Saving...") : (isEditMode ? "Update LLM" : "Save LLM")}
-          </Button>
-        </div>
-
-      </Container>
     </Layout>
   )
 }

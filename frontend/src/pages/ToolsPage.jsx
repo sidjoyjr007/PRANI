@@ -5,11 +5,8 @@ import { useDispatch, useSelector } from "react-redux"
 import { fetchTools, setPage } from "@/store/slices/toolSlice"
 import { useTheme } from "@/context/ThemeContext"
 import Layout from "@/components/Layout"
-import Container from "@/components/Container"
 import PageHeader from "@/components/PageHeader"
-import CardGrid from "@/components/CardGrid"
 import ToolCard from "@/components/ToolCard"
-import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import {
   Pagination,
@@ -18,11 +15,9 @@ import {
   PaginationLink,
   PaginationEllipsis
 } from "@/components/ui/pagination"
-import { Plus, Search, Hammer } from "lucide-react"
+import { Plus, Search, Hammer, Loader2, X } from "lucide-react"
 import useDebounce from "@/hooks/useDebounce"
-import { Empty } from "@/components/ui/empty"
 import { Toast, ToastContainer } from "@/components/ui/toast"
-import { Spinner } from "@/components/ui/spinner"
 
 export default function ToolsPage() {
   const theme = useTheme()
@@ -122,6 +117,8 @@ export default function ToolsPage() {
     return buttons
   }
 
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false)
+  
   return (
     <Layout>
       {/* Toast Notifications */}
@@ -137,45 +134,117 @@ export default function ToolsPage() {
         ))}
       </ToastContainer>
 
-      <Container>
-        {/* Header with Title and Search */}
-        <div style={{ marginBottom: theme.spacing[8] }}>
-          <div style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: theme.spacing[4],
-            marginBottom: theme.spacing[6],
+      <div style={{ padding: `${theme.spacing[6]} ${theme.spacing[8]}` }}>
+        <div style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          marginBottom: theme.spacing[8],
+          gap: theme.spacing[4]
+        }}>
+          <PageHeader 
+            title="Available Tools" 
+            subtitle="Powerful tools to enhance your productivity"
+            icon={Hammer}
+          />
+          
+          <div style={{ 
+            display: "flex", 
+            alignItems: "center", 
+            gap: theme.spacing[3],
+            marginTop: theme.spacing[2],
           }}>
-            <div style={{ flex: 1 }}>
-              <PageHeader
-                title="Available Tools"
-                subtitle="Powerful tools to enhance your productivity"
-              />
+            {/* Expandable Search - Premium Glass Style */}
+            <div style={{
+              position: "relative",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "flex-end",
+              height: "40px",
+            }}>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                transition: "all 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
+                width: isSearchExpanded ? "320px" : "40px",
+                height: "40px",
+                borderRadius: "12px",
+                backgroundColor: isSearchExpanded ? "rgba(255, 255, 255, 0.9)" : "rgba(255, 255, 255, 0.5)",
+                backdropFilter: "blur(8px)",
+                border: `${theme.borderWidth.sm} solid ${isSearchExpanded ? theme.colors.primary[300] : theme.colors.border}`,
+                boxShadow: isSearchExpanded ? "0 4px 12px rgba(0, 0, 0, 0.05)" : "none",
+                overflow: "hidden",
+                position: "relative"
+              }}>
+                <button
+                  onClick={() => setIsSearchExpanded(!isSearchExpanded)}
+                  style={{
+                    width: "40px",
+                    height: "40px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: isSearchExpanded || searchQuery ? theme.colors.primary[600] : theme.colors.foreground,
+                    flexShrink: 0,
+                    zIndex: 2
+                  }}
+                  title="Search Tools"
+                >
+                  <Search size={18} strokeWidth={2.5} />
+                </button>
+
+                {isSearchExpanded && (
+                  <>
+                    <input
+                      autoFocus
+                      placeholder="Search tools..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onBlur={() => !searchQuery && setIsSearchExpanded(false)}
+                      style={{
+                        flex: 1,
+                        background: "none",
+                        border: "none",
+                        outline: "none",
+                        padding: "0 12px 0 0",
+                        fontSize: theme.typography.fontSize.sm,
+                        color: theme.colors.foreground,
+                        fontWeight: 500
+                      }}
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          color: theme.colors.muted_foreground,
+                          padding: "0 12px",
+                          display: "flex",
+                          alignItems: "center"
+                        }}
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
+
             <Button
               variant="primary"
               size="md"
               leadingIcon={Plus}
-              style={{ marginTop: theme.spacing[2], whiteSpace: "nowrap" }}
-              onClick={() => navigate("/create-tool")}
+              style={{ whiteSpace: "nowrap", height: "40px" }}
+              onClick={() => navigate('/create-tool')}
             >
-              Create
+              Create Tool
             </Button>
-          </div>
-
-          {/* Search Box */}
-          <div style={{
-            maxWidth: "500px",
-            position: "relative"
-          }}>
-            <Input
-              placeholder="Search tools..."
-              value={searchQuery}
-              onChange={handleSearchChange}
-              leadingIcon={Search}
-              trailingIcon={isLoading && tools.length > 0 ? Spinner : undefined}
-            />
           </div>
         </div>
 
@@ -186,19 +255,18 @@ export default function ToolsPage() {
             alignItems: "center",
             minHeight: "400px"
           }}>
-            <Spinner size="lg" variant="primary" />
+            <Loader2 className="w-10 h-10 animate-spin" style={{ color: theme.colors.primary[500] }} />
           </div>
         ) : tools.length > 0 ? (
           <div style={{
             opacity: isLoading ? 0.6 : 1,
             transition: "opacity 0.2s ease-in-out"
           }}>
-            <CardGrid
-              items={tools}
-              columns={3}
-              gap={6}
-              renderCard={(tool) => <ToolCard tool={tool} addToast={addToast} />}
-            />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {tools.map((tool) => (
+                <ToolCard key={tool.id} tool={tool} addToast={addToast} />
+              ))}
+            </div>
 
             {/* Pagination */}
             {totalPages > 1 && (
@@ -233,27 +301,58 @@ export default function ToolsPage() {
             )}
           </div>
         ) : (
-          <Empty
-            icon={Hammer}
-            title="No tools found"
-            description={
-              searchQuery
+          <div style={{ 
+            padding: theme.spacing[12], 
+            textAlign: "center", 
+            border: `${theme.borderWidth.sm} solid ${theme.colors.border}`,
+            borderRadius: theme.borderRadius.lg,
+            backgroundColor: "#FFFFFF",
+            boxShadow: theme.shadows.sm,
+          }}>
+            <div style={{
+              width: "64px",
+              height: "64px",
+              borderRadius: "16px",
+              backgroundColor: theme.colors.primary[50],
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto 16px auto",
+              border: `1px solid ${theme.colors.primary[100]}`
+            }}>
+              <Hammer className="w-8 h-8 text-primary-500" style={{ color: theme.colors.primary[500] }} />
+            </div>
+            <h3 style={{ 
+              marginBottom: theme.spacing[2], 
+              color: theme.colors.foreground,
+              fontSize: theme.typography.fontSize.xl,
+              fontWeight: 700 
+            }}>
+              No Tools Found
+            </h3>
+            <p style={{ 
+              color: theme.colors.muted_foreground, 
+              maxWidth: "400px", 
+              margin: "0 auto 24px auto",
+              fontSize: theme.typography.fontSize.sm
+            }}>
+              {searchQuery
                 ? `No tools match your search "${searchQuery}".`
-                : "You haven't created any tools yet. Get started by creating your first tool."
-            }
-            action={
+                : "You haven't created any tools yet. Get started by creating your first tool."}
+            </p>
+            {!searchQuery && (
               <Button
                 variant="primary"
                 size="md"
                 leadingIcon={Plus}
                 onClick={() => navigate("/create-tool")}
               >
-                Create Tool
+                Create Your First Tool
               </Button>
-            }
-          />
+            )}
+          </div>
         )}
-      </Container>
+      </div>
     </Layout>
   )
 }

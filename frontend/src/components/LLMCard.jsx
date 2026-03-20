@@ -56,7 +56,7 @@ export default function LLMCard({ llm, addToast }) {
   ]
 
   return (
-    <>
+    <div key={llm.id}>
       <ResourceCard
         title={llm.name}
         subtitle={llm.model}
@@ -74,6 +74,6 @@ export default function LLMCard({ llm, addToast }) {
         resourceName={llm.name}
         confirmationKeyword="DELETE"
       />
-    </>
+    </div>
   )
 }

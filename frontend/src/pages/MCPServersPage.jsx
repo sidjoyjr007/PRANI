@@ -4,11 +4,8 @@ import { useDispatch, useSelector } from "react-redux"
 import { fetchMCPs, setPage } from "@/store/slices/mcpSlice"
 import { useTheme } from "@/context/ThemeContext"
 import Layout from "@/components/Layout"
-import Container from "@/components/Container"
 import PageHeader from "@/components/PageHeader"
-import CardGrid from "@/components/CardGrid"
 import MCPServerCard from "@/components/MCPServerCard"
-import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import {
   Pagination,
@@ -17,11 +14,9 @@ import {
   PaginationLink,
   PaginationEllipsis
 } from "@/components/ui/pagination"
-import { Plus, Search, Server } from "lucide-react"
+import { Search, Server, Loader2, X, Settings, Plus } from "lucide-react"
 import useDebounce from "@/hooks/useDebounce"
-import { Empty } from "@/components/ui/empty"
 import { Toast, ToastContainer } from "@/components/ui/toast"
-import { Spinner } from "@/components/ui/spinner"
 
 export default function MCPServersPage() {
   const theme = useTheme()
@@ -105,6 +100,8 @@ export default function MCPServersPage() {
     return buttons
   }
 
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false)
+  
   return (
     <Layout>
       {/* Toast Notifications */}
@@ -120,42 +117,117 @@ export default function MCPServersPage() {
         ))}
       </ToastContainer>
 
-      <Container>
-        {/* Header with Title and Search */}
-        <div style={{ marginBottom: theme.spacing[8] }}>
-          <div style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: theme.spacing[4],
-            marginBottom: theme.spacing[6],
+      <div style={{ padding: `${theme.spacing[6]} ${theme.spacing[8]}` }}>
+        <div style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          marginBottom: theme.spacing[8],
+          gap: theme.spacing[4]
+        }}>
+          <PageHeader 
+            title="MCP Servers" 
+            subtitle="Manage and configure Model Context Protocol (MCP) servers"
+            icon={Server}
+          />
+          
+          <div style={{ 
+            display: "flex", 
+            alignItems: "center", 
+            gap: theme.spacing[3],
+            marginTop: theme.spacing[2],
           }}>
-            <div style={{ flex: 1 }}>
-              <PageHeader
-                title="MCP Servers"
-                subtitle="Manage and configure Model Context Protocol (MCP) servers"
-              />
+            {/* Expandable Search - Premium Glass Style */}
+            <div style={{
+              position: "relative",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "flex-end",
+              height: "40px",
+            }}>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                transition: "all 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
+                width: isSearchExpanded ? "320px" : "40px",
+                height: "40px",
+                borderRadius: "12px",
+                backgroundColor: isSearchExpanded ? "rgba(255, 255, 255, 0.9)" : "rgba(255, 255, 255, 0.5)",
+                backdropFilter: "blur(8px)",
+                border: `${theme.borderWidth.sm} solid ${isSearchExpanded ? theme.colors.primary[300] : theme.colors.border}`,
+                boxShadow: isSearchExpanded ? "0 4px 12px rgba(0, 0, 0, 0.05)" : "none",
+                overflow: "hidden",
+                position: "relative"
+              }}>
+                <button
+                  onClick={() => setIsSearchExpanded(!isSearchExpanded)}
+                  style={{
+                    width: "40px",
+                    height: "40px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: isSearchExpanded || searchQuery ? theme.colors.primary[600] : theme.colors.foreground,
+                    flexShrink: 0,
+                    zIndex: 2
+                  }}
+                  title="Search MCP Servers"
+                >
+                  <Search size={18} strokeWidth={2.5} />
+                </button>
+
+                {isSearchExpanded && (
+                  <>
+                    <input
+                      autoFocus
+                      placeholder="Search MCP servers..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onBlur={() => !searchQuery && setIsSearchExpanded(false)}
+                      style={{
+                        flex: 1,
+                        background: "none",
+                        border: "none",
+                        outline: "none",
+                        padding: "0 12px 0 0",
+                        fontSize: theme.typography.fontSize.sm,
+                        color: theme.colors.foreground,
+                        fontWeight: 500
+                      }}
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          color: theme.colors.muted_foreground,
+                          padding: "0 12px",
+                          display: "flex",
+                          alignItems: "center"
+                        }}
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
+
             <Button
               variant="primary"
               size="md"
-              leadingIcon={Plus}
-              style={{ marginTop: theme.spacing[2], whiteSpace: "nowrap" }}
-              onClick={() => navigate("/create-mcp-server")}
+              leadingIcon={Settings}
+              style={{ whiteSpace: "nowrap", height: "40px" }}
+              onClick={() => navigate('/create-mcp-server')}
             >
-              Create
+              Configure Server
             </Button>
-          </div>
-
-          {/* Search Box */}
-          <div style={{ maxWidth: "500px", position: "relative" }}>
-            <Input
-              placeholder="Search MCP servers..."
-              value={searchQuery}
-              onChange={handleSearchChange}
-              leadingIcon={Search}
-              trailingIcon={isLoading && mcps.length > 0 ? Spinner : undefined}
-            />
           </div>
         </div>
 
@@ -166,16 +238,18 @@ export default function MCPServersPage() {
             alignItems: "center",
             minHeight: "400px"
           }}>
-            <Spinner size="lg" variant="primary" />
+            <Loader2 className="w-10 h-10 animate-spin" style={{ color: theme.colors.primary[500] }} />
           </div>
         ) : mcps.length > 0 ? (
           <div style={{
             opacity: isLoading ? 0.6 : 1,
             transition: "opacity 0.2s ease-in-out"
           }}>
-            <CardGrid items={mcps} columns={3} gap={6} renderCard={(server) => (
-              <MCPServerCard server={server} addToast={addToast} />
-            )} />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {mcps.map((server) => (
+                <MCPServerCard key={server.id} server={server} addToast={addToast} />
+              ))}
+            </div>
 
             {/* Pagination */}
             {totalPages > 1 && (
@@ -210,27 +284,58 @@ export default function MCPServersPage() {
             )}
           </div>
         ) : (
-          <Empty
-            icon={Server}
-            title="No MCP servers found"
-            description={
-              searchQuery
+          <div style={{ 
+            padding: theme.spacing[12], 
+            textAlign: "center", 
+            border: `${theme.borderWidth.sm} solid ${theme.colors.border}`,
+            borderRadius: theme.borderRadius.lg,
+            backgroundColor: "#FFFFFF",
+            boxShadow: theme.shadows.sm,
+          }}>
+            <div style={{
+              width: "64px",
+              height: "64px",
+              borderRadius: "16px",
+              backgroundColor: theme.colors.primary[50],
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto 16px auto",
+              border: `1px solid ${theme.colors.primary[100]}`
+            }}>
+              <Server className="w-8 h-8 text-primary-500" style={{ color: theme.colors.primary[500] }} />
+            </div>
+            <h3 style={{ 
+              marginBottom: theme.spacing[2], 
+              color: theme.colors.foreground,
+              fontSize: theme.typography.fontSize.xl,
+              fontWeight: 700 
+            }}>
+              No MCP Servers Found
+            </h3>
+            <p style={{ 
+              color: theme.colors.muted_foreground, 
+              maxWidth: "400px", 
+              margin: "0 auto 24px auto",
+              fontSize: theme.typography.fontSize.sm
+            }}>
+              {searchQuery
                 ? `No MCP servers match your search "${searchQuery}".`
-                : "You haven't added any MCP servers yet. Get started by adding your first server."
-            }
-            action={
+                : "You haven't added any MCP servers yet. Get started by adding your first server."}
+            </p>
+            {!searchQuery && (
               <Button
                 variant="primary"
                 size="md"
                 leadingIcon={Plus}
                 onClick={() => navigate("/create-mcp-server")}
               >
-                Create Server
+                Create Your First Server
               </Button>
-            }
-          />
+            )}
+          </div>
         )}
-      </Container>
+      </div>
     </Layout>
   )
 }

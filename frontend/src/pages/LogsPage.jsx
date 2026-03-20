@@ -5,6 +5,7 @@ import Layout from "@/components/Layout"
 import Container from "@/components/Container"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { Text } from "@/components/ui/text"
 import {
   ChevronLeft, Search, Download, Copy, Check,
   RefreshCw, Terminal, AlertCircle, Info, AlertTriangle, Bug,
@@ -306,20 +307,56 @@ export default function LogsPage() {
   if (!sessionId && agentId) {
     return (
       <Layout>
-        <Container>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "24px" }}>
+      {/* Action-Centric Sticky Header */}
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 40,
+          backgroundColor: `${theme.colors.card}f2`,
+          backdropFilter: "blur(12px)",
+          borderBottom: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
+          padding: `${theme.spacing[3]} 0`,
+          width: "100%",
+        }}
+      >
+        <div style={{
+          maxWidth: "1280px",
+          margin: "0 auto",
+          padding: `0 ${theme.spacing[8]}`,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          height: "36px"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[3] }}>
             <Button
               variant="outline"
-              size="md"
-              leadingIcon={ChevronLeft}
+              size="sm"
               onClick={() => navigate(-1)}
+              style={{
+                width: "32px",
+                height: "32px",
+                borderRadius: "8px",
+                padding: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[300]}`,
+                color: theme.colors.foreground
+              }}
             >
-              Back
+              <ChevronLeft size={20} strokeWidth={2.5} />
             </Button>
-            <h1 style={{ fontSize: "1.2em", fontWeight: 700, color: theme.colors.foreground, margin: 0 }}>
+            <div style={{ width: "1px", height: "14px", backgroundColor: theme.colors.neutral[300] }} />
+            <Text weight="semibold" style={{ fontSize: "14px", color: theme.colors.foreground, margin: 0 }}>
               Agent Sessions
-            </h1>
+            </Text>
           </div>
+        </div>
+      </div>
+
+      <Container maxWidth="1280px" style={{ paddingTop: theme.spacing[8] }}>
 
           {loading && <div style={{ color: theme.colors.muted_foreground, padding: "40px", textAlign: "center" }}>Loading…</div>}
           {error && <div style={{ color: theme.colors.destructive, padding: "40px", textAlign: "center" }}>{error}</div>}
@@ -374,75 +411,97 @@ export default function LogsPage() {
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <Layout>
-      <Container>
-        {/* ── Header ── */}
+      {/* Action-Centric Sticky Header */}
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 40,
+          backgroundColor: `${theme.colors.card}f2`,
+          backdropFilter: "blur(12px)",
+          borderBottom: `${theme.borderWidth.sm} solid ${theme.colors.neutral[200]}`,
+          padding: `${theme.spacing[3]} 0`,
+          width: "100%",
+        }}
+      >
         <div style={{
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-          marginBottom: "20px",
+          maxWidth: "1280px",
+          margin: "0 auto",
+          padding: `0 ${theme.spacing[8]}`,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          height: "36px"
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[3] }}>
             <Button
               variant="outline"
-              size="md"
-              leadingIcon={ChevronLeft}
+              size="sm"
               onClick={() => navigate(-1)}
+              style={{
+                width: "32px",
+                height: "32px",
+                borderRadius: "8px",
+                padding: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                border: `${theme.borderWidth.sm} solid ${theme.colors.neutral[300]}`,
+                color: theme.colors.foreground
+              }}
             >
-              Back
+              <ChevronLeft size={20} strokeWidth={2.5} />
             </Button>
+            <div style={{ width: "1px", height: "14px", backgroundColor: theme.colors.neutral[300] }} />
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <Terminal size={18} style={{ color: theme.colors.primary[400] }} />
-              <h1 style={{ fontSize: "1.1em", fontWeight: 700, color: theme.colors.foreground, margin: 0 }}>
+              <Terminal size={14} style={{ color: theme.colors.primary[500] }} />
+              <Text weight="semibold" style={{ fontSize: "14px", color: theme.colors.foreground, margin: 0 }}>
                 {pageTitle}
-              </h1>
+              </Text>
             </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <button
+          <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[2] }}>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => fetchLogs(false)}
               disabled={loading}
-              title="Refresh"
-              style={{
-                background: "none", border: `1px solid #1e293b`, borderRadius: "6px",
-                cursor: loading ? "not-allowed" : "pointer",
-                color: "#64748b", padding: "6px 10px", display: "flex", alignItems: "center", gap: "5px",
-                fontSize: "0.8em",
-              }}
+              style={{ height: "32px", fontSize: "13px", color: theme.colors.muted_foreground }}
             >
-              <RefreshCw size={13} style={{ animation: loading ? "spin 1s linear infinite" : "none" }} />
+              <RefreshCw size={14} style={{ marginRight: theme.spacing[2], animation: loading ? "spin 1s linear infinite" : "none" }} />
               Refresh
-            </button>
-
-            <button
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={handleDownload}
               disabled={filtered.length === 0}
-              title={`Download ${filtered.length} log entries`}
-              style={{
-                background: "#1e293b", border: "1px solid #334155", borderRadius: "6px",
-                cursor: filtered.length === 0 ? "not-allowed" : "pointer",
-                color: "#94a3b8", padding: "6px 12px", display: "flex", alignItems: "center", gap: "5px",
-                fontSize: "0.8em", opacity: filtered.length === 0 ? 0.5 : 1,
-              }}
+              style={{ height: "32px", fontSize: "13px", color: theme.colors.foreground, border: `1px solid ${theme.colors.neutral[300]}` }}
             >
-              <Download size={13} />
+              <Download size={14} style={{ marginRight: theme.spacing[2] }} />
               Download ({filtered.length})
-            </button>
+            </Button>
           </div>
         </div>
+      </div>
+
+      <Container maxWidth="1280px" style={{ paddingTop: theme.spacing[8], paddingBottom: theme.spacing[16], backgroundColor: "transparent" }}>
 
         {/* ── Terminal Card ── */}
         <Card style={{
           padding: 0,
-          border: "1px solid #1e293b",
-          borderRadius: "10px",
+          border: `1px solid #1e293b`,
+          borderRadius: theme.borderRadius.xl,
           backgroundColor: "#0d1117",
-          fontFamily: '"Fira Code", "JetBrains Mono", "Courier New", monospace',
+          fontFamily: '"Fira Code", "JetBrains Mono", monospace',
           color: "#e2e8f0",
           overflow: "hidden",
-          height: "calc(100vh - 160px)",
-          minHeight: "500px",
+          height: "calc(100vh - 200px)",
+          minHeight: "600px",
           display: "flex",
           flexDirection: "column",
+          boxShadow: "0 20px 50px -12px rgba(0, 0, 0, 0.5)"
         }}>
           {/* ── Terminal chrome ── */}
           <div style={{
