@@ -34,7 +34,8 @@ class ActionHandler:
         tool_registry: Any,
         agent: Any,
         user_id: Any,
-        cleaner: Any
+        cleaner: Any,
+        guardrail_manager: Any
     ):
         self.llm = llm_provider
         self.bus = bus
@@ -45,6 +46,7 @@ class ActionHandler:
         self.agent = agent
         self.user_id = user_id
         self.cleaner = cleaner
+        self.guardrail_manager = guardrail_manager
         self._tool_search_cache = {}
 
     async def get_turn_action(self, result: dict, approved_calls, tool_defs, context, user_input, pending_tool_refinement, loop_warning_triggered) -> None:
@@ -70,6 +72,15 @@ class ActionHandler:
         final_thoughts = []
         is_complete = False
         final_message = ""
+        
+        # --- 0. EXPERIMENTAL: Input Guardrails ---
+        if user_input and not approved_calls:
+            passed, reason = await self.guardrail_manager.validate_input(user_input)
+            if not passed:
+                error_msg = f"User Request Blocked: {reason}"
+                await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.ERROR, content=error_msg, run_id=self.run_id))
+                result.update({"full_content": error_msg, "tool_calls": [], "thoughts": ["Blocked by Input Guardrail."], "is_complete": True})
+                return
 
         for attempt in range(max_retries):
             # 1. Prepare system prompt and tools
@@ -119,6 +130,16 @@ class ActionHandler:
             
             if self.cleaner.is_garbage_json(final_message): final_message = ""
             
+            # --- 4.5. EXPERIMENTAL: Output Guardrails ---
+            if final_message:
+                passed, reason = await self.guardrail_manager.validate_output(final_message, user_input)
+                if not passed:
+                    # If blocked by output guardrail, throw it away and force retry
+                    parse_error = f"Guardrail Violation: {reason}. Please generate a new response adhering to safety rules."
+                    error_occurred = True
+                    # Let the loop retry
+                    continue
+
             has_content = bool(final_message) or bool(final_thoughts)
             if not streamed_tools:
                 if not has_content:
@@ -220,6 +241,19 @@ class ActionHandler:
                     "description": dt.get("description", ""),
                     "schema": dt.get("parameters", dt.get("schema", {}))
                 }
+        
+        # 2.5. TOOL PRUNING: Filter out tools that match EXECUTION guardrails
+        pruned_tools = {}
+        for name, t in unique_tools.items():
+            # Check if the tool itself violates an execution policy (e.g., 'drop-database')
+            # Use an empty argument string for pruning check
+            passed, _ = await self.guardrail_manager.validate_execution(name, "{}")
+            if passed:
+                pruned_tools[name] = t
+            else:
+                logger.info(f"Tool Pruning: Hiding forbidden tool '{name}' from prompt.")
+        
+        unique_tools = pruned_tools
         
         tool_defs = list(BUILTIN_TOOL_DEFS)
         # Always provide the discovery tool upfront

@@ -5,6 +5,7 @@ import llmReducer from './slices/llmSlice'
 import mcpReducer from './slices/mcpSlice'
 import agentReducer from './slices/agentSlice'
 import conversationReducer from './slices/conversationSlice'
+import guardrailReducer from './slices/guardrailSlice'
 
 export const store = configureStore({
     reducer: {
@@ -14,5 +15,6 @@ export const store = configureStore({
         mcps: mcpReducer,
         agents: agentReducer,
         conversations: conversationReducer,
+        guardrails: guardrailReducer,
     },
 })

@@ -13,12 +13,14 @@ import { Chips } from "@/components/ui/chips"
 import { Toggle } from "@/components/ui/toggle"
 import { CommandPalette } from "@/components/ui/command-palette"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
-import { ChevronLeft, Check, Info, Wrench, Server, Settings } from "lucide-react"
+import { ChevronLeft, Check, Info, Wrench, Server, Settings, Shield } from "lucide-react"
 import { Toast, ToastContainer } from "@/components/ui/toast"
 
 import { fetchTools } from "@/store/slices/toolSlice"
 import { fetchMCPs } from "@/store/slices/mcpSlice"
 import { fetchLLMs } from "@/store/slices/llmSlice"
+import { fetchGuardrails } from "@/store/slices/guardrailSlice"
+import guardrailService from "@/services/guardrailService"
 import { createAgent, updateAgent, fetchAgent, clearCurrentAgent } from "@/store/slices/agentSlice"
 
 export default function CreateAgentPage() {
@@ -30,6 +32,9 @@ export default function CreateAgentPage() {
   const { items: tools } = useSelector((state) => state.tools)
   const { items: mcpServers } = useSelector((state) => state.mcps)
   const { items: llms } = useSelector((state) => state.llms)
+  const { items: guardrails, isLoading: isGuardrailsLoading } = useSelector((state) => state.guardrails)
+  
+  const guardrailsList = Array.isArray(guardrails) ? guardrails : []
   const { currentAgent, isSaving } = useSelector((state) => state.agents)
 
   const [agentData, setAgentData] = useState({
@@ -37,6 +42,7 @@ export default function CreateAgentPage() {
     instructions: "",
     toolIds: [],
     mcpServerIds: [],
+    guardrailIds: [],
     humanInLoop: false,
     llmId: null,
   })
@@ -47,6 +53,7 @@ export default function CreateAgentPage() {
   // Command Palette State
   const [isToolPaletteOpen, setIsToolPaletteOpen] = useState(false)
   const [isServerPaletteOpen, setIsServerPaletteOpen] = useState(false)
+  const [isGuardrailPaletteOpen, setIsGuardrailPaletteOpen] = useState(false)
 
   // Toast State
   const [toasts, setToasts] = useState([])
@@ -66,6 +73,7 @@ export default function CreateAgentPage() {
     dispatch(fetchTools({ size: 100 }))
     dispatch(fetchMCPs({ size: 100 }))
     dispatch(fetchLLMs({ size: 100 }))
+    dispatch(fetchGuardrails())
   }, [dispatch])
 
   // Fetch Agent if editing
@@ -79,6 +87,7 @@ export default function CreateAgentPage() {
             instructions: agent.instructions || "",
             toolIds: agent.tool_ids || [],
             mcpServerIds: agent.mcp_server_ids || [],
+            guardrailIds: (agent.guardrails || []).map(g => g.id),
             humanInLoop: agent.human_in_loop || false,
             llmId: agent.llm_id || null,
           }
@@ -143,6 +152,9 @@ export default function CreateAgentPage() {
         payload.mcp_server_ids = agentData.mcpServerIds
       }
 
+      // Check Guardrails change
+      const guardrailsChanged = JSON.stringify([...agentData.guardrailIds].sort()) !== JSON.stringify([...originalData.guardrailIds].sort())
+
       // Compare LLM ID
       const origLlm = originalData.llmId || null
       const currLlm = agentData.llmId || null
@@ -150,8 +162,8 @@ export default function CreateAgentPage() {
         payload.llm_id = currLlm
       }
 
-      // If no changes, inform user
-      if (Object.keys(payload).length === 0) {
+      // If no changes (including guardrails), inform user
+      if (Object.keys(payload).length === 0 && !guardrailsChanged) {
         addToast("Info", "No changes detected.", "info")
         return
       }
@@ -169,13 +181,26 @@ export default function CreateAgentPage() {
     }
 
     try {
+      let savedAgentId = agentId;
+
       if (agentId) {
-        await dispatch(updateAgent({ id: agentId, agentData: payload })).unwrap()
-        addToast("Success", "Agent updated successfully!", "success")
+        if (Object.keys(payload).length > 0) {
+           await dispatch(updateAgent({ id: agentId, agentData: payload })).unwrap()
+        }
       } else {
-        await dispatch(createAgent(payload)).unwrap()
-        addToast("Success", "Agent created successfully!", "success")
+        const newAgent = await dispatch(createAgent(payload)).unwrap()
+        savedAgentId = newAgent.id
       }
+
+      // Sync Guardrails manually using the bulk endpoint
+      const currentGuardrails = agentData.guardrailIds
+      await guardrailService.syncAgentGuardrails(savedAgentId, currentGuardrails).catch(err => {
+        console.error("Failed to sync guardrails:", err)
+        addToast("Sync Info", "Agent saved, but some guardrails failed to link.", "warning")
+      })
+
+      addToast("Success", agentId ? "Agent updated successfully!" : "Agent created successfully!", "success")
+      
       // Delay navigation slightly to show success toast
       setTimeout(() => navigate("/agents"), 1000)
     } catch (error) {
@@ -427,6 +452,53 @@ export default function CreateAgentPage() {
 
                 <div style={{ borderTop: `${theme.borderWidth.sm} solid ${theme.colors.neutral[100]}`, margin: `0 ${theme.spacing[8]}` }} />
 
+                {/* Guardrails */}
+                <div style={{ padding: theme.spacing[8] }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: theme.spacing[6] }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[2] }}>
+                      <div style={{ width: "24px", height: "24px", borderRadius: "6px", backgroundColor: theme.colors.primary.DEFAULT + "08", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Shield size={14} style={{ color: theme.colors.primary.DEFAULT }} />
+                      </div>
+                      <Text weight="semibold" style={{ fontSize: "14px", color: theme.colors.foreground, margin: 0 }}>Safety Guardrails</Text>
+                    </div>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        setIsGuardrailPaletteOpen(true)
+                      }}
+                      style={{ fontSize: "11px", height: "26px", padding: `0 ${theme.spacing[3]}`, color: theme.colors.neutral[600] }}
+                    >
+                      Add Guardrails
+                    </Button>
+                  </div>
+
+                  {agentData.guardrailIds.length > 0 ? (
+                    <Chips
+                      items={agentData.guardrailIds.map(id => ({
+                        id: id,
+                        label: guardrailsList.find(g => g.id === id)?.name || "Loading..."
+                      }))}
+                      variant="primary"
+                      size="sm"
+                      onRemove={(id) => {
+                        setAgentData({
+                          ...agentData,
+                          guardrailIds: agentData.guardrailIds.filter(gid => gid !== id)
+                        })
+                      }}
+                    />
+                  ) : (
+                    <div style={{ padding: theme.spacing[4], border: `${theme.borderWidth.sm} dashed ${theme.colors.neutral[100]}`, borderRadius: theme.borderRadius.md, textAlign: "center" }}>
+                      <Text style={{ fontSize: "12px" }} variant="muted">No security guardrails enabled.</Text>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ borderTop: `${theme.borderWidth.sm} solid ${theme.colors.neutral[100]}`, margin: `0 ${theme.spacing[8]}` }} />
+
                 {/* Settings */}
                 <div style={{ padding: theme.spacing[8] }}>
                   <div style={{ display: "flex", alignItems: "center", gap: theme.spacing[2], marginBottom: theme.spacing[6] }}>
@@ -460,8 +532,8 @@ export default function CreateAgentPage() {
             placeholder="Search available tools..."
             items={tools.map(t => ({ id: t.id, label: t.name, description: t.description }))}
             selectedIds={agentData.toolIds}
-            onSelect={(id) => setAgentData({ ...agentData, toolIds: [...agentData.toolIds, id] })}
-            onDeselect={(id) => setAgentData({ ...agentData, toolIds: agentData.toolIds.filter(tid => tid !== id) })}
+            onSelect={(id) => setAgentData(prev => ({ ...prev, toolIds: [...prev.toolIds, id] }))}
+            onDeselect={(id) => setAgentData(prev => ({ ...prev, toolIds: prev.toolIds.filter(tid => tid !== id) }))}
             emptyMessage="No available tools found."
           />
 
@@ -473,9 +545,22 @@ export default function CreateAgentPage() {
             placeholder="Search available servers..."
             items={mcpServers.map(s => ({ id: s.id, label: s.name }))}
             selectedIds={agentData.mcpServerIds}
-            onSelect={(id) => setAgentData({ ...agentData, mcpServerIds: [...agentData.mcpServerIds, id] })}
-            onDeselect={(id) => setAgentData({ ...agentData, mcpServerIds: agentData.mcpServerIds.filter(sid => sid !== id) })}
+            onSelect={(id) => setAgentData(prev => ({ ...prev, mcpServerIds: [...prev.mcpServerIds, id] }))}
+            onDeselect={(id) => setAgentData(prev => ({ ...prev, mcpServerIds: prev.mcpServerIds.filter(sid => sid !== id) }))}
             emptyMessage="No available MCP servers found."
+          />
+
+          <CommandPalette
+            isOpen={isGuardrailPaletteOpen}
+            onClose={() => setIsGuardrailPaletteOpen(false)}
+            title="Add Guardrails"
+            description="Select guardrails to attach to this agent."
+            placeholder="Search available guardrails..."
+            items={guardrailsList.map(g => ({ id: g.id, label: g.name, description: `${g.type} - ${g.action}` }))}
+            selectedIds={agentData.guardrailIds}
+            onSelect={(id) => setAgentData(prev => ({ ...prev, guardrailIds: [...prev.guardrailIds, id] }))}
+            onDeselect={(id) => setAgentData(prev => ({ ...prev, guardrailIds: prev.guardrailIds.filter(gid => gid !== id) }))}
+            emptyMessage="No available guardrails found."
           />
         </>
       )}

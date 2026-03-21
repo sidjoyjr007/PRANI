@@ -30,7 +30,8 @@ class ToolHandler:
         workspace_planner: WorkspacePlanner,
         tool_registry: Any,
         agent: Any,
-        run_id: str
+        run_id: str,
+        guardrail_manager: Any
     ):
         self.db = db
         self.user_id = user_id
@@ -41,6 +42,7 @@ class ToolHandler:
         self.tool_registry = tool_registry
         self.agent = agent
         self.run_id = run_id
+        self.guardrail_manager = guardrail_manager
         self.pending_tool_refinement: Optional[Dict] = None
 
     def clean_tool_name(self, name: str) -> str:
@@ -65,6 +67,17 @@ class ToolHandler:
                 tc.function["arguments"] = args_str.strip()
             except Exception:
                 pass
+
+        # 0.5. Execution Guardrails (Check BEFORE approval to avoid asking for dangerous things)
+        for tc in tool_calls:
+            t_name = tc.function["name"]
+            passed, reason = await self.guardrail_manager.validate_execution(t_name, tc.function.get("arguments", ""))
+            if not passed:
+                res = f"System Error - Action Blocked By Governance Guardrail: {reason}"
+                await self.memory.add_message(role="assistant", content=display_text, tool_calls=tool_calls, thoughts=thoughts)
+                await self.memory.add_message(role="tool", content=res, tool_call_id=tc.id, name=t_name, display=True)
+                self.pending_tool_refinement = {"tool": t_name, "error": str(res)}
+                return False # Don't pause for approval, let the loop retry or fail
 
         if self.agent.human_in_loop and not is_approved and requires_approval:
             # We add thoughts here for UI persistence before pause

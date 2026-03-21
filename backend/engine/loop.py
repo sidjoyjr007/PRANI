@@ -15,6 +15,7 @@ from llm.types import ProviderMessage
 from engine.logic.cleaner import ResponseCleaner
 from engine.logic.tool_handler import ToolHandler
 from engine.logic.action_handler import ActionHandler
+from engine.guardrails.manager import GuardrailManager
 from models.agent import Agent
 
 logger = logging.getLogger(__name__)
@@ -45,13 +46,17 @@ class AgenticLoop:
         
         # New specialized handlers
         self.cleaner = ResponseCleaner()
+        self.guardrail_manager = GuardrailManager(db, llm_provider, agent.id)
+        
         self.tool_handler = ToolHandler(
             db, user_id, session_id, event_bus, self.memory, 
-            self.workspace_planner, self.tool_registry, agent, self.run_id
+            self.workspace_planner, self.tool_registry, agent, self.run_id,
+            self.guardrail_manager
         )
         self.action_handler = ActionHandler(
             llm_provider, event_bus, self.memory, session_id, self.run_id,
-            self.tool_registry, agent, user_id, self.cleaner
+            self.tool_registry, agent, user_id, self.cleaner,
+            self.guardrail_manager
         )
         
         from services.state_service import StateService

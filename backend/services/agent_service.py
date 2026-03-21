@@ -7,6 +7,7 @@ from schemas.agent import AgentCreate, AgentUpdate
 from models.tool import Tool
 from models.mcp_server import MCPServer
 from models.llm import LLM
+from models.guardrail import AgentGuardrail, Guardrail
 
 class AgentService:
     @staticmethod
@@ -59,6 +60,21 @@ class AgentService:
                     except: pass
             
             a.llm_name = llm_map.get(a.llm_id) if hasattr(a, 'llm_id') else None
+
+        # Fetch and Group Guardrails
+        agent_ids = [a.id for a in agents]
+        agent_guardrails = db.query(AgentGuardrail, Guardrail).join(
+            Guardrail, AgentGuardrail.guardrail_id == Guardrail.id
+        ).filter(AgentGuardrail.agent_id.in_(agent_ids)).all()
+
+        guardrails_by_agent = {}
+        for ag, g in agent_guardrails:
+            if ag.agent_id not in guardrails_by_agent:
+                guardrails_by_agent[ag.agent_id] = []
+            guardrails_by_agent[ag.agent_id].append(g)
+
+        for a in agents:
+            a.guardrails = guardrails_by_agent.get(a.id, [])
 
     @staticmethod
     def get_agents(db: Session, user_id: UUID, page: int = 1, size: int = 10, search: Optional[str] = None):

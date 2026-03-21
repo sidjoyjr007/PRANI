@@ -115,7 +115,7 @@ export default function AgentsPage() {
   }
 
   const [isSearchExpanded, setIsSearchExpanded] = useState(false)
-  
+
   return (
     <Layout>
       <ToastContainer position="top-center">
@@ -138,15 +138,15 @@ export default function AgentsPage() {
           marginBottom: theme.spacing[8],
           gap: theme.spacing[4]
         }}>
-          <PageHeader 
-            title="Agents" 
+          <PageHeader
+            title="Agents"
             subtitle="Create and manage intelligent agents"
             icon={Bot}
           />
-          
-          <div style={{ 
-            display: "flex", 
-            alignItems: "center", 
+
+          <div style={{
+            display: "flex",
+            alignItems: "center",
             gap: theme.spacing[3],
             marginTop: theme.spacing[2],
           }}>
@@ -246,10 +246,10 @@ export default function AgentsPage() {
 
         <div>
           {isLoading && agents.length === 0 ? (
-            <div style={{ 
-              display: "flex", 
-              alignItems: "center", 
-              justifyContent: "center", 
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
               padding: theme.spacing[12],
               color: "rgba(255,255,255,0.5)"
             }}>
@@ -257,9 +257,9 @@ export default function AgentsPage() {
               Loading agents...
             </div>
           ) : agents.length === 0 ? (
-            <div style={{ 
-              padding: theme.spacing[12], 
-              textAlign: "center", 
+            <div style={{
+              padding: theme.spacing[12],
+              textAlign: "center",
               border: `${theme.borderWidth.sm} solid ${theme.colors.border}`,
               borderRadius: theme.borderRadius.lg,
               backgroundColor: "#FFFFFF",
@@ -282,7 +282,7 @@ export default function AgentsPage() {
                 No Agents Found
               </Text>
               <Text as="p" style={{ color: theme.colors.muted_foreground, maxWidth: "400px", margin: "0 auto 24px auto" }}>
-                {searchQuery 
+                {searchQuery
                   ? `No agents match your search "${searchQuery}".`
                   : "You haven't created any agents yet. Get started by creating your first intelligent agent."}
               </Text>

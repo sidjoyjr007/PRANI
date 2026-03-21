@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Any
 from uuid import UUID
 from datetime import datetime
+from schemas.guardrail import GuardrailResponse
 
 class AgentBase(BaseModel):
     name: str = Field(..., min_length=3, max_length=100, pattern=r"^[A-Za-z0-9 _-]+$")
@@ -44,6 +45,9 @@ class AgentResponse(AgentBase):
     tool_names: List[str] = []
     mcp_server_names: List[str] = []
     llm_name: Optional[str] = None
+    
+    # Linked Guardrails
+    guardrails: List[GuardrailResponse] = []
 
     class Config:
         from_attributes = True

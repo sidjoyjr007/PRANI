@@ -16,7 +16,26 @@ const SelectContext = React.createContext({
   handleValueChange: () => {},
   variant: "default",
   size: "md",
+  options: {},
 })
+
+const extractOptions = (children) => {
+  const options = {}
+  React.Children.forEach(children, (child) => {
+    if (!React.isValidElement(child)) return
+    
+    // If it has a value and children, treat it as a potential option (SelectItem)
+    if (child.props?.value !== undefined && child.props?.children) {
+      options[child.props.value] = child.props.children
+    }
+    
+    // Recursively check children
+    if (child.props?.children) {
+      Object.assign(options, extractOptions(child.props.children))
+    }
+  })
+  return options
+}
 
 const Select = React.forwardRef(({ 
   className, 
@@ -29,6 +48,14 @@ const Select = React.forwardRef(({
 }, ref) => {
   const [isOpen, setIsOpen] = React.useState(false)
   const [selectedValue, setSelectedValue] = React.useState(value)
+
+  // Sync with external value prop
+  React.useEffect(() => {
+    setSelectedValue(value)
+  }, [value])
+
+  // Statically extract options from children
+  const options = React.useMemo(() => extractOptions(children), [children])
 
   const handleOpenChange = (newOpen) => setIsOpen(newOpen)
   
@@ -57,6 +84,7 @@ const Select = React.forwardRef(({
       handleValueChange,
       variant,
       size,
+      options,
     }}>
       <div ref={ref} style={{ position: "relative", width: "100%" }} className={className} {...props}>
         {children}
@@ -75,8 +103,9 @@ const SelectGroup = React.forwardRef(({ className, label, children, ...props }, 
 SelectGroup.displayName = "SelectGroup"
 
 const SelectValue = ({ placeholder = "Select..." }) => {
-  const { value } = React.useContext(SelectContext)
-  return value || placeholder
+  const { value, options } = React.useContext(SelectContext)
+  const displayValue = options[value] || placeholder
+  return displayValue
 }
 
 

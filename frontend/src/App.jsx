@@ -22,6 +22,8 @@ import LLMTestPage from './pages/LLMTestPage'
 import LogsPage from './pages/LogsPage'
 import ComponentShowcase from './pages/ComponentShowcase'
 import NotFoundPage from './pages/NotFoundPage'
+import GuardrailsPage from './pages/GuardrailsPage'
+import CreateGuardrailPage from './pages/CreateGuardrailPage'
 import { ProtectedRoute, PublicRoute } from './components/ProtectedRoute'
 
 function App() {
@@ -52,6 +54,9 @@ function App() {
         <Route path="/create-llm" element={<ProtectedRoute><CreateLLMPage /></ProtectedRoute>} />
         <Route path="/edit-llm/:llmId" element={<ProtectedRoute><CreateLLMPage /></ProtectedRoute>} />
         <Route path="/test-llm/:llmId" element={<ProtectedRoute><LLMTestPage /></ProtectedRoute>} />
+        <Route path="/guardrails" element={<ProtectedRoute><GuardrailsPage /></ProtectedRoute>} />
+        <Route path="/create-guardrail" element={<ProtectedRoute><CreateGuardrailPage /></ProtectedRoute>} />
+        <Route path="/edit-guardrail/:shieldId" element={<ProtectedRoute><CreateGuardrailPage /></ProtectedRoute>} />
         <Route path="/components" element={<ComponentShowcase />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
