@@ -104,8 +104,7 @@ class GeminiProvider(LLMProvider):
         url = self._prepare_url(stream=False)
         payload = self._prepare_payload(messages, tools=kwargs.get("tools"))
         
-        print("Payload: ", payload)
-            
+             
         try:
             response = requests.post(url, json=payload, headers=self.headers, timeout=60)
             response.raise_for_status()

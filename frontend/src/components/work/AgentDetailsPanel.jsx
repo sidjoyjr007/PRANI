@@ -1,20 +1,12 @@
-import { useState } from "react"
 import { useTheme } from "@/context/ThemeContext"
-import { useNavigate } from "react-router-dom"
-import { Button } from "@/components/ui/button"
 import { Text } from "@/components/ui/text"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
-import { Logs, MousePointerClick, AlertCircle, Wrench, Server, Zap, Box, Info, Layout, Brain } from "lucide-react"
+import { MousePointerClick, AlertCircle, Wrench, Server, Brain, Cpu, Box } from "lucide-react"
 import { Empty } from "@/components/ui/empty"
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card"
 import { StackedList, StackedListItem, StackedListSection } from "@/components/ui/stacked-list"
 
 export default function AgentDetailsPanel({ selectedAgent, allTools = [], allLLMs = [], allMCPServers = [], sessionId = null }) {
     const theme = useTheme()
-    const navigate = useNavigate()
-    const [rightPanelTab, setRightPanelTab] = useState("tools")
 
     // Resolve tool objects from IDs
     const agentTools = selectedAgent?.tool_ids?.reduce((acc, id) => {
@@ -39,11 +31,10 @@ export default function AgentDetailsPanel({ selectedAgent, allTools = [], allLLM
         return (
             <div
                 style={{
-                    width: "400px",
-                    borderLeft: `1px solid ${theme.colors.neutral[100]}`,
-                    backgroundColor: theme.colors.card || "#ffffff",
+                    width: "320px",
+                    borderLeft: `1px solid ${theme.colors.neutral[200] || 'rgba(0,0,0,0.06)'}`,
+                    backgroundColor: theme.colors.background || "#fafafa",
                     position: "relative",
-                    zIndex: 1,
                     display: "flex",
                     flexDirection: "column",
                     alignItems: "center",
@@ -51,21 +42,10 @@ export default function AgentDetailsPanel({ selectedAgent, allTools = [], allLLM
                     height: "100%",
                 }}
             >
-                {/* Subtle Gradient Overlay */}
-                <div style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    background: `linear-gradient(180deg, rgba(255,255,255,0) 0%, ${theme.colors.neutral[50]}44 100%)`,
-                    pointerEvents: "none",
-                    zIndex: -1
-                }} />
                 <Empty
                     icon={MousePointerClick}
                     title="No Agent Selected"
-                    description="Select an agent from the chat panel to view their tools, capabilities, and configuration details."
+                    description="Select an agent from the chat panel to view their tools, capabilities, and configurations."
                     variant="subtle"
                 />
             </div>
@@ -75,74 +55,63 @@ export default function AgentDetailsPanel({ selectedAgent, allTools = [], allLLM
     return (
         <div
             style={{
-                width: "300px",
-                borderLeft: `1px solid ${theme.colors.neutral[100]}`,
-                backgroundColor: theme.colors.card || "#ffffff",
-                position: "relative",
-                zIndex: 1,
+                width: "320px",
+                borderLeft: `1px solid ${theme.colors.neutral[200] || 'rgba(0,0,0,0.06)'}`,
+                backgroundColor: theme.colors.background || "#fafafa",
                 display: "flex",
                 flexDirection: "column",
                 height: "100%",
             }}
         >
-            {/* Subtle Gradient Overlay */}
-            <div style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                background: `linear-gradient(180deg, rgba(255,255,255,0) 0%, ${theme.colors.neutral[50]}44 100%)`,
-                pointerEvents: "none",
-                zIndex: -1
-            }} />
-
             <div 
                 className="hover-scrollbar"
                 style={{ 
-                    padding: theme.spacing[4], 
+                    padding: theme.spacing[5] || "20px", 
                     flex: 1, 
                     display: "flex", 
                     flexDirection: "column",
-                    overflowY: "auto"
+                    overflowY: "auto",
+                    gap: "24px"
                 }}
             >
+                {/* Header */}
                 <div style={{ 
-                    padding: `${theme.spacing[2]} ${theme.spacing[2]} ${theme.spacing[4]}`,
                     display: "flex", 
                     alignItems: "center", 
-                    gap: theme.spacing[2],
-                    marginBottom: theme.spacing[2]
+                    gap: "12px",
+                    paddingBottom: "12px"
                 }}>
-                    <Info size={16} style={{ color: theme.colors.neutral[500] }} />
-                    <Text 
-                        as="label" 
-                        variant="label" 
-                        size="sm" 
-                        style={{ 
-                            margin: 0, 
-                            textTransform: "uppercase", 
-                            letterSpacing: "0.1em", 
-                            fontWeight: "900", 
-                            color: theme.colors.neutral[600],
-                            fontSize: "0.75rem"
-                        }}
-                    >
-                        Agent Overview
-                    </Text>
+                    <div>
+                        <Text 
+                            as="div"
+                            style={{ 
+                                margin: 0, 
+                                fontWeight: "600", 
+                                color: theme.colors.neutral[900],
+                                fontSize: "0.95rem",
+                            }}
+                        >
+                            {selectedAgent.name || "Agent Details"}
+                        </Text>
+                        <Text variant="muted" style={{ fontWeight: 500, fontSize: "0.75rem", letterSpacing: "0.02em" }}>
+                            System Configuration
+                        </Text>
+                    </div>
                 </div>
 
-                <StackedList variant="flat" style={{ backgroundColor: "transparent", border: "none", boxShadow: "none" }}>
+                {/* Content using native StackedList but keeping it clean */}
+                <StackedList variant="bordered" style={{ backgroundColor: theme.colors.card || "#ffffff", boxShadow: "0 1px 4px rgba(0,0,0,0.02)" }}>
                     <StackedListSection title="Model Config">
                         <StackedListItem 
-                            title="LLM" 
+                            title="Language Model" 
                             description={llmName}
-                            trailing={<Brain size={14} />}
+                            trailing={<Brain size={14} style={{ color: theme.colors.neutral[400] }} />}
                             size="sm"
                         />
                     </StackedListSection>
+                </StackedList>
 
-                    {/* Tools Section */}
+                <StackedList variant="bordered" style={{ backgroundColor: theme.colors.card || "#ffffff", boxShadow: "0 1px 4px rgba(0,0,0,0.02)" }}>
                     <StackedListSection title={`Tools (${agentTools.length})`}>
                         {agentTools.length > 0 ? (
                             agentTools.map((tool, idx) => (
@@ -163,7 +132,7 @@ export default function AgentDetailsPanel({ selectedAgent, allTools = [], allLLM
                                                     </HoverCardContent>
                                                 </HoverCard>
                                             )}
-                                            <Wrench size={14} />
+                                            <Wrench size={14} style={{ color: theme.colors.neutral[400] }} />
                                         </div>
                                     }
                                     size="sm"
@@ -171,13 +140,14 @@ export default function AgentDetailsPanel({ selectedAgent, allTools = [], allLLM
                                 />
                             ))
                         ) : (
-                            <div style={{ padding: "12px 20px" }}>
+                            <div style={{ padding: "12px 16px" }}>
                                 <Text variant="muted" size="xs">No tools assigned.</Text>
                             </div>
                         )}
                     </StackedListSection>
+                </StackedList>
 
-                    {/* MCP Servers Section */}
+                <StackedList variant="bordered" style={{ backgroundColor: theme.colors.card || "#ffffff", boxShadow: "0 1px 4px rgba(0,0,0,0.02)" }}>
                     <StackedListSection title={`MCP Servers (${agentMCPServers.length})`}>
                         {agentMCPServers.length > 0 ? (
                             agentMCPServers.map((server, idx) => (
@@ -185,13 +155,13 @@ export default function AgentDetailsPanel({ selectedAgent, allTools = [], allLLM
                                     key={idx}
                                     title={server.name}
                                     description={server.type || "MCP server integration"}
-                                    trailing={<Server size={14} />}
+                                    trailing={<Server size={14} style={{ color: theme.colors.neutral[400] }} />}
                                     size="sm"
                                     divider={idx !== agentMCPServers.length - 1}
                                 />
                             ))
                         ) : (
-                            <div style={{ padding: "12px 20px" }}>
+                            <div style={{ padding: "12px 16px" }}>
                                 <Text variant="muted" size="xs">No MCP servers assigned.</Text>
                             </div>
                         )}

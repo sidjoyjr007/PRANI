@@ -214,10 +214,12 @@ class ContextManager:
             tokens=db_msg.tokens
         )
 
-    async def add_message(self, role: str, content: Any, tool_calls: list = None, tool_call_id: str = None, name: str = None, metadata_type: str = None, thoughts: list = None, status: str = None, display: bool = True) -> Message:
+    async def add_message(self, role: str, content: Any, tool_calls: list = None, tool_call_id: str = None, name: str = None, metadata_type: str = None, thoughts: list = None, status: str = None, display: bool = True, is_error: bool = False) -> Message:
         if isinstance(content, list):
             rich_content = {"parts": content}
             rich_content["text"] = "\n".join([p.get("text", "") for p in content if p.get("type") == "text"])
+        elif isinstance(content, dict):
+            rich_content = content.copy()
         else:
             rich_content = {"text": str(content)}
 
@@ -232,6 +234,9 @@ class ContextManager:
         
         # Add display flag (defaults to True)
         rich_content["display"] = display
+        
+        if is_error:
+            rich_content["is_error"] = True
 
         msg_data = MessageCreate(role=role, content=rich_content)
         

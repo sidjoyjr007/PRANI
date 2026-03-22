@@ -97,9 +97,19 @@ class ActionHandler:
                 # 3. Emit immediate feedback
                 if "<thinking>" in full_content:
                     thinking_match = RE_THINKING_FULL.search(full_content)
+                    thinking_text = ""
                     if thinking_match:
-                        await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.THOUGHT_CHUNK, content=thinking_match.group(1), run_id=self.run_id))
+                        thinking_text = thinking_match.group(1).strip()
+                        await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.THOUGHT_CHUNK, content=thinking_text, run_id=self.run_id))
+                    
                     msg_only = RE_SCRUB_THINKING.sub("", full_content).strip()
+                    
+                    if msg_only and thinking_text:
+                        import difflib
+                        similarity = difflib.SequenceMatcher(None, thinking_text.lower(), msg_only.lower()).ratio()
+                        if similarity > 0.8 or msg_only in thinking_text or thinking_text in msg_only:
+                            msg_only = ""
+                            
                     if msg_only:
                         await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.MESSAGE_CHUNK, content=msg_only, run_id=self.run_id))
                 else:
@@ -121,6 +131,15 @@ class ActionHandler:
                 if unclosed_match: final_thoughts.append(unclosed_match.group(1).strip())
                     
             final_message = RE_SCRUB_THINKING.sub("", full_content).strip()
+            
+            # Deduplication: block the agent from repeating its exact internal thoughts in the final message
+            if final_message and final_thoughts:
+                combined_thoughts = " ".join(final_thoughts)
+                import difflib
+                similarity = difflib.SequenceMatcher(None, combined_thoughts.lower(), final_message.lower()).ratio()
+                if similarity > 0.8 or final_message in combined_thoughts or combined_thoughts in final_message:
+                    final_message = ""
+                    
             # PRANI-FIX: preserving RE_JSON_MARKDOWN to allow code examples Fix for Flaw #1
             final_message = RE_TOOL_CALL_MIRROR.sub("", final_message)
             
@@ -286,7 +305,6 @@ class ActionHandler:
             global_goal=user_input,
             capabilities_desc=capabilities_desc
         )
-        print(system_prompt, "system_prompt")
         return tool_defs, system_prompt
 
     def _enrich_context(self, context, system_prompt, pending_tool_refinement, loop_warning_triggered):

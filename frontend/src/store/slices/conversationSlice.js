@@ -183,13 +183,14 @@ const conversationSlice = createSlice({
                     }
                     break;
                 case 'thought_chunk':
-                    if (content) {
-                        lastMsg.thoughts = lastMsg.thoughts || [];
-                        if (lastMsg.thoughts.length === 0) {
-                            lastMsg.thoughts.push(content);
-                        } else {
-                            lastMsg.thoughts[lastMsg.thoughts.length - 1] += content;
-                        }
+                    // Chunks are additive
+                    lastMsg.thoughts = lastMsg.thoughts || [];
+                    if (lastMsg.thoughts.length === 0) {
+                        lastMsg.thoughts.push(content);
+                    } else if (lastMsg.thoughts[lastMsg.thoughts.length - 1] === "Thinking...") {
+                        lastMsg.thoughts[lastMsg.thoughts.length - 1] = content;
+                    } else {
+                        lastMsg.thoughts[lastMsg.thoughts.length - 1] += content;
                     }
                     break;
                 case 'tool_start':
@@ -290,7 +291,40 @@ const conversationSlice = createSlice({
             // Fetch Messages
             .addCase(fetchMessages.fulfilled, (state, action) => {
                 if (state.currentConversationId === action.payload.conversationId) {
-                    state.messages = action.payload.messages.map(transformMessage)
+                    const rawMessages = action.payload.messages;
+                    
+                    // Create a lookup for tool_call_id -> { display, is_error, output }
+                    const toolMetaMap = {};
+                    rawMessages.forEach(m => {
+                        if (m.role === 'tool' && m.content) {
+                            const tcId = m.content.tool_call_id || m.tool_call_id;
+                            if (tcId) {
+                                const outputStr = m.content.text || (typeof m.content === 'string' ? m.content : JSON.stringify(m.content));
+                                const is_error = m.content.is_error === true || outputStr.startsWith("Error");
+                                const display = m.content.display !== false;
+                                toolMetaMap[tcId] = { display, is_error, output: outputStr };
+                            }
+                        }
+                    });
+
+                    state.messages = rawMessages.map(msg => {
+                        const transformed = transformMessage(msg);
+                        if (transformed.tool_calls) {
+                            transformed.tool_calls = transformed.tool_calls.map(tc => {
+                                const meta = toolMetaMap[tc.id];
+                                if (meta) {
+                                    return { 
+                                        ...tc, 
+                                        display: meta.display,
+                                        status: meta.is_error ? 'error' : (tc.status || 'completed'),
+                                        output: meta.is_error ? meta.output : (tc.output || null)
+                                    };
+                                }
+                                return tc;
+                            });
+                        }
+                        return transformed;
+                    });
                 }
             })
 

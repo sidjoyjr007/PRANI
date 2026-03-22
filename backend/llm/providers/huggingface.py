@@ -44,7 +44,6 @@ class HuggingFaceProvider(LLMProvider):
         url = f"{self.base_url}/chat/completions"
         payload = self._prepare_payload(messages, stream=False, tools=kwargs.get("tools"))
         
-        print("Payload: ", payload)
         response = requests.post(url, headers=self.headers, json=payload, timeout=600)
         response.raise_for_status()
         data = response.json()

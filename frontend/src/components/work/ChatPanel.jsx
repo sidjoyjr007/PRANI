@@ -7,7 +7,7 @@ import { CommandPalette } from "@/components/ui/command-palette"
 import {
     Send, User, Bot, Check, X, ChevronDown,
     Terminal, Cpu, ChevronRight, ChevronDown as ChevronDownIcon,
-    AlertTriangle, Zap, Clock, Pause, ChevronUp
+    AlertTriangle, Zap, Clock, Pause, ChevronUp, MessageSquarePlus, Lightbulb
 } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -21,11 +21,13 @@ const MarkdownContent = memo(({ content, theme, textColor }) => {
         if (typeof content !== 'string') return content;
 
         return content
-            .replace(/<thinking>[\s\S]*?<\/thinking>/g, '')
+            .replace(/<thinking>[\s\S]*?(?:<\/thinking>|$)/g, '')
             .replace(/```json[\s\S]*?```/g, '')
             .replace(/\{[\s\S]*?"tool_calls"[\s\S]*?\}/g, '')
             .replace(/\{[\s\S]*?"text"[\s\S]*?\}/g, '')
-            .replace(/^[\s\{\}\[\]\"\:,\\]+$/gm, '') 
+            .replace(/\[INTENT:[^\]]*\]\s*/g, '')
+            .replace(/\[SOURCE TOOL:[^\]]*\]\s*/g, '')
+            .replace(/^[\s\{\}\[\]\"\:,\\]+$/gm, '')
             .trim();
     }, [content]);
 
@@ -72,22 +74,22 @@ const MarkdownContent = memo(({ content, theme, textColor }) => {
                     )
                 },
                 ul: ({ className, children, ...props }) => (
-                    <ul className={className} style={{ 
-                        margin: "6px 0", 
-                        paddingLeft: className?.includes('contains-task-list') ? "0" : "20px", 
-                        color: baseColor, 
-                        listStyle: className?.includes('contains-task-list') ? 'none' : 'disc' 
+                    <ul className={className} style={{
+                        margin: "6px 0",
+                        paddingLeft: className?.includes('contains-task-list') ? "0" : "20px",
+                        color: baseColor,
+                        listStyle: className?.includes('contains-task-list') ? 'none' : 'disc'
                     }} {...props}>
                         {children}
                     </ul>
                 ),
                 ol: ({ children }) => <ol style={{ margin: "6px 0", paddingLeft: "20px", color: baseColor }}>{children}</ol>,
                 li: ({ className, children, ...props }) => (
-                    <li className={className} style={{ 
-                        marginBottom: "4px", 
-                        lineHeight: 1.6, 
-                        display: className?.includes('task-list-item') ? 'flex' : 'list-item', 
-                        alignItems: 'flex-start', 
+                    <li className={className} style={{
+                        marginBottom: "4px",
+                        lineHeight: 1.6,
+                        display: className?.includes('task-list-item') ? 'flex' : 'list-item',
+                        alignItems: 'flex-start',
                         gap: '8px',
                         color: baseColor
                     }} {...props}>
@@ -141,57 +143,54 @@ const MarkdownContent = memo(({ content, theme, textColor }) => {
 // ─── Thinking / Reasoning Block ───────────────────────────────────────────────
 // ─── Thinking / Reasoning Block ───────────────────────────────────────────────
 const ThinkingBlock = memo(({ thoughts, theme }) => {
-    const [isOpen, setIsOpen] = useState(false);
     const hasMeaningfulThoughts = thoughts.some(t => t.trim().length > 0 && t !== "Thinking...");
-    if (!hasMeaningfulThoughts) return null
+    if (!hasMeaningfulThoughts) return null;
 
     return (
         <div style={{
-            marginTop: "4px",
-            marginBottom: "6px",
-            borderRadius: "6px",
-            overflow: "hidden",
-            border: `1px solid ${theme.colors.border}`,
-            backgroundColor: theme.colors.neutral[50],
+            marginTop: "8px",
+            marginBottom: "12px",
+            padding: "14px 18px",
+            borderRadius: "10px",
+            backgroundColor: theme.colors.neutral[50] || 'rgba(0,0,0,0.02)',
+            boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
+            color: theme.colors.muted_foreground,
+            fontSize: "0.85rem",
+            lineHeight: 1.6,
+            display: "flex",
+            flexDirection: "column",
+            gap: "8px"
         }}>
-            <div
-                onClick={() => setIsOpen(!isOpen)}
-                style={{
-                    padding: "6px 10px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    cursor: "pointer",
-                    userSelect: "none"
-                }}
-            >
-                {isOpen
-                    ? <ChevronDownIcon size={14} style={{ color: theme.colors.muted_foreground }} />
-                    : <ChevronRight size={14} style={{ color: theme.colors.muted_foreground }} />
-                }
-                <span style={{
-                    fontSize: "0.75em",
-                    fontWeight: 500,
-                    color: theme.colors.muted_foreground,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.08em"
-                }}>
-                    Agent Reasoning
-                </span>
+            {/* Header */}
+            <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                fontWeight: 600,
+                color: theme.colors.neutral[500] || '#6b7280',
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                fontSize: "0.75rem",
+                userSelect: "none",
+                marginBottom: "4px"
+            }}>
+                <Lightbulb size={14} /> Agent Reasoning
             </div>
-            {isOpen && (
-                <div style={{
-                    padding: "8px 12px",
-                    color: theme.colors.foreground,
-                    fontSize: "0.85em",
-                    lineHeight: 1.6,
-                    borderTop: `1px solid ${theme.colors.border}`,
-                }}>
-                    {thoughts.map((t, i) => <div key={i} style={{ marginBottom: "4px" }}>{t}</div>)}
-                </div>
-            )}
+
+            {/* Thoughts */}
+            <div style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "6px",
+                fontFamily: "var(--font-mono, monospace)",
+                opacity: 0.85
+            }}>
+                {thoughts.filter(t => t.trim().length > 0 && t !== "Thinking...").map((t, i) => (
+                    <div key={i}>{t}</div>
+                ))}
+            </div>
         </div>
-    )
+    );
 });
 
 const StatusIndicator = memo(({ status, theme }) => {
@@ -379,25 +378,41 @@ function ApprovalCard({ msg, onApprove, onReject, theme }) {
 }
 
 // ─── Resolved Approval Badge ──────────────────────────────────────────────────
-function ApprovalBadge({ decision, theme }) {
+function ApprovalBadge({ decision, msg, theme }) {
     const isApproved = decision === "approved"
+    const colorStr = isApproved ? (theme.colors.success?.DEFAULT || "#4ade80") : (theme.colors.destructive || "#f87171");
+    
+    const visibleToolCalls = (msg?.tool_calls || []).filter(t => {
+        const name = t.function?.name || t.name;
+        return !['add_subtasks', 'update_subtask_status', 'update_workspace', 'read_tool_results', 'search_tool_registry'].includes(name);
+    });
+    let toolStr = "Action";
+    if (visibleToolCalls.length > 0) {
+        toolStr = visibleToolCalls.map(t => t.function?.name || t.name).filter(Boolean).join(", ") || "Action";
+    }
+    
     return (
         <div style={{
-            display: "inline-flex",
+            display: "flex",
+            width: "100%",
+            boxSizing: "border-box",
             alignItems: "center",
-            gap: "5px",
-            padding: "4px 10px",
-            borderRadius: "6px",
-            fontSize: "0.78em",
+            gap: "8px",
+            padding: "8px 12px",
+            borderRadius: "8px",
+            fontSize: "0.82em",
+            fontWeight: 500,
             marginTop: "6px",
-            backgroundColor: isApproved
-                ? (theme.colors.success?.subtle || "rgba(34,197,94,0.1)")
-                : "rgba(239,68,68,0.08)",
-            border: `1px solid ${isApproved ? (theme.colors.success?.DEFAULT || "#22c55e") : theme.colors.destructive}`,
-            color: isApproved ? (theme.colors.success?.DEFAULT || "#22c55e") : theme.colors.destructive,
+            backgroundColor: isApproved 
+                ? "rgba(74, 222, 128, 0.05)" 
+                : "rgba(248, 113, 113, 0.05)",
+            border: `1px solid ${isApproved ? "rgba(74, 222, 128, 0.2)" : "rgba(248, 113, 113, 0.2)"}`,
+            color: colorStr,
+            boxShadow: `0 2px 10px ${isApproved ? "rgba(74, 222, 128, 0.05)" : "rgba(248, 113, 113, 0.05)"}`,
+            backdropFilter: "blur(8px)",
         }}>
-            {isApproved ? <Check size={11} /> : <X size={11} />}
-            {isApproved ? "Approved — running..." : "Rejected"}
+            {isApproved ? <Check size={12} strokeWidth={2.5} /> : <X size={12} strokeWidth={2.5} />}
+            <span style={{ letterSpacing: "0.02em" }}>{isApproved ? "Approved" : "Rejected"} <span style={{ fontWeight: 700 }}>{toolStr}</span></span>
         </div>
     )
 }
@@ -408,15 +423,19 @@ const MessageRow = memo(({ msg, showLabel, onApprove, onReject, approvalDecision
     const isUser = msg.sender === "user"
     const decision = approvalDecisions[msg.id]
 
-    // Internal Tool Hijacking: Filter out subtask-management tools from the UI Log
+    // Internal Tool Hijacking: Filter out internal workspace tools from the UI Log
     const visibleToolCalls = (msg.tool_calls || []).filter(t =>
-        !['add_subtasks', 'update_subtask_status'].includes(t.name)
+        !['add_subtasks', 'update_subtask_status', 'update_workspace', 'read_tool_results', 'search_tool_registry'].includes(t.name)
     );
 
     // Optimized visibility checks
     const hasTextContent = useMemo(() => {
         const text = msg.text || "";
-        const scrubbed = !isUser ? text.replace(/[\{\}\[\]\"\:,\\]/g, '').trim() : text.trim();
+        const scrubbed = !isUser ? text
+            .replace(/<thinking>[\s\S]*?(?:<\/thinking>|$)/g, '')
+            .replace(/\[INTENT:[^\]]*\]\s*/g, '')
+            .replace(/\[SOURCE TOOL:[^\]]*\]\s*/g, '')
+            .replace(/[\{\}\[\]\"\:,\\]/g, '').trim() : text.trim();
         return scrubbed.length > 0 && (isUser || /[a-zA-Z0-9]/.test(scrubbed));
     }, [msg.text, isUser]);
 
@@ -500,7 +519,7 @@ const MessageRow = memo(({ msg, showLabel, onApprove, onReject, approvalDecision
 
             {!isUser && msg.approval_required && (
                 decision ? (
-                    <ApprovalBadge decision={decision} theme={theme} />
+                    <ApprovalBadge decision={decision} msg={msg} theme={theme} />
                 ) : (
                     <ApprovalCard msg={msg} theme={theme} onApprove={() => onApprove(msg)} onReject={() => onReject(msg)} />
                 )
@@ -580,9 +599,9 @@ const PlanOverlay = memo(({ currentPlan, theme, isPlanExpanded, setIsPlanExpande
             </div>
 
             {isPlanExpanded && (
-                <div style={{ 
-                    marginTop: "16px", 
-                    paddingTop: "16px", 
+                <div style={{
+                    marginTop: "16px",
+                    paddingTop: "16px",
                     borderTop: `1px solid ${theme.colors.neutral[800]}`,
                     fontSize: "0.95em",
                     color: theme.colors.neutral[200] || theme.colors.foreground,
@@ -615,7 +634,7 @@ function EmptyState({ theme }) {
                 display: "flex", alignItems: "center", justifyContent: "center",
                 border: `1px solid ${theme.colors.border}`,
             }}>
-                <Cpu size={20} style={{ color: theme.colors.neutral[500] }} />
+                <MessageSquarePlus size={20} style={{ color: theme.colors.neutral[500] }} />
             </div>
             <div style={{ textAlign: "center" }}>
                 <div style={{ fontSize: "0.9em", fontWeight: 500, color: theme.colors.foreground, marginBottom: "4px" }}>
@@ -716,20 +735,20 @@ export default function ChatPanel({
                             position: "relative",
                             backgroundColor: theme.colors.card,
                             border: `1px solid ${theme.colors.border}`,
-                            borderRadius: "16px",
-                            boxShadow: "0 4px 6px -1px rgba(0,0,0,0.07), 0 12px 28px -4px rgba(0,0,0,0.08)",
-                            transition: "box-shadow 0.2s ease, border-color 0.2s ease",
+                            borderRadius: "28px",
+                            boxShadow: "0 8px 32px rgba(0,0,0,0.08), 0 2px 14px rgba(0,0,0,0.04)",
+                            transition: "box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.3s ease",
                             display: "flex",
                             flexDirection: "column",
                             maxHeight: "500px",
                             overflow: "hidden",
                         }}
                         onFocus={e => {
-                            e.currentTarget.style.boxShadow = `0 0 0 3px ${theme.colors.primary[200]}, 0 4px 6px -1px rgba(0,0,0,0.07), 0 12px 28px -4px rgba(0,0,0,0.09)`
+                            e.currentTarget.style.boxShadow = `0 0 0 4px ${theme.colors.primary[100]}, 0 12px 40px rgba(0,0,0,0.12), 0 4px 16px rgba(0,0,0,0.06)`
                             e.currentTarget.style.borderColor = theme.colors.primary[400]
                         }}
                         onBlur={e => {
-                            e.currentTarget.style.boxShadow = "0 4px 6px -1px rgba(0,0,0,0.07), 0 12px 28px -4px rgba(0,0,0,0.08)"
+                            e.currentTarget.style.boxShadow = "0 8px 32px rgba(0,0,0,0.08), 0 2px 14px rgba(0,0,0,0.04)"
                             e.currentTarget.style.borderColor = theme.colors.border
                         }}
                         tabIndex={0}
@@ -747,7 +766,7 @@ export default function ChatPanel({
                             rows={3}
                             placeholder={selectedAgentId ? "Write a message... (Enter to send, Shift+Enter for newline)" : "Pick an agent below, then type your message..."}
                             style={{
-                                padding: "18px 20px 10px",
+                                padding: "20px 24px 10px",
                                 backgroundColor: "transparent",
                                 color: theme.colors.foreground,
                                 resize: "none",
@@ -771,7 +790,7 @@ export default function ChatPanel({
                             display: "flex",
                             justifyContent: "space-between",
                             alignItems: "center",
-                            padding: "10px 12px 12px",
+                            padding: "10px 16px 16px",
                             borderTop: `1px solid ${theme.colors.neutral[100]}`,
                             gap: theme.spacing[3],
                         }}>
@@ -782,8 +801,8 @@ export default function ChatPanel({
                                     display: "flex",
                                     alignItems: "center",
                                     gap: "6px",
-                                    padding: "6px 12px",
-                                    borderRadius: "8px",
+                                    padding: "8px 16px",
+                                    borderRadius: "24px",
                                     border: `1px solid ${selectedAgentId ? theme.colors.primary[300] : theme.colors.neutral[200]}`,
                                     backgroundColor: selectedAgentId ? theme.colors.primary[50] : "transparent",
                                     color: selectedAgentId ? theme.colors.primary[700] : theme.colors.muted_foreground,
@@ -822,18 +841,28 @@ export default function ChatPanel({
                                     display: "flex",
                                     alignItems: "center",
                                     justifyContent: "center",
-                                    width: "38px",
-                                    height: "38px",
-                                    borderRadius: "10px",
+                                    width: "42px",
+                                    height: "42px",
+                                    borderRadius: "50%",
                                     border: "none",
                                     cursor: (!inputValue.trim() || !selectedAgentId) ? "not-allowed" : "pointer",
                                     backgroundColor: (!inputValue.trim() || !selectedAgentId) ? theme.colors.neutral[200] : theme.colors.primary[600],
                                     color: (!inputValue.trim() || !selectedAgentId) ? theme.colors.neutral[400] : "#ffffff",
-                                    transition: "background-color 0.18s ease, transform 0.12s ease",
-                                    boxShadow: (!inputValue.trim() || !selectedAgentId) ? "none" : "0 2px 8px rgba(79,111,150,0.35)",
+                                    transition: "background-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease",
+                                    boxShadow: (!inputValue.trim() || !selectedAgentId) ? "none" : "0 4px 14px rgba(79,111,150,0.45)",
                                 }}
-                                onMouseEnter={e => { if (!e.currentTarget.disabled) e.currentTarget.style.transform = "scale(1.05)" }}
-                                onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)" }}
+                                onMouseEnter={e => { 
+                                    if (!e.currentTarget.disabled) {
+                                        e.currentTarget.style.transform = "scale(1.08)"
+                                        e.currentTarget.style.boxShadow = "0 6px 20px rgba(79,111,150,0.55)"
+                                    } 
+                                }}
+                                onMouseLeave={e => { 
+                                    e.currentTarget.style.transform = "scale(1)"
+                                    if (!e.currentTarget.disabled) {
+                                        e.currentTarget.style.boxShadow = "0 4px 14px rgba(79,111,150,0.45)"
+                                    }
+                                }}
                             >
                                 <Send size={15} />
                             </button>
@@ -929,7 +958,7 @@ export default function ChatPanel({
                             display: "flex", alignItems: "center", justifyContent: "center",
                             border: `1px solid ${theme.colors.neutral[700]}`
                         }}>
-                            <Cpu size={13} style={{ color: theme.colors.primary[400] }} />
+                            <Lightbulb size={13} style={{ color: theme.colors.primary[400] }} />
                         </div>
                         <span style={{ fontSize: "0.85em", color: theme.colors.muted_foreground, fontStyle: "italic", fontWeight: 500 }}>
                             {messages[messages.length - 1]?.status || "Thinking..."}
@@ -985,20 +1014,20 @@ export default function ChatPanel({
                         position: "relative",
                         backgroundColor: theme.colors.card,
                         border: `1px solid ${theme.colors.border}`,
-                        borderRadius: "16px",
-                        boxShadow: "0 2px 4px -1px rgba(0,0,0,0.06), 0 8px 20px -4px rgba(0,0,0,0.07)",
-                        transition: "box-shadow 0.2s ease, border-color 0.2s ease",
+                        borderRadius: "28px",
+                        boxShadow: "0 8px 32px rgba(0,0,0,0.08), 0 2px 14px rgba(0,0,0,0.04)",
+                        transition: "box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.3s ease",
                         display: "flex",
                         flexDirection: "column",
                         maxHeight: "500px",
                         overflow: "hidden",
                     }}
                     onFocus={e => {
-                        e.currentTarget.style.boxShadow = `0 0 0 3px ${theme.colors.primary[200]}, 0 2px 4px -1px rgba(0,0,0,0.06), 0 8px 20px -4px rgba(0,0,0,0.08)`
+                        e.currentTarget.style.boxShadow = `0 0 0 4px ${theme.colors.primary[100]}, 0 12px 40px rgba(0,0,0,0.12), 0 4px 16px rgba(0,0,0,0.06)`
                         e.currentTarget.style.borderColor = theme.colors.primary[400]
                     }}
                     onBlur={e => {
-                        e.currentTarget.style.boxShadow = "0 2px 4px -1px rgba(0,0,0,0.06), 0 8px 20px -4px rgba(0,0,0,0.07)"
+                        e.currentTarget.style.boxShadow = "0 8px 32px rgba(0,0,0,0.08), 0 2px 14px rgba(0,0,0,0.04)"
                         e.currentTarget.style.borderColor = theme.colors.border
                     }}
                     tabIndex={0}
@@ -1016,7 +1045,7 @@ export default function ChatPanel({
                         rows={3}
                         placeholder={isStreaming ? (currentPlan?.status || "Agent is working...") : "Write a message... (Enter to send, Shift+Enter for newline)"}
                         style={{
-                            padding: "18px 20px 10px",
+                            padding: "20px 24px 10px",
                             backgroundColor: "transparent",
                             color: isStreaming ? theme.colors.neutral[500] : theme.colors.foreground,
                             resize: "none",
@@ -1041,7 +1070,7 @@ export default function ChatPanel({
                         display: "flex",
                         justifyContent: "space-between",
                         alignItems: "center",
-                        padding: "10px 12px 12px",
+                        padding: "10px 16px 16px",
                         borderTop: `1px solid ${theme.colors.neutral[100]}`,
                         gap: theme.spacing[3],
                     }}>
@@ -1052,8 +1081,8 @@ export default function ChatPanel({
                                 display: "flex",
                                 alignItems: "center",
                                 gap: "6px",
-                                padding: "6px 12px",
-                                borderRadius: "8px",
+                                padding: "8px 16px",
+                                borderRadius: "24px",
                                 border: `1px solid ${selectedAgentId ? theme.colors.primary[300] : theme.colors.neutral[200]}`,
                                 backgroundColor: selectedAgentId ? theme.colors.primary[50] : "transparent",
                                 color: selectedAgentId ? theme.colors.primary[700] : theme.colors.muted_foreground,
@@ -1092,18 +1121,24 @@ export default function ChatPanel({
                                     display: "flex",
                                     alignItems: "center",
                                     justifyContent: "center",
-                                    width: "38px",
-                                    height: "38px",
-                                    borderRadius: "10px",
+                                    width: "42px",
+                                    height: "42px",
+                                    borderRadius: "50%",
                                     border: "none",
                                     cursor: "pointer",
                                     backgroundColor: theme.colors.destructive?.DEFAULT || "#a84a4a",
                                     color: "#ffffff",
-                                    boxShadow: "0 2px 8px rgba(168,74,74,0.35)",
-                                    transition: "transform 0.12s ease",
+                                    boxShadow: "0 4px 14px rgba(168,74,74,0.45)",
+                                    transition: "transform 0.2s ease, box-shadow 0.2s ease",
                                 }}
-                                onMouseEnter={e => e.currentTarget.style.transform = "scale(1.05)"}
-                                onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
+                                onMouseEnter={e => { 
+                                    e.currentTarget.style.transform = "scale(1.08)"
+                                    e.currentTarget.style.boxShadow = "0 6px 20px rgba(168,74,74,0.55)"
+                                }}
+                                onMouseLeave={e => { 
+                                    e.currentTarget.style.transform = "scale(1)"
+                                    e.currentTarget.style.boxShadow = "0 4px 14px rgba(168,74,74,0.45)"
+                                }}
                             >
                                 <Pause size={15} />
                             </button>
@@ -1116,18 +1151,28 @@ export default function ChatPanel({
                                     display: "flex",
                                     alignItems: "center",
                                     justifyContent: "center",
-                                    width: "38px",
-                                    height: "38px",
-                                    borderRadius: "10px",
+                                    width: "42px",
+                                    height: "42px",
+                                    borderRadius: "50%",
                                     border: "none",
                                     cursor: (!inputValue.trim() || !selectedAgentId) ? "not-allowed" : "pointer",
                                     backgroundColor: (!inputValue.trim() || !selectedAgentId) ? theme.colors.neutral[200] : theme.colors.primary[600],
                                     color: (!inputValue.trim() || !selectedAgentId) ? theme.colors.neutral[400] : "#ffffff",
-                                    transition: "background-color 0.18s ease, transform 0.12s ease",
-                                    boxShadow: (!inputValue.trim() || !selectedAgentId) ? "none" : "0 2px 8px rgba(79,111,150,0.35)",
+                                    transition: "background-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease",
+                                    boxShadow: (!inputValue.trim() || !selectedAgentId) ? "none" : "0 4px 14px rgba(79,111,150,0.45)",
                                 }}
-                                onMouseEnter={e => { if (inputValue.trim() && selectedAgentId) e.currentTarget.style.transform = "scale(1.05)" }}
-                                onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)" }}
+                                onMouseEnter={e => { 
+                                    if (!e.currentTarget.disabled) {
+                                        e.currentTarget.style.transform = "scale(1.08)"
+                                        e.currentTarget.style.boxShadow = "0 6px 20px rgba(79,111,150,0.55)"
+                                    } 
+                                }}
+                                onMouseLeave={e => { 
+                                    e.currentTarget.style.transform = "scale(1)"
+                                    if (!e.currentTarget.disabled) {
+                                        e.currentTarget.style.boxShadow = "0 4px 14px rgba(79,111,150,0.45)"
+                                    }
+                                }}
                             >
                                 <Send size={15} />
                             </button>

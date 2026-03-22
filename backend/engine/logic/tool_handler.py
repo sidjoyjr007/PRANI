@@ -1,4 +1,5 @@
 import json
+import json_repair
 import uuid
 import logging
 import asyncio
@@ -98,7 +99,7 @@ class ToolHandler:
             if t_name == TOOL_UPDATE_WORKSPACE:
                 # Suppress TOOL_START for internal plan management to keep UI clean
                 try:
-                    args = json.loads(tc.function["arguments"])
+                    args = json_repair.loads(tc.function["arguments"])
                     markdown_content = args.get("markdown_content", "")
                     
                     self.workspace_planner.update_plan(markdown_content)
@@ -120,7 +121,7 @@ class ToolHandler:
                 # Suppress TOOL_START for internal read tool
                 # await self.bus.emit(self.bus.create_event(self.session_id, AgentEventType.TOOL_START, metadata={"tool": t_name, "args": tc.function.get("arguments")}, run_id=self.run_id))
                 try:
-                    args = json.loads(tc.function["arguments"])
+                    args = json_repair.loads(tc.function["arguments"])
                     msg_id = args.get("message_id")
                     start_char = max(0, int(args.get("start_char", 0)))
                     default_end = start_char + 2000
@@ -146,7 +147,7 @@ class ToolHandler:
 
             if t_name == TOOL_SEARCH_TOOL_REGISTRY:
                 try:
-                    args = json.loads(tc.function["arguments"])
+                    args = json_repair.loads(tc.function["arguments"])
                     query = args.get("query")
                     specific_tools = args.get("specific_tools", [])
                     
@@ -227,13 +228,20 @@ class ToolHandler:
                     run_id=self.run_id
                 ))
             
-            await self.memory.add_message(role="tool", content=res, tool_call_id=tc.id, name=t_name, display=not is_error)
+            await self.memory.add_message(
+                role="tool", 
+                content=str(res), 
+                tool_call_id=tc.id, 
+                name=t_name, 
+                display=not is_internal_only,
+                is_error=is_error
+            )
             self.pending_tool_refinement = {"tool": t_name, "error": str(res)} if is_error else None
             
         return False
 
     async def _execute_mcp_tool(self, tool_rec, tc):
-        args = json.loads(tc.function["arguments"]) if tc.function["arguments"] else {}
+        args = json_repair.loads(tc.function["arguments"]) if tc.function["arguments"] else {}
         res = await self.tool_registry.mcp_service.call_mcp_tool(self.db, uuid.UUID(tool_rec["metadata"]["server_id"]), tool_rec["name"], args)
         if res.get("success"):
             c = res.get("result", {})
@@ -241,7 +249,7 @@ class ToolHandler:
         return f"MCP Error: {res.get('error')}"
 
     async def _execute_python_tool(self, tool_rec, tc):
-        args = json.loads(tc.function["arguments"]) if tc.function["arguments"] else {}
+        args = json_repair.loads(tc.function["arguments"]) if tc.function["arguments"] else {}
         res = await asyncio.get_running_loop().run_in_executor(None, lambda: execute_python_tool(tool_rec['metadata']['content'], args, self._resolve_tool_secrets(tool_rec.get("id")), tool_rec.get("input_fields")))
         return res.get("result") if res.get("success") else f"Error: {res.get('error')}"
 
