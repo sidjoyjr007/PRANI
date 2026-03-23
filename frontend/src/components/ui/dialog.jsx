@@ -69,7 +69,7 @@ const DialogPortal = ({ children }) => {
   if (!isOpen) return null
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 50 }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 101 }}>
       {children}
     </div>
   )
@@ -86,7 +86,7 @@ const DialogOverlay = React.forwardRef(({ className, ...props }, ref) => {
       style={{
         position: "fixed",
         inset: 0,
-        zIndex: 50,
+        zIndex: 100,
         backgroundColor: "rgba(0, 0, 0, 0.5)",
         animation: "fadeIn 0.2s ease-in",
         cursor: "pointer",
@@ -154,7 +154,7 @@ const DialogContent = React.forwardRef(({
           left: "50%",
           top: "50%",
           transform: "translate(-50%, -50%)",
-          zIndex: 50,
+          zIndex: 100,
           width: "100%",
           ...sizeConfig[size],
           padding: theme.spacing[6],
