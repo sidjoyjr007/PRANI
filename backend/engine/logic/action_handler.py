@@ -281,19 +281,19 @@ class ActionHandler:
         tools_desc_list = []
         for td in tool_defs:
             f = td["function"]
-            tools_desc_list.append(f"- {f['name']}: {f.get('description', '')}\n  Schema: {json.dumps(f.get('parameters', {}), indent=2)}")
+            tools_desc_list.append(f"- {f['name']}: {f.get('description', '')}")
 
         for name, t in unique_tools.items():
             t_func = {"name": name, "description": t.get("description", ""), "parameters": t.get("schema", {})}
             tool_defs.append({"type": "function", "function": t_func})
-            tools_desc_list.append(f"- {name}: {t_func.get('description', '')}\n  Schema: {json.dumps(t_func.get('parameters', {}), indent=2)}")
+            tools_desc_list.append(f"- {name}: {t_func.get('description', '')}")
         
         context = await self.memory.get_active_context()
         has_pruning = any("[VIRTUAL PRUNE" in m.content for m in context if isinstance(m.content, str))
         if has_pruning:
             tool_defs.append(TOOL_READ_TOOL_RESULTS_DEF)
             t_func = TOOL_READ_TOOL_RESULTS_DEF["function"]
-            tools_desc_list.append(f"- {t_func['name']}: {t_func['description']}\n  Schema: {json.dumps(t_func['parameters'], indent=2)}")
+            tools_desc_list.append(f"- {t_func['name']}: {t_func['description']}")
 
         history_text = await self.memory.get_history_text(limit=10)
         system_prompt = get_action_system_prompt(
