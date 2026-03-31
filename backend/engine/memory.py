@@ -18,6 +18,7 @@ from schemas.conversation import MessageCreate
 from models.conversation import Message, Conversation
 from models.agent import Agent
 from services.conversation_service import ConversationService
+from engine.tool_defs import TOOL_READ_TOOL_RESULTS
 from engine.prompts import get_compression_prompt
 from utils.cache import MessageCache
 
@@ -148,21 +149,22 @@ class ContextManager:
             logger.info(f"Context pressure detected ({total_tokens} tokens). Applying virtual pruning.")
             for msg in context:
                 # We only prune tool results to maintain surgical precision
-                # We look for large tool outputs (> 2000 chars)
-                if msg.role == "tool" and isinstance(msg.content, str) and len(msg.content) > self.virtual_prune_char_limit:
+                # We specifically EXCLUDE read_tool_results to prevent infinite pruning loops
+                if msg.role == "tool" and msg.name != TOOL_READ_TOOL_RESULTS and isinstance(msg.content, str) and len(msg.content) > self.virtual_prune_char_limit:
                     original_len = len(msg.content)
                     
-                    # Try to find the original message ID from db_messages for the surgical marker
+                    # 3.5 Try to find the original message ID from db_messages for the surgical marker
                     msg_id = "unknown"
                     for db_m in db_messages:
                         db_text = db_m.content.get("text") if isinstance(db_m.content, dict) else str(db_m.content)
-                        if db_text == msg.content:
+                        # Check for exact match or match with [SOURCE TOOL: ...] prefix
+                        if db_text == msg.content or (msg.name and f"[SOURCE TOOL: {msg.name}]\n{db_text}" == msg.content):
                             msg_id = str(db_m.id)
                             break
                     
                     head = msg.content[:1000]
                     tail = msg.content[-1000:]
-                    marker = f"\n\n[VIRTUAL PRUNE | ID: {msg_id} | TOTAL: {original_len} chars | Context Pressure Active. Use read_tool_results(message_id='{msg_id}', start_char=..., end_char=...) for surgical access]\n\n"
+                    marker = f"\n\n[!!! VIRTUAL PRUNE | ID: {msg_id} | TOTAL: {original_len} characters !!!]\n[CONTEXT PRESSURE ACTIVE: This large result was truncated to preserve memory. Use read_tool_results(message_id='{msg_id}', start_char=..., end_char=...) to surgically retrieve the full content in chunks of up to 10,000 characters.]\n\n"
                     msg.content = f"{head}{marker}{tail}"
                     logger.info(f"Virtually pruned message {msg_id} from {original_len} to ~2000 chars")
 
@@ -287,7 +289,8 @@ class ContextManager:
                 return
 
             restoration_text = f"# Context Restoration\n\n{summary}\n\nResume from where we left off."
-            await self.add_message("system", restoration_text, metadata_type="context_restoration")
+            await self.add_message("system", restoration_text, metadata_type="context_restoration", display=False)
+
             
             # Identify messages to archive (logic kept for future tagging, but DELETION IS REMOVED)
             # We no longer delete from SQL to ensure 100% historical reliability.

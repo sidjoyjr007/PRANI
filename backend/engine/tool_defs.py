@@ -39,7 +39,7 @@ TOOL_READ_TOOL_RESULTS_DEF = {
             "properties": {
                 "message_id": { "type": "string", "description": "The message ID provided in the VIRTUAL PRUNE marker." },
                 "start_char": { "type": "integer", "description": "The starting character index (default 0).", "default": 0 },
-                "end_char": { "type": "integer", "description": "The ending character index (max 3000 characters from start)." }
+                "end_char": { "type": "integer", "description": "The ending character index (max 10000 characters from start)." }
             },
             "required": ["message_id"]
         }

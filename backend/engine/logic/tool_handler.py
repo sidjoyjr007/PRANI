@@ -124,11 +124,11 @@ class ToolHandler:
                     args = json_repair.loads(tc.function["arguments"])
                     msg_id = args.get("message_id")
                     start_char = max(0, int(args.get("start_char", 0)))
-                    default_end = start_char + 2000
+                    default_end = start_char + 5000
                     end_char = int(args.get("end_char", default_end))
                     
-                    if end_char - start_char > 3000:
-                        end_char = start_char + 3000
+                    if end_char - start_char > 10000:
+                        end_char = start_char + 10000
 
                     msg = await asyncio.to_thread(self.memory.conversation_service.get_message, uuid.UUID(msg_id), user_id=self.user_id)
                     if not msg or str(msg.conversation_id) != self.session_id:

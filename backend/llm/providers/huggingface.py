@@ -1,6 +1,9 @@
 import requests
 import json
+import logging
 from typing import List, Iterator, Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
 from ..base import LLMProvider, ProviderMessage, LLMResponse, LLMStreamChunk
 from ..types import ToolCall
 
@@ -15,13 +18,28 @@ class HuggingFaceProvider(LLMProvider):
         # OpenAI compatible format
         formatted = []
         for m in messages:
-            msg = {"role": m.role, "content": m.content}
+            content = m.content if m.content else ""
+            
+            # Skip empty assistant messages if no tool calls
+            if m.role == "assistant" and not content and not m.tool_calls:
+                continue
+                
+            # Role Consolidation: If this role matches the previous one, merge the content
+            if formatted and formatted[-1]["role"] == m.role and not m.tool_calls and not m.tool_call_id and not formatted[-1].get("tool_calls"):
+                prev_content = formatted[-1].get("content") or ""
+                if isinstance(prev_content, str) and isinstance(content, str):
+                    formatted[-1]["content"] = f"{prev_content}\n\n{content}"
+                    continue
+
+            msg = {"role": m.role, "content": content}
             if m.tool_calls:
                 msg["tool_calls"] = [tc.model_dump() if hasattr(tc, 'model_dump') else tc.dict() if hasattr(tc, 'dict') else tc for tc in m.tool_calls]
             if m.tool_call_id:
                 msg["tool_call_id"] = m.tool_call_id
-            if m.name:
+            
+            if m.name and m.role == "tool":
                 msg["name"] = m.name
+            
             formatted.append(msg)
         return formatted
 
@@ -45,7 +63,12 @@ class HuggingFaceProvider(LLMProvider):
         payload = self._prepare_payload(messages, stream=False, tools=kwargs.get("tools"))
         
         response = requests.post(url, headers=self.headers, json=payload, timeout=600)
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            if response.status_code == 400:
+                logger.error(f"HF Router 400 Error Body: {response.text}")
+            raise e
         data = response.json()
         
         choice = data["choices"][0]
@@ -88,8 +111,15 @@ class HuggingFaceProvider(LLMProvider):
         url = f"{self.base_url}/chat/completions"
         payload = self._prepare_payload(messages, stream=True, tools=kwargs.get("tools"))
         
-        with requests.post(url, headers=self.headers, json=payload, stream=True, timeout=(10, 600)) as response:
+        response = requests.post(url, headers=self.headers, json=payload, stream=True, timeout=(10, 600))
+        try:
             response.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            if response.status_code == 400:
+                logger.error(f"HF Router 400 Error Body: {response.text}")
+            raise e
+        
+        with response:
             for line in response.iter_lines():
                 if line:
                     line = line.decode("utf-8")

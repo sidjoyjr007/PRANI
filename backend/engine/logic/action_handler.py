@@ -332,8 +332,26 @@ class ActionHandler:
     async def execute_summarization(self):
         logger.info(f"Triggering Context Summarization for session {self.session_id}")
         full_context = await self.memory.get_active_context()
+        
+        # Safe-Point Logic: Find the last message that is NOT a tool call assistant or a tool result
+        # We search from the end of the context (excluding the very first system message)
+        safe_index = -1
+        for i in range(len(full_context) - 1, 0, -1):
+            msg = full_context[i]
+            if msg.role == "user":
+                safe_index = i
+                break
+            if msg.role == "assistant" and not msg.tool_calls:
+                safe_index = i
+                break
+        
+        if safe_index == -1:
+            logger.warning("Could not find a safe point for summarization. Postponing.")
+            return
+
+        summarizable_messages = full_context[:safe_index + 1]
         compression_prompt = get_compression_prompt()
-        summary_messages = full_context + [ProviderMessage(role="user", content=compression_prompt)]
+        summary_messages = summarizable_messages + [ProviderMessage(role="user", content=compression_prompt)]
         
         summary_text = ""
         async for chunk in self._call_llm_stream(summary_messages):
@@ -341,7 +359,10 @@ class ActionHandler:
             if val: summary_text += val
         
         if summary_text:
+            # We add the message but we must ensure we record which original message was the pivot
+            # For now, memory.add_message will just record it, and ContextManager finds the latest.
             await self.memory.add_message(role="system", content=summary_text, metadata_type="context_restoration", display=False)
+            logger.info(f"Context summarized successfully up to index {safe_index}")
 
     async def _call_llm_stream(self, messages: List[ProviderMessage], tools: List[Dict] = None) -> AsyncIterator[Any]:
         loop = asyncio.get_running_loop()
